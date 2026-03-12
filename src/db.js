@@ -28,13 +28,11 @@ const upsertTask = (task) => {
 const getTasksByState = () => {
   const all = [...store.tasks.values()].sort((a, b) => b.updated_at - a.updated_at);
   const opened = all.filter(t => t.state === 'opened');
-  // "doing" = has assignee OR has activity in last 7 days with author
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const doing = opened.filter(t => t.assignee || (t.author && t.updated_at > sevenDaysAgo));
-  const doingIds = new Set(doing.map(t => t.id));
+  // "doing" = has assignee (someone is actively working on it)
+  // "todo" = opened but no assignee (unassigned, waiting for pickup)
   return {
-    todo: opened.filter(t => !doingIds.has(t.id)),
-    doing,
+    todo: opened.filter(t => !t.assignee),
+    doing: opened.filter(t => !!t.assignee),
     done: all.filter(t => t.state === 'closed' || t.state === 'merged')
   };
 };
