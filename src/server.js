@@ -117,10 +117,8 @@ async function pollAll() {
       graph
     };
 
-    // If there are changes, broadcast update
-    if (agentChanges.length > 0 || gitlabData.issues.length > 0 || gitlabData.mrs.length > 0) {
-      ws.broadcast('snapshot', snapshot);
-    }
+    // Always broadcast full snapshot after each poll cycle (#40)
+    ws.broadcast('snapshot', snapshot);
 
     console.log(`[Poll] Agents: ${agents.length}, Issues: ${gitlabData.issues.length}, MRs: ${gitlabData.mrs.length}, Events: ${gitlabData.events.length}, Edges: ${graph.edges.length}`);
   } catch (err) {
@@ -144,12 +142,10 @@ async function startPolling() {
   };
   ws.sendSnapshot(snapshot);
 
-  // Connect polling (30s)
+  // Connect polling (30s) — always broadcast so clients stay in sync (#40)
   setInterval(async () => {
-    const { changes } = await connectFetcher.fetchAgents();
-    if (changes.length > 0) {
-      ws.broadcast('team:update', db.getAllAgents());
-    }
+    await connectFetcher.fetchAgents();
+    ws.broadcast('team:update', db.getAllAgents());
   }, config.polling?.connect_interval_ms || 30000);
 
   // GitLab polling (60s)
@@ -157,12 +153,9 @@ async function startPolling() {
     const data = await gitlabFetcher.fetchAll();
     const graph = collab.analyze();
 
-    if (data.issues.length > 0 || data.mrs.length > 0) {
-      ws.broadcast('board:update', db.getTasksByState());
-    }
-    if (data.events.length > 0) {
-      ws.broadcast('timeline:new', db.getTimeline(20));
-    }
+    // Always broadcast all data channels so manual refresh button is never needed (#40)
+    ws.broadcast('board:update', db.getTasksByState());
+    ws.broadcast('timeline:new', db.getTimeline(20));
     ws.broadcast('graph:update', graph);
   }, config.polling?.gitlab_interval_ms || 60000);
 }
