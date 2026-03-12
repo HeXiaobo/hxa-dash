@@ -39,7 +39,8 @@ const App = {
   ws: null,
   reconnectTimer: null,
   currentPage: 'overview',
-  data: { team: [], board: {}, timeline: [], graph: { nodes: [], edges: [] } },
+  data: { team: [], board: {}, timeline: [], graph: { nodes: [], edges: [] }, projects: [] },
+  selectedProject: '',  // '' = all projects
 
   // Graph instances for overview and collab pages
   overviewGraph: null,
@@ -74,6 +75,15 @@ const App = {
 
     // Refresh button
     document.getElementById('refresh-btn').addEventListener('click', () => this.fetchAll());
+
+    // Project filter
+    const projectSelect = document.getElementById('collab-project-filter');
+    if (projectSelect) {
+      projectSelect.addEventListener('change', () => {
+        this.selectedProject = projectSelect.value;
+        this.fetchCollabGraph();
+      });
+    }
 
     // Resize handler for graphs
     window.addEventListener('resize', () => {
@@ -153,6 +163,16 @@ const App = {
       if (graphRes.ok) {
         this.data.graph = await graphRes.json();
       }
+
+      // Fetch project list
+      try {
+        const projRes = await fetch(`${BASE}/api/projects`);
+        if (projRes.ok) {
+          const projData = await projRes.json();
+          this.data.projects = projData.projects || [];
+          this._populateProjectFilter();
+        }
+      } catch {}
 
       this.updateTimestamp();
       this.renderAllPages();
@@ -280,6 +300,31 @@ const App = {
     const nodeSet = new Set(nodes.map(n => n.id));
     const edges = (graph.edges || []).filter(e => nodeSet.has(e.source) && nodeSet.has(e.target));
     return { nodes, edges };
+  },
+
+  // Project filter helpers
+  _populateProjectFilter() {
+    const select = document.getElementById('collab-project-filter');
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = '<option value="">全部项目</option>' +
+      this.data.projects.map(p => `<option value="${esc(p)}"${p === current ? ' selected' : ''}>${esc(p)}</option>`).join('');
+  },
+
+  async fetchCollabGraph() {
+    try {
+      const url = this.selectedProject
+        ? `${BASE}/api/graph?project=${encodeURIComponent(this.selectedProject)}`
+        : `${BASE}/api/graph`;
+      const res = await fetch(url);
+      if (res.ok) {
+        this.data.graph = await res.json();
+        this.renderCollab();
+        this.renderOverview();
+      }
+    } catch (err) {
+      console.error('Graph fetch error:', err);
+    }
   },
 
   // Called by AgentFilter when filter changes

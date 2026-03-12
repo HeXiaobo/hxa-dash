@@ -50,9 +50,20 @@ app.use('/api/board', boardRoutes);
 app.use('/api/timeline', timelineRoutes);
 app.use('/api', reportRoutes.router);
 
-// Graph endpoint
+// Graph endpoint (supports ?project= filter)
 app.get('/api/graph', (req, res) => {
-  res.json(collab.getGraph());
+  const graph = collab.getGraph();
+  const project = req.query.project;
+  if (project) {
+    res.json(collab.getGraphByProject(project));
+  } else {
+    res.json(graph);
+  }
+});
+
+// Projects endpoint
+app.get('/api/projects', (req, res) => {
+  res.json({ projects: db.getProjects() });
 });
 
 // Health check

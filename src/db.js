@@ -81,9 +81,19 @@ const getCollabEdges = () =>
 const getCollabsForAgent = (name) =>
   [...store.collab_edges.values()].filter(e => e.source === name || e.target === name);
 
+// Project list (derived from tasks)
+const getProjects = () => {
+  const projects = new Set();
+  for (const task of store.tasks.values()) {
+    if (task.project && task.project !== 'unknown') projects.add(task.project);
+  }
+  return [...projects].sort();
+};
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent,
   upsertTask, getTasksByState, getTasksForAgent,
   insertEvent, getTimeline, getEventsForAgent,
-  upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent
+  upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent,
+  getProjects
 };

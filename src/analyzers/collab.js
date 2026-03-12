@@ -113,4 +113,61 @@ function getGraph() {
   };
 }
 
-module.exports = { analyze, getGraph };
+function getGraphByProject(project) {
+  const agents = db.getAllAgents();
+  const board = db.getTasksByState();
+  const allTasks = [...board.todo, ...board.doing, ...board.done];
+
+  // Find agents who worked on this project
+  const projectAgentNames = new Set();
+  for (const task of allTasks) {
+    if (task.project === project) {
+      if (task.assignee) projectAgentNames.add(task.assignee);
+      if (task.author) projectAgentNames.add(task.author);
+      if (task.reviewer) {
+        task.reviewer.split(',').filter(Boolean).forEach(r => projectAgentNames.add(r));
+      }
+    }
+  }
+
+  // Filter edges: both endpoints must be project participants
+  const edges = db.getCollabEdges().filter(e =>
+    projectAgentNames.has(e.source) && projectAgentNames.has(e.target)
+  );
+
+  const edgeAgents = new Set();
+  edges.forEach(e => { edgeAgents.add(e.source); edgeAgents.add(e.target); });
+
+  // Include all project participants as nodes (even if no edges)
+  const nodeNames = new Set([...projectAgentNames, ...edgeAgents]);
+
+  const nodes = agents
+    .filter(a => nodeNames.has(a.name))
+    .map(a => {
+      const tasks = db.getTasksForAgent(a.name).filter(t => t.project === project);
+      return {
+        id: a.name,
+        name: a.name,
+        role: a.role,
+        online: !!a.online,
+        stats: {
+          mr_count: tasks.filter(t => t.type === 'mr').length,
+          issue_count: tasks.filter(t => t.type === 'issue').length,
+          open_count: tasks.filter(t => t.state === 'opened').length,
+          closed_count: tasks.filter(t => t.state === 'closed' || t.state === 'merged').length
+        }
+      };
+    });
+
+  return {
+    nodes,
+    edges: edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      type: e.type,
+      weight: e.weight
+    }))
+  };
+}
+
+module.exports = { analyze, getGraph, getGraphByProject };
