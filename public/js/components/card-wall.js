@@ -40,7 +40,7 @@ const CardWall = {
     const statusLabels = { busy: '🔴 繁忙', idle: '🟢 空闲', offline: '⚫ 离线' };
     const statusLabel = statusLabels[workStatus] || statusLabels.offline;
 
-    // Stats bar: MR + Issue counts + completed
+    // Stats bar: quick glance numbers
     const statsHTML = `
       <div class="card-stats">
         <span class="card-stat" title="进行中任务">📋 ${stats.open_tasks || 0}</span>
@@ -49,6 +49,19 @@ const CardWall = {
         <span class="card-stat" title="Issue">📝 ${stats.issue_count || 0}</span>
       </div>
     `;
+
+    // Historical stats (collapsible, #39)
+    const avgTime = stats.avg_completion_ms ? this.formatDuration(stats.avg_completion_ms) : '—';
+    const historyHTML = (stats.closed_last_7d != null || stats.closed_last_30d != null) ? `
+      <details class="card-history" onclick="event.stopPropagation()">
+        <summary class="history-toggle">📊 历史统计</summary>
+        <div class="history-grid">
+          <span class="history-label">近 7 天</span><span class="history-value">${stats.closed_last_7d || 0} 完成</span>
+          <span class="history-label">近 30 天</span><span class="history-value">${stats.closed_last_30d || 0} 完成</span>
+          <span class="history-label">平均耗时</span><span class="history-value">${avgTime}</span>
+        </div>
+      </details>
+    ` : '';
 
     // Latest activity
     const activityHTML = latestEvent ? `
@@ -83,9 +96,18 @@ const CardWall = {
         <div class="agent-role">${esc(agent.role || '—')}</div>
         ${agent.bio ? `<div class="agent-bio">${esc(truncate(agent.bio, 60))}</div>` : ''}
         ${statsHTML}
+        ${historyHTML}
         ${tasksHTML}
         ${activityHTML}
       </div>
     `;
+  },
+
+  formatDuration(ms) {
+    const hours = ms / (1000 * 60 * 60);
+    if (hours < 1) return `${Math.round(ms / (1000 * 60))}m`;
+    if (hours < 24) return `${Math.round(hours)}h`;
+    const days = hours / 24;
+    return `${days.toFixed(1)}d`;
   }
 };

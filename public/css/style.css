@@ -204,6 +204,24 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 }
 .activity-time { color: var(--text-secondary); font-size: 10px; white-space: nowrap; opacity: .7; }
 
+/* Historical Stats (collapsible, #39) */
+.card-history {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.history-toggle {
+  color: var(--text-secondary); cursor: pointer; user-select: none;
+  font-size: 11px; padding: 2px 0;
+}
+.history-toggle:hover { color: var(--accent); }
+.history-grid {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 10px;
+  margin-top: 6px; padding: 6px 8px;
+  background: var(--bg); border-radius: 6px;
+}
+.history-label { color: var(--text-secondary); }
+.history-value { color: var(--text-primary); font-weight: 500; }
+
 /* Task Preview */
 .agent-tasks-preview {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);

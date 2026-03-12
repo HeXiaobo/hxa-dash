@@ -16,6 +16,21 @@ router.get('/', (req, res) => {
     // Work status: busy (has open tasks) / idle (online, no open tasks) / offline
     const workStatus = !a.online ? 'offline' : openTasks.length > 0 ? 'busy' : 'idle';
 
+    // Historical stats (#39)
+    const now = Date.now();
+    const sevenDays = now - 7 * 24 * 60 * 60 * 1000;
+    const thirtyDays = now - 30 * 24 * 60 * 60 * 1000;
+    const closedLast7 = closedTasks.filter(t => t.updated_at > sevenDays).length;
+    const closedLast30 = closedTasks.filter(t => t.updated_at > thirtyDays).length;
+
+    // Average completion time (for tasks with both created_at and updated_at where closed)
+    const completionTimes = closedTasks
+      .filter(t => t.created_at && t.updated_at && t.updated_at > t.created_at)
+      .map(t => t.updated_at - t.created_at);
+    const avgCompletionMs = completionTimes.length > 0
+      ? completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length
+      : null;
+
     return {
       ...a,
       tags: safeJSON(a.tags),
@@ -40,7 +55,10 @@ router.get('/', (req, res) => {
         closed_tasks: closedTasks.length,
         mr_count: allTasks.filter(t => t.type === 'mr').length,
         issue_count: allTasks.filter(t => t.type === 'issue').length,
-        recent_events: recentEvents.length
+        recent_events: recentEvents.length,
+        closed_last_7d: closedLast7,
+        closed_last_30d: closedLast30,
+        avg_completion_ms: avgCompletionMs
       }
     };
   });
