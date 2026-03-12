@@ -56,10 +56,12 @@ const App = {
 
     // Init graphs
     const overviewCanvas = document.getElementById('overview-collab-canvas');
-    if (overviewCanvas) this.overviewGraph = new ForceGraph(overviewCanvas);
+    const overviewEmpty = document.getElementById('overview-collab-empty');
+    if (overviewCanvas) this.overviewGraph = new ForceGraph(overviewCanvas, overviewEmpty);
 
     const collabCanvas = document.getElementById('collab-canvas');
-    if (collabCanvas) this.collabGraph = new ForceGraph(collabCanvas);
+    const collabEmpty = document.getElementById('collab-empty');
+    if (collabCanvas) this.collabGraph = new ForceGraph(collabCanvas, collabEmpty);
 
     // Router
     this.initRouter();

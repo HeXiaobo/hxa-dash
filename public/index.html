@@ -52,11 +52,18 @@
         </div>
         <div class="graph-container" style="height: 300px;">
           <canvas id="overview-collab-canvas"></canvas>
+          <div id="overview-collab-empty" class="graph-empty hidden">暂无协作数据</div>
           <div class="graph-legend">
+            <span class="legend-separator">连线类型</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--purple)"></span> Code Review</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--green)"></span> Issue 协作</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--accent)"></span> 同项目</span>
+            <span class="legend-separator">节点</span>
+            <span class="legend-item"><span class="legend-dot online"></span> 在线</span>
+            <span class="legend-item"><span class="legend-dot offline"></span> 离线</span>
+            <span class="legend-item"><span class="legend-size-hint"></span> 大小 = 任务量</span>
           </div>
+          <div class="graph-help">拖拽节点调整位置 · 悬停查看详情 · 线粗 = 协作频次</div>
         </div>
       </section>
 
@@ -133,14 +140,20 @@
           </div>
           <div class="graph-container graph-container-large">
             <canvas id="collab-canvas"></canvas>
+            <div id="collab-empty" class="graph-empty hidden">暂无协作数据 — 请先在左侧选择 Agent</div>
             <div class="graph-legend">
+              <span class="legend-separator">连线类型</span>
               <span class="legend-item"><span class="legend-line" style="background:var(--purple)"></span> Code Review</span>
               <span class="legend-item"><span class="legend-line" style="background:var(--green)"></span> Issue 协作</span>
               <span class="legend-item"><span class="legend-line" style="background:var(--accent)"></span> 同项目</span>
+              <span class="legend-separator">节点</span>
               <span class="legend-item"><span class="legend-dot online"></span> 在线</span>
               <span class="legend-item"><span class="legend-dot offline"></span> 离线</span>
+              <span class="legend-item"><span class="legend-size-hint"></span> 大小 = 任务量</span>
+              <span class="legend-separator">交互</span>
+              <span class="legend-item">线粗 = 协作频次</span>
             </div>
-            <div class="graph-help">提示：拖拽节点可调整位置，悬停显示详情，线条粗细表示协作频次</div>
+            <div class="graph-help">拖拽节点调整位置 · 悬停查看详情</div>
           </div>
         </div>
       </div>

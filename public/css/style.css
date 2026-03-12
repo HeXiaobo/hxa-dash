@@ -254,20 +254,49 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 /* Graph Legend */
 .graph-legend {
   position: absolute; bottom: 10px; left: 12px;
-  display: flex; gap: 14px; font-size: 11px; color: var(--text-secondary);
-  background: rgba(13,17,23,.85); padding: 6px 12px; border-radius: 6px;
+  display: flex; flex-wrap: wrap; gap: 10px 14px;
+  font-size: 11px; color: var(--text-secondary);
+  background: rgba(13,17,23,.9); padding: 7px 12px; border-radius: 6px;
+  border: 1px solid var(--border); max-width: calc(100% - 24px);
 }
 .legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-separator {
+  color: #484f58; font-size: 10px; letter-spacing: .05em;
+  display: flex; align-items: center;
+}
+.legend-separator::before { content: ''; display: inline-block; width: 1px; height: 10px; background: #30363d; margin-right: 8px; }
+.legend-separator:first-child::before { display: none; }
 .legend-line { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .legend-dot.online { background: var(--green); }
 .legend-dot.offline { background: #484f58; }
+.legend-size-hint {
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.legend-size-hint::before {
+  content: ''; display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid #8b949e;
+}
+.legend-size-hint::after {
+  content: ''; display: inline-block;
+  width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #8b949e; margin-left: 2px;
+}
 
 .graph-help {
   position: absolute; top: 10px; right: 12px;
   font-size: 11px; color: var(--text-secondary);
   background: rgba(13,17,23,.85); padding: 4px 10px; border-radius: 4px;
+  border: 1px solid var(--border);
 }
+
+/* Graph Empty State */
+.graph-empty {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 13px; color: var(--text-secondary);
+  background: rgba(13,17,23,.9); padding: 10px 20px; border-radius: 6px;
+  border: 1px dashed var(--border); pointer-events: none;
+}
+.graph-empty.hidden { display: none; }
 
 /* Collab Page Layout */
 .collab-layout { display: flex; gap: 20px; height: calc(100vh - 140px); }
