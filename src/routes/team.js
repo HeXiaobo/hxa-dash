@@ -13,11 +13,22 @@ router.get('/', (req, res) => {
     const recentEvents = db.getEventsForAgent(a.name, 5);
     const latestEvent = recentEvents[0] || null;
 
+    // Work status: busy (has open tasks) / idle (online, no open tasks) / offline
+    const workStatus = !a.online ? 'offline' : openTasks.length > 0 ? 'busy' : 'idle';
+
     return {
       ...a,
       tags: safeJSON(a.tags),
       online: !!a.online,
-      current_tasks: openTasks.slice(0, 3),
+      work_status: workStatus,
+      current_tasks: openTasks.slice(0, 3).map(t => ({
+        title: t.title,
+        type: t.type,
+        state: t.state,
+        url: t.url || null,
+        project: t.project || null,
+        updated_at: t.updated_at
+      })),
       latest_event: latestEvent ? {
         action: latestEvent.action,
         target_title: latestEvent.target_title,

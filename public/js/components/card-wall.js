@@ -35,16 +35,20 @@ const CardWall = {
     const onlineClass = agent.online ? 'online' : 'offline';
     const lastSeen = agent.last_seen_at ? timeAgo(agent.last_seen_at) : '';
 
-    // Stats bar: MR + Issue counts
-    const hasStats = stats.mr_count || stats.issue_count || stats.open_tasks;
-    const statsHTML = hasStats ? `
+    // Work status badge (#38)
+    const workStatus = agent.work_status || (agent.online ? 'idle' : 'offline');
+    const statusLabels = { busy: '🔴 繁忙', idle: '🟢 空闲', offline: '⚫ 离线' };
+    const statusLabel = statusLabels[workStatus] || statusLabels.offline;
+
+    // Stats bar: MR + Issue counts + completed
+    const statsHTML = `
       <div class="card-stats">
-        ${stats.open_tasks ? `<span class="card-stat" title="进行中任务">📋 ${stats.open_tasks}</span>` : ''}
-        ${stats.mr_count ? `<span class="card-stat" title="合并请求">🔀 ${stats.mr_count}</span>` : ''}
-        ${stats.issue_count ? `<span class="card-stat" title="Issue">📝 ${stats.issue_count}</span>` : ''}
-        ${stats.closed_tasks ? `<span class="card-stat" title="已完成">✅ ${stats.closed_tasks}</span>` : ''}
+        <span class="card-stat" title="进行中任务">📋 ${stats.open_tasks || 0}</span>
+        <span class="card-stat" title="已完成">✅ ${stats.closed_tasks || 0}</span>
+        <span class="card-stat" title="合并请求">🔀 ${stats.mr_count || 0}</span>
+        <span class="card-stat" title="Issue">📝 ${stats.issue_count || 0}</span>
       </div>
-    ` : '';
+    `;
 
     // Latest activity
     const activityHTML = latestEvent ? `
@@ -55,10 +59,17 @@ const CardWall = {
       </div>
     ` : '';
 
-    // Current tasks
+    // Current tasks with clickable GitLab links (#38)
     const tasksHTML = tasks.length > 0 ? `
       <div class="agent-tasks-preview">
-        ${tasks.slice(0, 2).map(t => `<div class="task-item">${esc(truncate(t.title, 40))}</div>`).join('')}
+        ${tasks.slice(0, 2).map(t => {
+          const icon = t.type === 'mr' ? '🔀' : '📝';
+          const proj = t.project ? `<span class="task-project">${esc(t.project)}</span>` : '';
+          const link = t.url
+            ? `<a href="${esc(t.url)}" class="task-link" target="_blank" rel="noopener" onclick="event.stopPropagation()">${icon} ${esc(truncate(t.title, 35))}</a>`
+            : `<span class="task-link">${icon} ${esc(truncate(t.title, 35))}</span>`;
+          return `<div class="task-item">${link}${proj}</div>`;
+        }).join('')}
         ${tasks.length > 2 ? `<div class="task-item task-more">+${tasks.length - 2} more</div>` : ''}
       </div>
     ` : '';
@@ -67,7 +78,7 @@ const CardWall = {
       <div class="agent-card ${onlineClass}" data-name="${esc(agent.name)}">
         <div class="card-top">
           <span class="agent-name">${esc(agent.name)}</span>
-          <span class="online-dot ${onlineClass}" title="${agent.online ? '在线' : '离线 ' + lastSeen}"></span>
+          <span class="work-status-badge ${workStatus}" title="${workStatus}">${statusLabel}</span>
         </div>
         <div class="agent-role">${esc(agent.role || '—')}</div>
         ${agent.bio ? `<div class="agent-bio">${esc(truncate(agent.bio, 60))}</div>` : ''}
