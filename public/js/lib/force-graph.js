@@ -230,26 +230,32 @@ class ForceGraph {
       }
     }
 
-    // Edge mid-label on hover (edge directly hovered)
+    // Edge tooltip on hover (edge directly hovered)
     if (this.hoveringEdge) {
       const e = this.hoveringEdge;
       const midX = (e.sourceNode.x + e.targetNode.x) / 2;
       const midY = (e.sourceNode.y + e.targetNode.y) / 2;
       const typeLabels = { review: 'Code Review', issue: 'Issue 协作', project: '同项目' };
-      const label = `${typeLabels[e.type] || e.type}  ×${e.weight}`;
-      ctx.font = '11px -apple-system, sans-serif';
-      const tw = ctx.measureText(label).width + 14;
-      ctx.fillStyle = 'rgba(22,27,34,.92)';
-      this._roundRect(ctx, midX - tw/2, midY - 10, tw, 20, 4);
-      ctx.fill();
-      ctx.strokeStyle = edgeColors[e.type] || '#484f58';
-      ctx.lineWidth = 1;
-      this._roundRect(ctx, midX - tw/2, midY - 10, tw, 20, 4);
-      ctx.stroke();
-      ctx.fillStyle = '#e6edf3';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, midX, midY);
+      const details = e.details || [];
+
+      // Build tooltip lines
+      const lines = [
+        `${e.sourceNode.name}  ↔  ${e.targetNode.name}`,
+        `${typeLabels[e.type] || e.type} · 共 ${e.weight} 次`
+      ];
+      if (e.first_seen && e.last_seen && e.first_seen !== e.last_seen) {
+        const fmt = ts => new Date(ts).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+        lines.push(`时间范围: ${fmt(e.first_seen)} ~ ${fmt(e.last_seen)}`);
+      }
+      if (details.length > 0) {
+        lines.push(''); // separator line
+        details.slice(0, 5).forEach(d => {
+          lines.push(`· ${d.title ? (d.title.length > 36 ? d.title.slice(0, 36) + '…' : d.title) : d.project}`);
+        });
+        if (details.length > 5) lines.push(`  …及另 ${details.length - 5} 条`);
+      }
+
+      this._drawTooltip(ctx, lines, midX, midY, w, h, edgeColors[e.type]);
     }
 
     // Multi-line tooltip for hovered node
@@ -257,46 +263,74 @@ class ForceGraph {
       const n = this.hovering;
       const s = n.stats || {};
       const connectedEdges = this.edges.filter(e => e.sourceNode === n || e.targetNode === n);
-      const partnerNames = connectedEdges.map(e =>
-        e.sourceNode === n ? e.targetNode.name : e.sourceNode.name
-      ).slice(0, 3);
+
+      // Group partners by type
+      const byType = { review: [], issue: [], project: [] };
+      for (const e of connectedEdges) {
+        const partner = e.sourceNode === n ? e.targetNode.name : e.sourceNode.name;
+        (byType[e.type] || (byType.other = byType.other || [])).push(partner);
+      }
 
       const lines = [
-        `${n.name}${n.role ? '  ' + n.role : ''}`,
-        `进行中 ${s.open_count || 0}  · 已完成 ${s.closed_count || 0}`,
-        connectedEdges.length > 0
-          ? `协作伙伴 (${connectedEdges.length}): ${partnerNames.join(', ')}${connectedEdges.length > 3 ? '…' : ''}`
-          : '暂无协作记录'
+        `${n.name}${n.role ? '  —  ' + n.role : ''}  ${n.online ? '🟢 在线' : '⚫ 离线'}`,
+        `MR ${s.mr_count || 0} · Issue ${s.issue_count || 0} · 进行中 ${s.open_count || 0} · 已完成 ${s.closed_count || 0}`
       ];
 
-      ctx.font = '11px -apple-system, sans-serif';
-      const lineH = 16;
-      const pad = { x: 12, y: 8 };
-      const boxW = Math.max(...lines.map(l => ctx.measureText(l).width)) + pad.x * 2;
-      const boxH = lines.length * lineH + pad.y * 2;
+      if (connectedEdges.length === 0) {
+        lines.push('暂无协作记录');
+      } else {
+        lines.push(`协作伙伴 (共 ${connectedEdges.length} 条关系):`);
+        if (byType.review.length) lines.push(`  Review: ${byType.review.join(', ')}`);
+        if (byType.issue.length) lines.push(`  Issue协作: ${byType.issue.join(', ')}`);
+        if (byType.project.length) lines.push(`  同项目: ${byType.project.slice(0, 5).join(', ')}${byType.project.length > 5 ? '…' : ''}`);
+      }
 
-      let tx = n.x - boxW / 2;
-      let ty = n.y - n.radius - boxH - 8;
-      // Keep in bounds
-      tx = Math.max(4, Math.min(w - boxW - 4, tx));
-      ty = Math.max(4, ty < 4 ? n.y + n.radius + 8 : ty);
-
-      ctx.fillStyle = 'rgba(22,27,34,.93)';
-      this._roundRect(ctx, tx, ty, boxW, boxH, 5);
-      ctx.fill();
-      ctx.strokeStyle = '#30363d';
-      ctx.lineWidth = 1;
-      this._roundRect(ctx, tx, ty, boxW, boxH, 5);
-      ctx.stroke();
-
-      lines.forEach((line, i) => {
-        ctx.fillStyle = i === 0 ? '#e6edf3' : '#8b949e';
-        ctx.font = i === 0 ? 'bold 11px -apple-system, sans-serif' : '11px -apple-system, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillText(line, tx + pad.x, ty + pad.y + i * lineH);
-      });
+      this._drawTooltip(ctx, lines, n.x, n.y - n.radius - 8, w, h, n.online ? '#3fb950' : '#484f58', true);
     }
+  }
+
+  _drawTooltip(ctx, lines, anchorX, anchorY, canvasW, canvasH, accentColor, above = false) {
+    const lineH = 16;
+    const pad = { x: 12, y: 8 };
+    ctx.font = '11px -apple-system, sans-serif';
+
+    // Compute box dimensions
+    const widths = lines.map(l => l === '' ? 0 : ctx.measureText(l).width);
+    const boxW = Math.min(Math.max(...widths) + pad.x * 2, canvasW - 16);
+    const boxH = lines.length * lineH + pad.y * 2;
+
+    let tx = anchorX - boxW / 2;
+    let ty = above ? anchorY - boxH : anchorY;
+    tx = Math.max(4, Math.min(canvasW - boxW - 4, tx));
+    ty = Math.max(4, Math.min(canvasH - boxH - 4, ty));
+
+    // Background
+    ctx.fillStyle = 'rgba(13,17,23,.96)';
+    this._roundRect(ctx, tx, ty, boxW, boxH, 5);
+    ctx.fill();
+    // Border (accent colored top line)
+    ctx.strokeStyle = accentColor || '#30363d';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(tx + 5, ty);
+    ctx.lineTo(tx + boxW - 5, ty);
+    ctx.stroke();
+    ctx.strokeStyle = '#21262d';
+    ctx.lineWidth = 1;
+    this._roundRect(ctx, tx, ty, boxW, boxH, 5);
+    ctx.stroke();
+
+    // Text
+    lines.forEach((line, i) => {
+      if (line === '') return; // separator
+      const isFirst = i === 0;
+      const isDim = line.startsWith('  ') || line.startsWith('·');
+      ctx.fillStyle = isFirst ? '#e6edf3' : isDim ? '#6e7681' : '#8b949e';
+      ctx.font = isFirst ? 'bold 11px -apple-system, sans-serif' : '11px -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(line, tx + pad.x, ty + pad.y + i * lineH);
+    });
   }
 
   _roundRect(ctx, x, y, w, h, r) {

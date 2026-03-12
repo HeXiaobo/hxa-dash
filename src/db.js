@@ -70,7 +70,13 @@ const getEventsForAgent = (name, limit = 50) =>
 // Collab operations
 const upsertEdge = (edge) => {
   const key = `${edge.source}|${edge.target}|${edge.type}`;
-  store.collab_edges.set(key, { ...edge });
+  const existing = store.collab_edges.get(key);
+  // Merge details array (deduplicate by url)
+  const existingDetails = existing?.details || [];
+  const newDetails = edge.details || [];
+  const detailMap = new Map(existingDetails.map(d => [d.url, d]));
+  for (const d of newDetails) if (d.url) detailMap.set(d.url, d);
+  store.collab_edges.set(key, { ...edge, details: [...detailMap.values()] });
 };
 
 const clearEdges = () => store.collab_edges.clear();
