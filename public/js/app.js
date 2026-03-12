@@ -54,6 +54,7 @@ const App = {
     DetailDrawer.init();
     TaskBoard.init();
     Timeline.init();
+    CollabMatrix.init();
 
     // Init graphs
     const overviewCanvas = document.getElementById('overview-collab-canvas');
@@ -253,6 +254,9 @@ const App = {
   renderCollab() {
     const graphData = this._filterGraph('collab', this.data.graph);
     if (this.collabGraph) this.collabGraph.setData(graphData.nodes, graphData.edges);
+
+    // Render matrix view
+    CollabMatrix.render(graphData.nodes, graphData.edges);
 
     const edgeCountEl = document.getElementById('collab-edge-count');
     if (edgeCountEl) {

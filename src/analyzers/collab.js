@@ -131,32 +131,44 @@ function getGraph() {
   const agents = db.getAllAgents();
   const edges = db.getCollabEdges();
 
-  const nodes = agents.map(a => ({
-    id: a.name,
-    name: a.name,
-    role: a.role,
-    online: !!a.online,
-    stats: {}
-  }));
-
-  for (const node of nodes) {
-    const tasks = db.getTasksForAgent(node.name);
-    node.stats = {
-      mr_count: tasks.filter(t => t.type === 'mr').length,
-      issue_count: tasks.filter(t => t.type === 'issue').length,
-      open_count: tasks.filter(t => t.state === 'opened').length,
-      closed_count: tasks.filter(t => t.state === 'closed' || t.state === 'merged').length
-    };
+  // Build set of agents that appear in edges
+  const edgeAgents = new Set();
+  for (const e of edges) {
+    edgeAgents.add(e.source);
+    edgeAgents.add(e.target);
   }
 
+  const nodes = agents.map(a => {
+    const tasks = db.getTasksForAgent(a.name);
+    return {
+      id: a.name,
+      name: a.name,
+      role: a.role,
+      online: !!a.online,
+      stats: {
+        mr_count: tasks.filter(t => t.type === 'mr').length,
+        issue_count: tasks.filter(t => t.type === 'issue').length,
+        open_count: tasks.filter(t => t.state === 'opened').length,
+        closed_count: tasks.filter(t => t.state === 'closed' || t.state === 'merged').length
+      }
+    };
+  });
+
+  // Filter: only include nodes that have edges OR have any GitLab activity (#35)
+  const activeNodes = nodes.filter(n => {
+    if (edgeAgents.has(n.id)) return true;
+    const s = n.stats;
+    return (s.mr_count + s.issue_count) > 0;
+  });
+
   return {
-    nodes,
+    nodes: activeNodes,
     edges: edges.map(e => ({
       source: e.source,
       target: e.target,
       type: e.type,
       weight: e.weight,
-      details: (e.details || []).slice(0, 10), // cap at 10 records
+      details: (e.details || []).slice(0, 10),
       first_seen: e.first_seen || null,
       last_seen: e.last_seen || null
     }))

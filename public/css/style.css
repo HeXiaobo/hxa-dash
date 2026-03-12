@@ -360,6 +360,72 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 }
 .graph-empty.hidden { display: none; }
 
+/* View Toggle (#29) */
+.view-toggle { display: flex; gap: 2px; }
+.btn-toggle {
+  padding: 4px 12px; font-size: 12px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--text-secondary);
+  cursor: pointer; font-weight: 500; transition: all .15s;
+}
+.btn-toggle:hover { color: var(--text); border-color: var(--accent); }
+.btn-toggle.active { background: rgba(88,166,255,.15); color: var(--accent); border-color: var(--accent); }
+
+/* Heatmap Matrix (#29) */
+.matrix-container {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+  height: calc(100vh - 200px); min-height: 400px; overflow: auto;
+}
+.matrix-table {
+  border-collapse: collapse; width: auto; margin: 0 auto;
+}
+.matrix-table th, .matrix-table td {
+  padding: 0; text-align: center; font-size: 11px;
+}
+.matrix-col-header {
+  writing-mode: vertical-lr; transform: rotate(180deg);
+  padding: 8px 2px !important; font-weight: 500; color: var(--text-secondary);
+  max-width: 40px; white-space: nowrap;
+}
+.matrix-col-header span {
+  display: inline-block; max-width: 100px; overflow: hidden; text-overflow: ellipsis;
+}
+.matrix-row-header {
+  text-align: right !important; padding: 0 10px 0 0 !important;
+  font-weight: 500; color: var(--text-secondary); white-space: nowrap;
+}
+.matrix-status {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  margin-left: 5px; vertical-align: middle;
+}
+.matrix-status.online { background: var(--green); }
+.matrix-status.offline { background: #484f58; }
+.matrix-cell {
+  width: 40px; height: 36px; border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 11px; cursor: default;
+  transition: transform .1s;
+}
+.matrix-cell.matrix-active {
+  color: #fff; font-weight: 600; cursor: help;
+}
+.matrix-cell.matrix-active:hover {
+  transform: scale(1.15); z-index: 1; position: relative;
+  box-shadow: 0 0 8px rgba(88,166,255,.4);
+}
+.matrix-cell.matrix-diag {
+  background: rgba(255,255,255,.03); color: var(--text-secondary);
+  font-style: italic;
+}
+.matrix-legend {
+  display: flex; gap: 14px; align-items: center;
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-secondary);
+}
+.matrix-swatch {
+  display: inline-block; width: 14px; height: 14px;
+  border-radius: 3px; vertical-align: middle; margin-right: 4px;
+}
+
 /* Collab Page Layout */
 .collab-layout { display: flex; gap: 20px; height: calc(100vh - 140px); }
 .collab-sidebar {

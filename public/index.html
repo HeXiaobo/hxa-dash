@@ -135,15 +135,20 @@
         <!-- Right: Graph -->
         <div class="collab-main">
           <div class="section-header">
-            <h2>协作关系图</h2>
+            <h2>协作关系</h2>
             <div class="section-tools">
+              <div class="view-toggle">
+                <button id="collab-view-graph" class="btn-toggle active" title="力导向图">图谱</button>
+                <button id="collab-view-matrix" class="btn-toggle" title="热力矩阵">矩阵</button>
+              </div>
               <select id="collab-project-filter" class="select-filter">
                 <option value="">全部项目</option>
               </select>
             </div>
             <span id="collab-edge-count" class="team-stats"></span>
           </div>
-          <div class="graph-container graph-container-large">
+          <!-- Graph View -->
+          <div id="collab-graph-view" class="graph-container graph-container-large">
             <canvas id="collab-canvas"></canvas>
             <div id="collab-empty" class="graph-empty hidden">暂无协作数据 — 请先在左侧选择 Agent</div>
             <div class="graph-legend">
@@ -159,6 +164,16 @@
               <span class="legend-item">线粗 = 协作频次</span>
             </div>
             <div class="graph-help">拖拽节点调整位置 · 悬停查看详情</div>
+          </div>
+          <!-- Matrix View -->
+          <div id="collab-matrix-view" class="matrix-container" style="display:none">
+            <div id="collab-matrix" class="heatmap-matrix"></div>
+            <div class="matrix-legend">
+              <span class="legend-item"><span class="matrix-swatch" style="background:rgba(188,140,255,.8)"></span> Review</span>
+              <span class="legend-item"><span class="matrix-swatch" style="background:rgba(63,185,80,.8)"></span> Issue</span>
+              <span class="legend-item"><span class="matrix-swatch" style="background:rgba(88,166,255,.8)"></span> 同项目</span>
+              <span style="color:var(--text-secondary); font-size:11px; margin-left:12px">颜色深浅 = 协作强度</span>
+            </div>
           </div>
         </div>
       </div>
@@ -248,6 +263,7 @@
   <script src="js/components/task-board.js"></script>
   <script src="js/components/timeline.js"></script>
   <script src="js/components/agent-filter.js"></script>
+  <script src="js/components/collab-matrix.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
