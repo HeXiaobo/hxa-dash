@@ -167,6 +167,10 @@ function handleGitLabEvent(eventHeader, payload) {
 }
 
 function resolveAgent(username, usernameMap) {
+  // Use entity layer first (canonical ID resolution), fallback to legacy usernameMap
+  const entity = require('../entity');
+  const resolved = entity.resolve('gitlab', username);
+  if (resolved !== username) return resolved;
   return usernameMap[username] || username || null;
 }
 

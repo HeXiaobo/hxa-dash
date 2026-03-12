@@ -37,9 +37,13 @@ const getTasksByState = () => {
   };
 };
 
-const getTasksForAgent = (name) => {
+const getTasksForAgent = (name, { assigneeOnly = false } = {}) => {
   return [...store.tasks.values()]
-    .filter(t => t.assignee === name || t.author === name || (t.reviewer && t.reviewer.split(',').includes(name)))
+    .filter(t => {
+      if (t.assignee === name) return true;
+      if (assigneeOnly) return false;
+      return t.author === name || (t.reviewer && t.reviewer.split(',').includes(name));
+    })
     .sort((a, b) => b.updated_at - a.updated_at);
 };
 

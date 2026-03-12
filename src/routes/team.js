@@ -7,13 +7,16 @@ const router = Router();
 // GET /api/team — all agents + stats
 router.get('/', (req, res) => {
   const agents = db.getAllAgents().map(a => {
+    // Assignee-only tasks for status/current work (don't show authored/reviewed tasks as "my work")
+    const assignedTasks = db.getTasksForAgent(a.name, { assigneeOnly: true });
+    const openTasks = assignedTasks.filter(t => t.state === 'opened');
+    // All related tasks (assignee + author + reviewer) for historical stats
     const allTasks = db.getTasksForAgent(a.name);
-    const openTasks = allTasks.filter(t => t.state === 'opened');
     const closedTasks = allTasks.filter(t => t.state === 'closed' || t.state === 'merged');
     const recentEvents = db.getEventsForAgent(a.name, 5);
     const latestEvent = recentEvents[0] || null;
 
-    // Work status: busy (has open tasks) / idle (online, no open tasks) / offline
+    // Work status: busy (has assigned open tasks) / idle / offline
     const workStatus = !a.online ? 'offline' : openTasks.length > 0 ? 'busy' : 'idle';
 
     // Historical stats (#39)
