@@ -242,9 +242,11 @@ const getAgentStats = () => {
   }).sort((a, b) => b.event_count_30d - a.event_count_30d);
 };
 
+const getAllTasks = () => [...store.tasks.values()];
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent,
-  upsertTask, getTasksByState, getTasksForAgent,
+  upsertTask, getTasksByState, getTasksForAgent, getAllTasks,
   insertEvent, getTimeline, getEventsForAgent,
   upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent, getTopCollaborator,
   getProjects,
