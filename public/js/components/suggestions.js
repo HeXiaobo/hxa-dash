@@ -1,10 +1,12 @@
-// Action Suggestions Component (#57, #61, #62)
+// Action Suggestions Component (#57, #61, #62, #64)
 // Rule engine: generates next-step recommendations from team/task/event data
 // Phase 2: integrates /api/metrics thresholds for utilization + output signals
+// Phase 3 (#64): smart one-click assign for unassigned issues
 const Suggestions = {
   container: null,
   autoAssignHistory: [],
   metricsData: null,
+  _assigning: new Set(), // task IDs currently being assigned
 
   init() {
     this.container = document.getElementById('suggestions-list');
@@ -12,6 +14,42 @@ const Suggestions = {
     this._loadMetrics();
     setInterval(() => this._loadAutoAssignHistory(), 5 * 60 * 1000);
     setInterval(() => this._loadMetrics(), 5 * 60 * 1000);
+    // Delegate click for smart-assign buttons
+    if (this.container) {
+      this.container.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-smart-assign]');
+        if (btn) this._smartAssign(btn);
+      });
+    }
+  },
+
+  // Smart-assign a single issue via the backend API
+  async _smartAssign(btn) {
+    const taskId = btn.dataset.smartAssign;
+    if (this._assigning.has(taskId)) return;
+    this._assigning.add(taskId);
+    btn.disabled = true;
+    btn.textContent = '分配中…';
+    try {
+      const res = await fetch('/api/auto-assign/smart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        btn.textContent = `✓ → ${esc(data.assignee)}`;
+        btn.classList.add('sug-assign-done');
+      } else {
+        btn.textContent = `✗ ${esc(data.error || 'failed')}`;
+        btn.disabled = false;
+      }
+    } catch (err) {
+      btn.textContent = '✗ 网络错误';
+      btn.disabled = false;
+    } finally {
+      this._assigning.delete(taskId);
+    }
   },
 
   _loadAutoAssignHistory() {
@@ -156,16 +194,34 @@ const Suggestions = {
       });
     }
 
-    // Rule 5: Unassigned open issues
+    // Rule 5: Unassigned open issues — show top 3 individually with smart-assign buttons
     const unassigned = openIssues.filter(t => !t.assignee);
     if (unassigned.length > 0) {
-      suggestions.push({
-        priority: 'low',
-        icon: '📋',
-        html: `${unassigned.length} 个 issue 未分配`,
-        reason: '及时分配避免成为卡点',
-        score: 50
-      });
+      const preview = unassigned.slice(0, 3);
+      for (const issue of preview) {
+        const link = issue.url
+          ? `<a href="${esc(issue.url)}" target="_blank" class="sug-link">${esc(truncate(issue.title, 35))}</a>`
+          : esc(truncate(issue.title, 35));
+        const assignBtn = issue.id
+          ? `<button class="sug-assign-btn" data-smart-assign="${esc(issue.id)}" title="智能分配给最空闲 agent">一键分配</button>`
+          : '';
+        suggestions.push({
+          priority: 'low',
+          icon: '📋',
+          html: `${link}${assignBtn}`,
+          reason: `未分配 · ${issue.project || ''}`,
+          score: 50
+        });
+      }
+      if (unassigned.length > 3) {
+        suggestions.push({
+          priority: 'low',
+          icon: '📋',
+          html: `另有 ${unassigned.length - 3} 个 issue 未分配`,
+          reason: '可在看板页查看全部',
+          score: 48
+        });
+      }
     }
 
     // ── Phase 2: Metrics-threshold rules (#62) ───────────────────

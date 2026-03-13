@@ -897,10 +897,31 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 }
 .sug-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 .sug-body { flex: 1; min-width: 0; }
-.sug-text { font-size: 13px; line-height: 1.4; }
+.sug-text { font-size: 13px; line-height: 1.4; display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
 .sug-link { color: var(--accent); text-decoration: none; }
 .sug-link:hover { text-decoration: underline; }
 .sug-reason { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.sug-info { border-left: 3px solid var(--text-secondary); }
+.sug-section-header { padding: 4px 8px; font-size: 11px; color: var(--text-secondary); margin-top: 6px; }
+
+/* Smart-assign button (#64) */
+.sug-assign-btn {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 11px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  vertical-align: middle;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.sug-assign-btn:hover:not(:disabled) { opacity: 1; }
+.sug-assign-btn:disabled { opacity: 0.5; cursor: default; }
+.sug-assign-btn.sug-assign-done { background: var(--green); opacity: 1; }
 
 /* === Team Utilization & Output Metrics (#62) === */
 .metrics-panel { display: flex; flex-direction: column; gap: 14px; }

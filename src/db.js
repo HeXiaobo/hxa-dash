@@ -244,6 +244,8 @@ const getAgentStats = () => {
 
 const getAllTasks = () => [...store.tasks.values()];
 
+const getTask = (id) => store.tasks.get(id) || null;
+
 // Workload report: per-agent productivity breakdown over a configurable time window
 const getWorkloadReport = (days = 30) => {
   const sinceMs = Date.now() - days * 86400000;
@@ -323,7 +325,7 @@ const getAutoAssignHistory = (limit = 20) => autoAssignEvents.slice(0, limit);
 
 module.exports = {
   upsertAgent, getAllAgents, getAgent,
-  upsertTask, getTasksByState, getTasksForAgent, getAllTasks,
+  upsertTask, getTasksByState, getTasksForAgent, getAllTasks, getTask,
   insertEvent, getTimeline, getEventsForAgent,
   upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent, getTopCollaborator,
   getProjects,
