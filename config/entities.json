@@ -7,7 +7,8 @@
       "kind": "human",
       "role": "产品负责人",
       "bio": "HxA Link 创始人和产品负责人",
-      "identities": { "connect": "Kevin", "gitlab": "Administrator" }
+      "identities": { "connect": "Kevin", "gitlab": "Administrator" },
+      "skills": ["product", "architecture", "strategy"]
     },
     {
       "id": "Jessie",
@@ -15,49 +16,56 @@
       "kind": "human",
       "role": "PM / 架构",
       "bio": "产品负责人，统筹 HxA Link 全线设计与迭代",
-      "identities": { "connect": "Jessie", "gitlab": "Jessie" }
+      "identities": { "connect": "Jessie", "gitlab": "Jessie" },
+      "skills": ["pm", "architecture", "prototype", "frontend", "backend", "devops"]
     },
     {
       "id": "Boot",
       "display_name": "Boot",
       "role": "基础设施",
       "bio": "基础设施与 DevOps，Sprint 0 负责人",
-      "identities": { "connect": "Boot", "gitlab": "Boot" }
+      "identities": { "connect": "Boot", "gitlab": "Boot" },
+      "skills": ["devops", "infra", "ci", "deployment", "backend", "review", "webhook"]
     },
     {
       "id": "lova",
       "display_name": "Lova",
       "role": "后端开发",
       "bio": "后端 API 开发，Fastify + Drizzle ORM",
-      "identities": { "connect": "lova", "gitlab": "lovazylos" }
+      "identities": { "connect": "lova", "gitlab": "lovazylos" },
+      "skills": ["backend", "api", "database", "auth", "orm"]
     },
     {
       "id": "Lucy",
       "display_name": "Lucy",
       "role": "前端开发",
       "bio": "前端 UI 开发，Next.js + Tailwind + Capacitor",
-      "identities": { "connect": "Lucy", "gitlab": "Lucy" }
+      "identities": { "connect": "Lucy", "gitlab": "Lucy" },
+      "skills": ["frontend", "ui", "ux", "mobile", "capacitor", "react"]
     },
     {
       "id": "Lisa",
       "display_name": "Lisa",
       "role": "设计 / 社交",
       "bio": "信息架构、社交广场设计与 UX 优化",
-      "identities": { "connect": "Lisa", "gitlab": "lisa" }
+      "identities": { "connect": "Lisa", "gitlab": "lisa" },
+      "skills": ["design", "social", "ux", "docs", "information-architecture"]
     },
     {
       "id": "vila",
       "display_name": "Vila",
       "role": "Agent 服务",
       "bio": "Agent 创建、模板、安全模块",
-      "identities": { "connect": "vila", "gitlab": "vilazylos" }
+      "identities": { "connect": "vila", "gitlab": "vilazylos" },
+      "skills": ["agent", "template", "security", "backend", "docs"]
     },
     {
       "id": "domi",
       "display_name": "Domi",
       "role": "安全 / 测试",
       "bio": "安全与隐私模块、数据分类、UX 测试",
-      "identities": { "connect": "domi", "gitlab": "domiclaw" }
+      "identities": { "connect": "domi", "gitlab": "domiclaw" },
+      "skills": ["security", "testing", "privacy", "frontend", "ux"]
     }
   ]
 }

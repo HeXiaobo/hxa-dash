@@ -1,12 +1,16 @@
-// Auto-assign route (#61)
-// POST /api/auto-assign/execute  — reassign a GitLab issue to a new agent
-// GET  /api/auto-assign/history  — return recent auto-assign events
+// Auto-assign route (#61 + #74)
+// POST /api/auto-assign/execute    — reassign a GitLab issue to a new agent
+// GET  /api/auto-assign/history    — return recent auto-assign events
+// POST /api/auto-assign/smart      — skill-aware smart assign (#74)
+// GET  /api/auto-assign/unassigned — list unassigned issues with recommendations (#74)
+// POST /api/auto-assign/claim      — agent self-claims a task (#74)
 const { Router } = require('express');
 const https = require('https');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
+const skillMatcher = require('../skill-matcher');
 
 const router = Router();
 
@@ -129,92 +133,161 @@ router.get('/history', (req, res) => {
   res.json({ events: db.getAutoAssignHistory(limit) });
 });
 
-// POST /api/auto-assign/smart
-// Body: { task_id }  — pick best available agent and assign the issue
-// Returns: { ok, assignee, event } or { error }
+// Helper: look up GitLab user ID by username
+function glFetchUserId(glUsername) {
+  return new Promise((resolve, reject) => {
+    const url = `${gitlabConfig.url}/api/v4/users?username=${encodeURIComponent(glUsername)}&per_page=1`;
+    const mod = url.startsWith('https') ? https : http;
+    const req2 = mod.get(url, { headers: { 'PRIVATE-TOKEN': gitlabConfig.token } }, (r) => {
+      let d = '';
+      r.on('data', c => d += c);
+      r.on('end', () => {
+        try {
+          const users = JSON.parse(d);
+          if (!users || users.length === 0) return reject(new Error(`GitLab user not found: ${glUsername}`));
+          resolve(users[0].id);
+        } catch (e) { reject(e); }
+      });
+    });
+    req2.on('error', reject);
+    req2.setTimeout(10000, () => { req2.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+// Helper: assign a GitLab issue and log the event
+async function assignIssue(project_id, issue_iid, agentName, from, reason) {
+  const glUsername = getGitlabUsername(agentName);
+  const userId = await glFetchUserId(glUsername);
+
+  await gitlabRequest('PUT', `/projects/${project_id}/issues/${issue_iid}`, {
+    assignee_ids: [userId]
+  });
+
+  const event = {
+    ts: Date.now(),
+    project_id,
+    issue_iid,
+    from_agent: from || 'unassigned',
+    to_agent: agentName,
+    reason: reason || 'auto-assign'
+  };
+  db.logAutoAssign(event);
+  return event;
+}
+
+// Helper: parse task_id "issue-{project_id}-{iid}"
+function parseTaskId(task_id) {
+  const parts = task_id.split('-');
+  if (parts.length < 3) return null;
+  const project_id = parseInt(parts[1]);
+  const issue_iid = parseInt(parts[2]);
+  if (isNaN(project_id) || isNaN(issue_iid)) return null;
+  return { project_id, issue_iid };
+}
+
+// POST /api/auto-assign/smart (#74 — skill-aware smart assign)
+// Body: { task_id }  — pick best available agent using skill matching + workload
+// Returns: { ok, assignee, recommendation, event } or { error }
 router.post('/smart', async (req, res) => {
   const { task_id } = req.body || {};
   if (!task_id) return res.status(400).json({ error: 'task_id required' });
 
-  // Lookup task in store
   const task = db.getTask(task_id);
   if (!task) return res.status(404).json({ error: `Task not found: ${task_id}` });
   if (task.type !== 'issue') return res.status(400).json({ error: 'Only issues can be smart-assigned' });
   if (task.state !== 'opened') return res.status(400).json({ error: 'Issue is not open' });
 
-  // Parse project_id and issue_iid from "issue-{project_id}-{iid}"
-  const parts = task_id.split('-');
-  if (parts.length < 3) return res.status(400).json({ error: 'Invalid task_id format' });
-  const project_id = parseInt(parts[1]);
-  const issue_iid = parseInt(parts[2]);
-  if (isNaN(project_id) || isNaN(issue_iid)) {
-    return res.status(400).json({ error: 'Could not parse project_id/iid from task_id' });
+  const parsed = parseTaskId(task_id);
+  if (!parsed) return res.status(400).json({ error: 'Invalid task_id format' });
+
+  // Use skill matcher for recommendation
+  const recommendation = skillMatcher.recommend(task);
+  if (recommendation.candidates.length === 0) {
+    return res.status(503).json({ error: 'No available agents for assignment' });
   }
 
-  // Pick best available agent: online, fewest open assigned issues
-  const allAgents = db.getAllAgents();
-  const now = Date.now();
-  const OFFLINE_MS = 30 * 60 * 1000;
-  const online = allAgents.filter(a => {
-    if (!a.online) return false;
-    if (a.last_seen_at && (now - a.last_seen_at) > OFFLINE_MS) return false;
-    return true;
-  });
-  if (online.length === 0) return res.status(503).json({ error: 'No online agents available' });
-
-  // Score by open assigned issues (fewer = better)
-  const scored = online.map(a => {
-    const tasks = db.getTasksForAgent(a.name, { assigneeOnly: true });
-    const openCount = tasks.filter(t => t.state === 'opened').length;
-    return { agent: a, openCount };
-  }).sort((a, b) => a.openCount - b.openCount);
-
-  const best = scored[0].agent;
-
-  // Resolve GitLab username
-  const glUsername = getGitlabUsername(best.name);
+  const best = recommendation.candidates[0];
 
   try {
-    // Look up GitLab user ID
-    const glFetch = (endpoint) => new Promise((resolve, reject) => {
-      const url = `${gitlabConfig.url}/api/v4${endpoint}`;
-      const mod = url.startsWith('https') ? https : http;
-      const req2 = mod.get(url, { headers: { 'PRIVATE-TOKEN': gitlabConfig.token } }, (r) => {
-        let d = '';
-        r.on('data', c => d += c);
-        r.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });
-      });
-      req2.on('error', reject);
-      req2.setTimeout(10000, () => { req2.destroy(); reject(new Error('timeout')); });
-    });
+    const event = await assignIssue(
+      parsed.project_id, parsed.issue_iid,
+      best.agent, task.assignee || 'unassigned',
+      `smart-assign (score: ${best.score}, skills: ${recommendation.issue_skills.join(',')})`
+    );
 
-    const users = await glFetch(`/users?username=${encodeURIComponent(glUsername)}&per_page=1`);
-    if (!users || users.length === 0) {
-      return res.status(404).json({ error: `GitLab user not found: ${glUsername}` });
-    }
-    const userId = users[0].id;
-
-    // Assign in GitLab
-    await gitlabRequest('PUT', `/projects/${project_id}/issues/${issue_iid}`, {
-      assignee_ids: [userId]
-    });
-
-    const event = {
-      ts: Date.now(),
-      project_id,
-      issue_iid,
-      from_agent: task.assignee || 'unassigned',
-      to_agent: best.name,
-      reason: `smart-assign from dashboard (${scored[0].openCount} open tasks)`
-    };
-    db.logAutoAssign(event);
-
-    console.log(`[SmartAssign] Issue !${issue_iid} (project ${project_id}) → ${best.name} (load: ${scored[0].openCount})`);
-    res.json({ ok: true, assignee: best.name, event });
+    console.log(`[SmartAssign] Issue #${parsed.issue_iid} (project ${parsed.project_id}) → ${best.agent} (score: ${best.score})`);
+    res.json({ ok: true, assignee: best.agent, recommendation, event });
   } catch (err) {
     console.error('[SmartAssign] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/auto-assign/unassigned (#74)
+// Returns all unassigned open issues with recommended assignees
+// Query params: ?project=name (optional filter)
+router.get('/unassigned', (req, res) => {
+  const all = skillMatcher.getUnassignedWithRecommendations();
+  const project = req.query.project;
+  const filtered = project ? all.filter(i => i.project === project) : all;
+  res.json({
+    count: filtered.length,
+    issues: filtered.map(i => ({
+      id: i.id,
+      title: i.title,
+      project: i.project,
+      url: i.url,
+      labels: i.labels,
+      created_at: i.created_at,
+      updated_at: i.updated_at,
+      recommendation: i.recommendation,
+    }))
+  });
+});
+
+// POST /api/auto-assign/claim (#74 — decentralized agent self-claim)
+// Body: { task_id, agent }  — agent claims a task for itself
+// Returns: { ok, event } or { error }
+router.post('/claim', async (req, res) => {
+  const { task_id, agent } = req.body || {};
+  if (!task_id || !agent) return res.status(400).json({ error: 'task_id and agent are required' });
+
+  const task = db.getTask(task_id);
+  if (!task) return res.status(404).json({ error: `Task not found: ${task_id}` });
+  if (task.type !== 'issue') return res.status(400).json({ error: 'Only issues can be claimed' });
+  if (task.state !== 'opened') return res.status(400).json({ error: 'Issue is not open' });
+  if (task.assignee) return res.status(409).json({ error: `Already assigned to ${task.assignee}` });
+
+  const parsed = parseTaskId(task_id);
+  if (!parsed) return res.status(400).json({ error: 'Invalid task_id format' });
+
+  try {
+    const event = await assignIssue(
+      parsed.project_id, parsed.issue_iid,
+      agent, 'unassigned',
+      `self-claim by ${agent}`
+    );
+
+    console.log(`[Claim] Issue #${parsed.issue_iid} claimed by ${agent}`);
+    res.json({ ok: true, event });
+  } catch (err) {
+    console.error('[Claim] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/auto-assign/recommend (#74)
+// Body via query: ?task_id=issue-X-Y
+// Returns recommendation without assigning
+router.get('/recommend', (req, res) => {
+  const task_id = req.query.task_id;
+  if (!task_id) return res.status(400).json({ error: 'task_id query param required' });
+
+  const task = db.getTask(task_id);
+  if (!task) return res.status(404).json({ error: `Task not found: ${task_id}` });
+
+  const recommendation = skillMatcher.recommend(task);
+  res.json({ task_id, title: task.title, recommendation });
 });
 
 module.exports = router;

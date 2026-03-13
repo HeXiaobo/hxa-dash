@@ -323,6 +323,13 @@ const logAutoAssign = ({ ts, project_id, issue_iid, from_agent, to_agent, reason
 
 const getAutoAssignHistory = (limit = 20) => autoAssignEvents.slice(0, limit);
 
+// Unassigned open issues
+const getUnassignedIssues = () => {
+  return [...store.tasks.values()]
+    .filter(t => t.type === 'issue' && t.state === 'opened' && !t.assignee)
+    .sort((a, b) => b.created_at - a.created_at);
+};
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent,
   upsertTask, getTasksByState, getTasksForAgent, getAllTasks, getTask,
@@ -333,4 +340,5 @@ module.exports = {
   getStaleIssues, getUnreviewedMRs, getIdleAgents,
   getWorkloadReport,
   logAutoAssign, getAutoAssignHistory,
+  getUnassignedIssues,
 };

@@ -52,7 +52,7 @@ if (config.entities) {
 connectFetcher.init(config);
 gitlabFetcher.init(config);
 
-// Init auto-assign engine
+// Init auto-assign engine (ws passed after ws.init below)
 autoAssignEngine.init(config);
 
 // Express app
@@ -182,7 +182,8 @@ async function startPolling() {
   };
   ws.sendSnapshot(snapshot);
 
-  // Start auto-assign engine (#61)
+  // Start auto-assign engine (#61 + #74: pass ws for unassigned broadcasts)
+  autoAssignEngine.init(config, ws);
   autoAssignEngine.start();
 
   // Connect polling (30s) — always broadcast so clients stay in sync (#40)

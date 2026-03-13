@@ -68,9 +68,19 @@ function loadFromConfig(entityConfigs) {
       display_name: cfg.display_name || cfg.id,
       role: cfg.role || '',
       bio: cfg.bio || '',
-      kind: cfg.kind || ''
+      kind: cfg.kind || '',
+      skills: cfg.skills || []
     });
   }
+}
+
+/**
+ * Get skills for an entity by canonical ID.
+ * @returns {string[]} Array of skill tags
+ */
+function getSkills(canonicalId) {
+  const e = entities.get(canonicalId);
+  return e?.meta?.skills || [];
 }
 
 /**
@@ -84,4 +94,4 @@ function ensureFromConnect(botName) {
   return botName;
 }
 
-module.exports = { register, resolve, get, getAll, loadFromConfig, ensureFromConnect };
+module.exports = { register, resolve, get, getAll, loadFromConfig, ensureFromConnect, getSkills };
