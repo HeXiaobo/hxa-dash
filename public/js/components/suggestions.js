@@ -1,20 +1,30 @@
-// Action Suggestions Component (#57, #61)
+// Action Suggestions Component (#57, #61, #62)
 // Rule engine: generates next-step recommendations from team/task/event data
+// Phase 2: integrates /api/metrics thresholds for utilization + output signals
 const Suggestions = {
   container: null,
   autoAssignHistory: [],
+  metricsData: null,
 
   init() {
     this.container = document.getElementById('suggestions-list');
     this._loadAutoAssignHistory();
-    // Refresh auto-assign history every 5 minutes
+    this._loadMetrics();
     setInterval(() => this._loadAutoAssignHistory(), 5 * 60 * 1000);
+    setInterval(() => this._loadMetrics(), 5 * 60 * 1000);
   },
 
   _loadAutoAssignHistory() {
     fetch('/api/auto-assign/history?limit=5')
       .then(r => r.json())
       .then(data => { this.autoAssignHistory = data.events || []; })
+      .catch(() => {});
+  },
+
+  _loadMetrics() {
+    fetch('/api/metrics')
+      .then(r => r.json())
+      .then(data => { this.metricsData = data; })
       .catch(() => {});
   },
 
@@ -157,6 +167,55 @@ const Suggestions = {
         score: 50
       });
     }
+
+    // ── Phase 2: Metrics-threshold rules (#62) ───────────────────
+    const m = this.metricsData;
+    if (m && m.team) {
+      const team = m.team;
+
+      // Rule 6: High idle rate (>= 70% idle) with unassigned or backlog issues
+      if (team.idle_pct >= 70 && unassigned.length > 0) {
+        suggestions.push({
+          priority: 'medium',
+          icon: '📊',
+          html: `团队 ${team.idle_pct}% 成员空闲，还有 ${unassigned.length} 个 issue 未分配`,
+          reason: '利用率偏低——建议立即分配积压任务',
+          score: 75
+        });
+      }
+
+      // Rule 7: Throughput drop (this week closed < last week by > 30%)
+      const weekly = team.weekly_closed || [];
+      if (weekly.length >= 2) {
+        const thisWeek = weekly[weekly.length - 1];
+        const lastWeek = weekly[weekly.length - 2];
+        const lastTotal = (lastWeek.issues_closed || 0) + (lastWeek.mrs_merged || 0);
+        const thisTotal = (thisWeek.issues_closed || 0) + (thisWeek.mrs_merged || 0);
+        if (lastTotal > 0 && thisTotal < lastTotal * 0.7) {
+          const drop = Math.round((1 - thisTotal / lastTotal) * 100);
+          suggestions.push({
+            priority: 'high',
+            icon: '📉',
+            html: `本周产出较上周下降 ${drop}%（${thisTotal} vs ${lastTotal} 个任务）`,
+            reason: '检查是否有阻塞项或团队负载不均',
+            score: 85
+          });
+        }
+      }
+
+      // Rule 8: Long cycle time (median > 48h)
+      if (team.cycle_time_median_hours !== null && team.cycle_time_median_hours > 48) {
+        const days = (team.cycle_time_median_hours / 24).toFixed(1);
+        suggestions.push({
+          priority: 'medium',
+          icon: '🐢',
+          html: `issue 平均周期时间 ${days} 天（中位数），偏长`,
+          reason: '考虑拆解大 issue 或清除阻塞项，目标 < 2 天',
+          score: 60
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────
 
     // Sort by score desc
     suggestions.sort((a, b) => b.score - a.score);
