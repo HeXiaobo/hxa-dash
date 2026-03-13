@@ -18,6 +18,7 @@ const reportRoutes = require('./routes/report');
 const statsRoutes = require('./routes/stats');
 const trendsRoutes = require('./routes/trends');
 const myRoutes = require('./routes/my');
+const blockersRoutes = require('./routes/blockers');
 
 const PORT = process.env.PORT || 3479;
 
@@ -63,6 +64,7 @@ app.use('/api/timeline', timelineRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/trends', trendsRoutes);
 app.use('/api/my', myRoutes);
+app.use('/api/blockers', blockersRoutes);
 app.use('/api', reportRoutes.router);
 
 // Graph endpoint (supports ?project= filter)

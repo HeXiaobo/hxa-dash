@@ -244,6 +244,47 @@ const getAgentStats = () => {
 
 const getAllTasks = () => [...store.tasks.values()];
 
+// Blocker detection helpers
+
+// Stale issues: open issues with no activity for more than thresholdMs
+const getStaleIssues = (now, thresholdMs) => {
+  return [...store.tasks.values()]
+    .filter(t => t.type === 'issue' && t.state === 'opened' && (now - t.updated_at) > thresholdMs)
+    .map(t => ({
+      title: t.title,
+      url: t.url,
+      project: t.project,
+      assignee: t.assignee || null,
+      stale_hours: Math.floor((now - t.updated_at) / 3600000),
+    }))
+    .sort((a, b) => b.stale_hours - a.stale_hours);
+};
+
+// Unreviewed MRs: open MRs created more than thresholdMs ago with no reviewer or unapproved
+const getUnreviewedMRs = (now, thresholdMs) => {
+  return [...store.tasks.values()]
+    .filter(t => t.type === 'mr' && t.state === 'opened' && (now - (t.created_at || t.updated_at)) > thresholdMs)
+    .map(t => ({
+      title: t.title,
+      url: t.url,
+      project: t.project,
+      author: t.author || null,
+      hours_open: Math.floor((now - (t.created_at || t.updated_at)) / 3600000),
+    }))
+    .sort((a, b) => b.hours_open - a.hours_open);
+};
+
+// Idle agents: offline agents not seen for more than thresholdMs
+const getIdleAgents = (now, thresholdMs) => {
+  return [...store.agents.values()]
+    .filter(a => !a.online && a.last_seen_at && (now - a.last_seen_at) > thresholdMs)
+    .map(a => ({
+      name: a.name,
+      last_seen_hours: Math.floor((now - a.last_seen_at) / 3600000),
+    }))
+    .sort((a, b) => b.last_seen_hours - a.last_seen_hours);
+};
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent,
   upsertTask, getTasksByState, getTasksForAgent, getAllTasks,
@@ -251,4 +292,5 @@ module.exports = {
   upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent, getTopCollaborator,
   getProjects,
   buildTimeline, buildTrends, getAgentStats,
+  getStaleIssues, getUnreviewedMRs, getIdleAgents,
 };
