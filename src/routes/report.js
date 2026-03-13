@@ -347,4 +347,70 @@ function handleNote(payload, usernameMap, now) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// GET /api/report/summary — Team productivity summary for a given period (#45)
+// Query: ?days=7 (default 7)
+// ---------------------------------------------------------------------------
+router.get('/report/summary', (req, res) => {
+  const days = Math.max(1, Math.min(90, parseInt(req.query.days) || 7));
+  const now = Date.now();
+  const periodStart = now - days * 24 * 60 * 60 * 1000;
+
+  const agents = db.getAllAgents();
+  const board = db.getTasksByState();
+  const allTasks = [...board.todo, ...board.doing, ...board.done];
+
+  // Tasks completed in the period
+  const completedInPeriod = allTasks.filter(t =>
+    (t.state === 'closed' || t.state === 'merged') && t.updated_at > periodStart
+  );
+
+  // Active tasks (currently open with assignee)
+  const activeTasks = allTasks.filter(t => t.state === 'opened' && t.assignee);
+  const totalOpen = allTasks.filter(t => t.state === 'opened').length;
+
+  // Per-agent load
+  const agentLoad = {};
+  for (const t of activeTasks) {
+    agentLoad[t.assignee] = (agentLoad[t.assignee] || 0) + 1;
+  }
+
+  // Bottleneck: agent with most open tasks
+  let bottleneck = null;
+  let maxLoad = 0;
+  for (const [name, count] of Object.entries(agentLoad)) {
+    if (count > maxLoad) { bottleneck = name; maxLoad = count; }
+  }
+
+  // Team utilization: ratio of agents with at least one open task
+  const onlineAgents = agents.filter(a => a.online);
+  const busyAgents = onlineAgents.filter(a => agentLoad[a.name] > 0);
+  const utilization = onlineAgents.length > 0
+    ? Math.round((busyAgents.length / onlineAgents.length) * 100)
+    : 0;
+
+  // Events in period
+  const events = db.getTimeline(500).filter(e => e.timestamp > periodStart);
+
+  res.json({
+    period: { days, from: periodStart, to: now },
+    summary: {
+      total_agents: agents.length,
+      online_agents: onlineAgents.length,
+      total_open_tasks: totalOpen,
+      active_tasks: activeTasks.length,
+      completed_in_period: completedInPeriod.length,
+      utilization_pct: utilization,
+      total_events: events.length,
+      bottleneck: bottleneck ? { agent: bottleneck, open_tasks: maxLoad } : null
+    },
+    per_agent: agents.map(a => ({
+      name: a.name,
+      online: !!a.online,
+      open_tasks: agentLoad[a.name] || 0,
+      completed: completedInPeriod.filter(t => t.assignee === a.name).length
+    }))
+  });
+});
+
 module.exports = { router, init };

@@ -34,11 +34,28 @@ function buildAgents() {
       ? completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length
       : null;
 
+    // Active projects: distinct project names from open assigned tasks (#44)
+    const activeProjects = [...new Set(openTasks.map(t => t.project).filter(p => p && p !== 'unknown'))];
+
+    // Top collaborator (#44)
+    const topCollaborator = db.getTopCollaborator(a.name);
+
+    // Capacity: current open tasks vs max capacity (#44)
+    const maxCapacity = 5;
+    const capacity = { current: openTasks.length, max: maxCapacity };
+
+    // Health score: 0-100 based on activity recency + completion rate + task load balance (#45)
+    const healthScore = computeHealthScore(recentEvents, closedTasks, openTasks, now);
+
     return {
       ...a,
       tags: safeJSON(a.tags),
       online: !!a.online,
       work_status: workStatus,
+      active_projects: activeProjects,
+      top_collaborator: topCollaborator,
+      capacity,
+      health_score: healthScore,
       current_tasks: openTasks.slice(0, 3).map(t => ({
         title: t.title,
         type: t.type,
@@ -109,6 +126,41 @@ router.get('/:name', (req, res) => {
     }
   });
 });
+
+// Compute a 0-100 health score based on activity recency, completion rate, and load balance (#45)
+function computeHealthScore(recentEvents, closedTasks, openTasks, now) {
+  // 1. Activity recency (0-40): how recently was the agent active?
+  let activityScore = 0;
+  if (recentEvents.length > 0) {
+    const latestTs = recentEvents[0].timestamp || 0;
+    const hoursSince = (now - latestTs) / (1000 * 60 * 60);
+    if (hoursSince < 1) activityScore = 40;
+    else if (hoursSince < 6) activityScore = 35;
+    else if (hoursSince < 24) activityScore = 25;
+    else if (hoursSince < 72) activityScore = 15;
+    else if (hoursSince < 168) activityScore = 5;
+    else activityScore = 0;
+  }
+
+  // 2. Completion rate (0-30): ratio of closed tasks to total
+  let completionScore = 0;
+  const totalTasks = closedTasks.length + openTasks.length;
+  if (totalTasks > 0) {
+    const ratio = closedTasks.length / totalTasks;
+    completionScore = Math.round(ratio * 30);
+  }
+
+  // 3. Load balance (0-30): not too few, not too many open tasks
+  let loadScore = 0;
+  const openCount = openTasks.length;
+  if (openCount === 0) loadScore = 10;        // idle — low but not zero
+  else if (openCount <= 3) loadScore = 30;     // healthy load
+  else if (openCount <= 5) loadScore = 20;     // moderate
+  else if (openCount <= 8) loadScore = 10;     // heavy
+  else loadScore = 5;                          // overloaded
+
+  return Math.min(100, activityScore + completionScore + loadScore);
+}
 
 function safeJSON(str) {
   try { return JSON.parse(str); } catch { return []; }

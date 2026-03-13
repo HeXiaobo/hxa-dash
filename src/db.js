@@ -93,6 +93,23 @@ const getCollabEdges = () =>
 const getCollabsForAgent = (name) =>
   [...store.collab_edges.values()].filter(e => e.source === name || e.target === name);
 
+// Get the top collaboration partner for an agent (highest total weight)
+const getTopCollaborator = (name) => {
+  const collabs = getCollabsForAgent(name);
+  if (collabs.length === 0) return null;
+  const partnerWeights = new Map();
+  for (const c of collabs) {
+    const partner = c.source === name ? c.target : c.source;
+    partnerWeights.set(partner, (partnerWeights.get(partner) || 0) + (c.weight || 0));
+  }
+  let topPartner = null;
+  let topWeight = 0;
+  for (const [partner, weight] of partnerWeights) {
+    if (weight > topWeight) { topPartner = partner; topWeight = weight; }
+  }
+  return topPartner ? { name: topPartner, weight: topWeight } : null;
+};
+
 // Project list (derived from tasks)
 const getProjects = () => {
   const projects = new Set();
@@ -106,6 +123,6 @@ module.exports = {
   upsertAgent, getAllAgents, getAgent,
   upsertTask, getTasksByState, getTasksForAgent,
   insertEvent, getTimeline, getEventsForAgent,
-  upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent,
+  upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent, getTopCollaborator,
   getProjects
 };
