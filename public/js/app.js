@@ -1,4 +1,39 @@
-// HxA Dash — Main Application (v2: Multi-page + Agent Filtering)
+// HxA Dash — Main Application (v3: Incremental updates + progress bar — #43)
+
+// Progress bar controller (#43)
+const Progress = {
+  _el: null,
+  _timer: null,
+
+  _bar() {
+    if (!this._el) this._el = document.getElementById('progress-bar');
+    return this._el;
+  },
+
+  show() {
+    const bar = this._bar();
+    if (!bar) return;
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    bar.classList.add('active');
+    requestAnimationFrame(() => {
+      bar.style.transition = 'width .4s ease, opacity .3s ease';
+      bar.style.width = '70%';
+    });
+  },
+
+  done() {
+    const bar = this._bar();
+    if (!bar) return;
+    bar.style.transition = 'width .2s ease, opacity .4s ease .15s';
+    bar.style.width = '100%';
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => {
+      bar.classList.remove('active');
+      bar.style.width = '0%';
+    }, 600);
+  }
+};
 
 // Base path detection (works behind reverse proxy with path stripping)
 const BASE = (() => {
@@ -149,6 +184,7 @@ const App = {
 
   // --- Data Fetching ---
   async fetchAll() {
+    Progress.show();
     try {
       const [teamRes, boardRes, timelineRes, graphRes] = await Promise.all([
         fetch(`${BASE}/api/team`),
@@ -187,8 +223,10 @@ const App = {
       } catch {}
 
       this.updateTimestamp();
+      Progress.done();
       this.renderAllPages();
     } catch (err) {
+      Progress.done();
       console.error('Fetch error:', err);
     }
   },

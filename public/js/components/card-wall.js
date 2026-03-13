@@ -1,8 +1,30 @@
-// Agent Card Wall Component (v2: supports multiple render targets)
+// Agent Card Wall Component (v3: incremental DOM updates — #43)
 const CardWall = {
   init() {},
 
-  // Render to a specific container
+  // Fingerprint for detecting meaningful changes (online state, work status, tasks, stats)
+  _fingerprint(agent) {
+    const tasks = (agent.current_tasks || []).map(t => t.title).join('|');
+    const s = agent.stats || {};
+    return [
+      agent.online ? 1 : 0,
+      agent.work_status || '',
+      agent.role || '',
+      agent.bio || '',
+      tasks,
+      s.open_tasks, s.closed_tasks, s.mr_count, s.issue_count,
+      s.closed_last_7d, s.closed_last_30d,
+      (agent.capacity || {}).current, (agent.capacity || {}).max,
+      agent.health_score,
+      agent.last_seen_at,
+      (agent.latest_event || {}).target_title,
+      (agent.active_projects || []).join('|'),
+      (agent.tags || []).join('|'),
+      (agent.top_collaborator || {}).name
+    ].join('\x1f');
+  },
+
+  // Render to a specific container — incremental update (#43)
   renderTo(containerId, statsId, agents) {
     const container = document.getElementById(containerId);
     const statsEl = document.getElementById(statsId);
@@ -14,18 +36,56 @@ const CardWall = {
       return (a.name || '').localeCompare(b.name || '');
     });
 
-    container.innerHTML = sorted.map(agent => this.cardHTML(agent)).join('');
+    const newNames = sorted.map(a => a.name);
+    const existingCards = new Map();
+    container.querySelectorAll('.agent-card[data-name]').forEach(el => {
+      existingCards.set(el.dataset.name, el);
+    });
+
+    // Remove cards no longer in the list
+    for (const [name, el] of existingCards) {
+      if (!newNames.includes(name)) el.remove();
+    }
+
+    // Insert / update cards in correct order
+    sorted.forEach((agent, idx) => {
+      const existing = existingCards.get(agent.name);
+      const fp = this._fingerprint(agent);
+
+      if (!existing) {
+        // New card — insert at correct position and animate in
+        const el = document.createElement('div');
+        el.innerHTML = this.cardHTML(agent);
+        const card = el.firstElementChild;
+        card.classList.add('card-enter');
+        card.setAttribute('data-fp', fp);
+        const ref = container.children[idx];
+        container.insertBefore(card, ref || null);
+        card.addEventListener('click', () => DetailDrawer.open(card.dataset.name));
+      } else {
+        // Move to correct position if needed
+        const currentIdx = Array.from(container.children).indexOf(existing);
+        if (currentIdx !== idx) {
+          const ref = container.children[idx];
+          container.insertBefore(existing, ref || null);
+        }
+
+        // Update content only if fingerprint changed
+        if (existing.getAttribute('data-fp') !== fp) {
+          const el = document.createElement('div');
+          el.innerHTML = this.cardHTML(agent);
+          const newCard = el.firstElementChild;
+          newCard.setAttribute('data-fp', fp);
+          newCard.classList.add('card-flash');
+          existing.replaceWith(newCard);
+          newCard.addEventListener('click', () => DetailDrawer.open(newCard.dataset.name));
+        }
+      }
+    });
 
     // Stats (HxA Friendly #58: unified Human+Agent language)
     const active = agents.filter(a => a.online).length;
     if (statsEl) statsEl.textContent = `${active} 活跃 / ${agents.length} 成员`;
-
-    // Click handlers
-    container.querySelectorAll('.agent-card').forEach(card => {
-      card.addEventListener('click', () => {
-        DetailDrawer.open(card.dataset.name);
-      });
-    });
   },
 
   cardHTML(agent) {
@@ -46,25 +106,21 @@ const CardWall = {
     const statusLabels = { busy: '🔴 繁忙', idle: '🟢 空闲', offline: '⚫ 离线' };
     const statusLabel = statusLabels[workStatus] || statusLabels.offline;
 
-    // Health score indicator (#45)
     const hs = agent.health_score != null ? agent.health_score : null;
     const hsClass = hs != null ? (hs > 70 ? 'health-green' : hs >= 40 ? 'health-yellow' : 'health-red') : '';
     const healthHTML = hs != null
       ? `<span class="health-dot ${hsClass}" title="健康分: ${hs}"></span>`
       : '';
 
-    // Last seen prominently for offline agents (#44)
     const lastSeenHTML = (!agent.online && lastSeen)
       ? `<div class="card-last-seen">最后活跃: ${lastSeen}</div>`
       : '';
 
-    // Tags / specialization badges (#44)
     const tags = agent.tags || [];
     const tagsHTML = tags.length > 0
       ? `<div class="card-tags">${tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div>`
       : '';
 
-    // Capacity bar (#44) — default max matches backend DEFAULT_MAX_CAPACITY
     const cap = agent.capacity || { current: 0, max: 5 };
     const capPct = cap.max > 0 ? Math.min(100, Math.round((cap.current / cap.max) * 100)) : 0;
     const capClass = capPct > 80 ? 'cap-high' : capPct > 50 ? 'cap-mid' : 'cap-low';
@@ -75,19 +131,16 @@ const CardWall = {
       </div>
     `;
 
-    // Active projects (#44)
     const activeProjects = agent.active_projects || [];
     const projectsHTML = activeProjects.length > 0
       ? `<div class="card-active-projects">${activeProjects.map(p => `<span class="project-badge">${esc(p)}</span>`).join('')}</div>`
       : '';
 
-    // Top collaborator (#44)
     const topCollab = agent.top_collaborator;
     const collabHTML = topCollab
       ? `<div class="card-top-collab" title="最佳拍档 (权重 ${topCollab.weight})">🤝 ${esc(topCollab.name)}</div>`
       : '';
 
-    // Stats bar: quick glance numbers
     const statsHTML = `
       <div class="card-stats">
         <span class="card-stat" title="进行中任务">📋 ${stats.open_tasks || 0}</span>
@@ -97,7 +150,6 @@ const CardWall = {
       </div>
     `;
 
-    // Historical stats (collapsible, #39)
     const avgTime = stats.avg_completion_ms ? this.formatDuration(stats.avg_completion_ms) : '—';
     const historyHTML = (stats.closed_last_7d != null || stats.closed_last_30d != null) ? `
       <details class="card-history" onclick="event.stopPropagation()">
@@ -110,7 +162,6 @@ const CardWall = {
       </details>
     ` : '';
 
-    // Latest activity
     const activityHTML = latestEvent ? `
       <div class="card-latest-activity" title="${latestEvent.project || ''}">
         <span class="activity-action">${esc(latestEvent.action || '')}</span>
@@ -119,7 +170,6 @@ const CardWall = {
       </div>
     ` : '';
 
-    // Current tasks with clickable GitLab links (#38)
     const tasksHTML = tasks.length > 0 ? `
       <div class="agent-tasks-preview">
         ${tasks.slice(0, 2).map(t => {

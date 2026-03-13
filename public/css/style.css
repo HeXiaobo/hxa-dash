@@ -901,3 +901,27 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .sug-link { color: var(--accent); text-decoration: none; }
 .sug-link:hover { text-decoration: underline; }
 .sug-reason { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+/* Progress bar (#43) */
+#progress-bar {
+  position: fixed; top: 0; left: 0; z-index: 9999;
+  height: 2px; width: 0%; background: var(--accent);
+  transition: width .25s ease, opacity .3s ease;
+  opacity: 0; pointer-events: none;
+}
+#progress-bar.active { opacity: 1; }
+
+/* Card enter animation (#43) */
+@keyframes cardEnter {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+.card-enter { animation: cardEnter .2s ease forwards; }
+
+/* Card update flash (#43) */
+@keyframes cardFlash {
+  0%   { background: var(--bg-card); }
+  40%  { background: rgba(88,166,255,.14); }
+  100% { background: var(--bg-card); }
+}
+.card-flash { animation: cardFlash .5s ease; }
