@@ -1,32 +1,62 @@
-// Blocker Detection Component (#56)
+// Blocker Detection Component (#56, #63, #68)
 // Displays stale issues, unreviewed MRs, and silent agents as alerts
 const Blockers = {
   section: null,
   list: null,
   countEl: null,
+  defEl: null,
   _data: [],
+  _collapsed: false,
 
   init() {
     this.section = document.getElementById('blocker-section');
     this.list = document.getElementById('blocker-list');
     this.countEl = document.getElementById('blocker-count');
+    this.defEl = document.getElementById('blocker-definitions');
+    // Toggle collapse on header click
+    const header = this.section && this.section.querySelector('.section-header');
+    if (header) {
+      header.style.cursor = 'pointer';
+      header.addEventListener('click', () => this._toggle());
+    }
+  },
+
+  _toggle() {
+    this._collapsed = !this._collapsed;
+    if (this.list) this.list.classList.toggle('hidden', this._collapsed);
+    if (this.defEl) this.defEl.classList.toggle('hidden', this._collapsed);
+    const arrow = this.section && this.section.querySelector('.blocker-toggle');
+    if (arrow) arrow.textContent = this._collapsed ? '▸' : '▾';
   },
 
   // Render blockers from API data or computed locally
-  render(blockers) {
+  render(blockers, thresholds) {
     this._data = blockers || [];
     if (!this.section || !this.list) return;
+
+    // Update definitions tooltip with thresholds
+    if (this.defEl) {
+      const t = thresholds || { stale_issue_hours: 72, unreviewed_mr_hours: 24, idle_agent_hours: 4 };
+      this.defEl.innerHTML =
+        `<span>🔴 Issue 超过 ${t.stale_issue_hours}h 无更新</span>` +
+        `<span>🟡 MR 开启超过 ${t.unreviewed_mr_hours}h 未 review</span>` +
+        `<span>⚫ Agent 离线超过 ${t.idle_agent_hours}h</span>`;
+    }
 
     if (this._data.length === 0) {
       this.section.classList.remove('hidden');
       this.section.classList.add('blocker-clear');
-      this.list.innerHTML = '<div class="blocker-ok">✅ 团队运转正常</div>';
-      this.countEl.textContent = '';
+      this.list.innerHTML = '';
+      this.countEl.textContent = '无卡点';
+      // Auto-collapse when no blockers (#68)
+      if (!this._collapsed) this._toggle();
       return;
     }
 
     this.section.classList.remove('hidden', 'blocker-clear');
     this.countEl.textContent = `${this._data.length} 项`;
+    // Auto-expand when there are blockers
+    if (this._collapsed) this._toggle();
 
     // Sort: critical > warning > info
     const order = { critical: 0, warning: 1, info: 2 };
@@ -61,8 +91,8 @@ const Blockers = {
     const now = Date.now();
     const blockers = [];
 
-    // 1. Stale issues: opened > 72h with no recent event
-    const openIssues = tasks.filter(t => t.state === 'opened' && t.type === 'issue');
+    // 1. Stale issues: opened > 72h with no recent event (exclude ClawMark feedback)
+    const openIssues = tasks.filter(t => t.state === 'opened' && t.type === 'issue' && !(t.title && t.title.startsWith('[ClawMark]')));
     for (const issue of openIssues) {
       const lastActivity = this._lastEventFor(events, issue.title) || issue.updated_at || issue.created_at;
       const hoursStale = (now - lastActivity) / (1000 * 60 * 60);

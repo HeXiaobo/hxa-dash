@@ -22,19 +22,29 @@ router.get('/', (req, res) => {
   const unreviewed_mrs = db.getUnreviewedMRs(now, mrThresholdMs);
   const idle_agents = db.getIdleAgents(now, agentThresholdMs);
 
+  // Filter out ClawMark comment issues — they're feedback annotations, not actionable work items
+  const actionable_issues = stale_issues.filter(i =>
+    !i.title || !i.title.startsWith('[ClawMark]')
+  );
+
   // Flat blockers array for frontend consumption (compatible with Domi's #56 UI)
   const blockers = [
-    ...stale_issues.map(i => ({ severity: 'critical', type: 'stale_issue', type_label: '停滞 Issue', title: i.title, url: i.url, assignee: i.assignee, project: i.project, stale_hours: i.stale_hours })),
+    ...actionable_issues.map(i => ({ severity: 'critical', type: 'stale_issue', type_label: '停滞 Issue', title: i.title, url: i.url, assignee: i.assignee, project: i.project, stale_hours: i.stale_hours })),
     ...unreviewed_mrs.map(m => ({ severity: 'warning', type: 'unreviewed_mr', type_label: '无人 Review MR', title: m.title, url: m.url, assignee: m.author, project: m.project, stale_hours: m.hours_open })),
     ...idle_agents.map(a => ({ severity: 'info', type: 'silent_agent', type_label: '失联 Agent', title: a.name, url: null, assignee: a.name, project: null, stale_hours: a.last_seen_hours })),
   ];
 
   res.json({
-    stale_issues,
+    stale_issues: actionable_issues,
     unreviewed_mrs,
     idle_agents,
-    total: stale_issues.length + unreviewed_mrs.length + idle_agents.length,
+    total: actionable_issues.length + unreviewed_mrs.length + idle_agents.length,
     blockers,
+    thresholds: {
+      stale_issue_hours: threshold_issue_h,
+      unreviewed_mr_hours: threshold_mr_h,
+      idle_agent_hours: threshold_agent_h,
+    },
   });
 });
 

@@ -384,13 +384,13 @@ const App = {
   },
 
   // --- Filter Helpers ---
-  // Blocker detection — try API first, fallback to local computation (#56)
+  // Blocker detection — try API first, fallback to local computation (#56, #63, #68)
   async _renderBlockers(agents) {
     try {
       const res = await fetch(`${BASE}/api/blockers`);
       if (res.ok) {
         const data = await res.json();
-        Blockers.render(data.blockers || []);
+        Blockers.render(data.blockers || [], data.thresholds);
         return;
       }
     } catch (_) { /* API not available, fallback */ }

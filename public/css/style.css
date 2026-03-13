@@ -827,10 +827,12 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .at-link:hover { text-decoration: underline; }
 .at-project { font-size: 10px; color: var(--text-secondary); background: rgba(255,255,255,.06); border-radius: 3px; padding: 0 4px; flex-shrink: 0; }
 
-/* Blocker Detection (#56) */
+/* Blocker Detection (#56, #63, #68) */
 .blocker-section { border: 1px solid var(--red); border-radius: 8px; background: rgba(248,81,73,.04); }
-.blocker-section.blocker-clear { border-color: var(--green); background: rgba(63,185,80,.04); }
-.blocker-ok { text-align: center; padding: 12px; color: var(--green); font-size: 14px; }
+.blocker-section.blocker-clear { border-color: var(--border); background: rgba(255,255,255,.02); }
+.blocker-toggle { font-size: 12px; margin-right: 4px; display: inline-block; width: 12px; }
+.blocker-definitions { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 16px 8px; font-size: 11px; color: var(--text-secondary); }
+.blocker-definitions span { white-space: nowrap; }
 .blocker-list { display: flex; flex-direction: column; gap: 6px; }
 .blocker-item {
   display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px;
