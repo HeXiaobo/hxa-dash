@@ -15,6 +15,7 @@ const boardRoutes = require('./routes/board');
 const { buildBoard } = boardRoutes;
 const timelineRoutes = require('./routes/timeline');
 const reportRoutes = require('./routes/report');
+const statsRoutes = require('./routes/stats');
 
 const PORT = process.env.PORT || 3479;
 
@@ -57,6 +58,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api/team', teamRoutes);
 app.use('/api/board', boardRoutes);
 app.use('/api/timeline', timelineRoutes);
+app.use('/api/stats', statsRoutes);
 app.use('/api', reportRoutes.router);
 
 // Graph endpoint (supports ?project= filter)

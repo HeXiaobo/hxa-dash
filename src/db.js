@@ -119,10 +119,134 @@ const getProjects = () => {
   return [...projects].sort();
 };
 
+// Stats helpers
+
+// Events within a time window, optionally filtered by agent
+const getEventsInWindow = (sinceMs, agent = null) => {
+  let events = store.events.filter(e => e.timestamp >= sinceMs);
+  if (agent) events = events.filter(e => e.agent === agent);
+  return events;
+};
+
+// Tasks closed/merged within a time window, optionally filtered by agent
+const getTasksClosedInWindow = (sinceMs, agent = null) => {
+  return [...store.tasks.values()].filter(t => {
+    const closed = t.state === 'closed' || t.state === 'merged';
+    const inWindow = t.updated_at >= sinceMs;
+    const matchAgent = !agent || t.assignee === agent || t.author === agent;
+    return closed && inWindow && matchAgent;
+  });
+};
+
+// Build time buckets (day or hour granularity) for event histogram
+const buildTimeline = (sinceMs, agent = null, granularity = 'day') => {
+  const events = getEventsInWindow(sinceMs, agent);
+  const bucketMs = granularity === 'hour' ? 3600000 : 86400000;
+  const bucketMap = new Map();
+
+  for (const e of events) {
+    const key = Math.floor(e.timestamp / bucketMs) * bucketMs;
+    if (!bucketMap.has(key)) bucketMap.set(key, { timestamp: key, actions: {}, total: 0 });
+    const b = bucketMap.get(key);
+    b.actions[e.action] = (b.actions[e.action] || 0) + 1;
+    b.total++;
+  }
+
+  // Fill empty buckets from sinceMs to now
+  const now = Date.now();
+  for (let t = Math.floor(sinceMs / bucketMs) * bucketMs; t <= now; t += bucketMs) {
+    if (!bucketMap.has(t)) bucketMap.set(t, { timestamp: t, actions: {}, total: 0 });
+  }
+
+  return [...bucketMap.values()]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map(b => ({
+      ...b,
+      events: Object.entries(b.actions).map(([action, count]) => ({ action, count }))
+    }));
+};
+
+// Build trend series: per-day count for a given action filter
+const buildTrends = (days = 7) => {
+  const sinceMs = Date.now() - days * 86400000;
+  const events = getEventsInWindow(sinceMs);
+  const tasks = [...store.tasks.values()];
+
+  // Per-day buckets
+  const dayMap = new Map();
+  const addDay = (ts) => {
+    const key = Math.floor(ts / 86400000) * 86400000;
+    if (!dayMap.has(key)) dayMap.set(key, { timestamp: key, commits: 0, comments: 0, issues_opened: 0, issues_closed: 0, mrs_merged: 0 });
+    return dayMap.get(key);
+  };
+
+  // Fill all days first
+  const now = Date.now();
+  for (let t = Math.floor(sinceMs / 86400000) * 86400000; t <= now; t += 86400000) addDay(t);
+
+  for (const e of events) {
+    const b = addDay(e.timestamp);
+    if (e.action === 'pushed') b.commits++;
+    else if (e.action === 'commented') b.comments++;
+    else if (e.action === 'issue_opened') b.issues_opened++;
+    else if (e.action === 'issue_closed') b.issues_closed++;
+    else if (e.action === 'mr_merged') b.mrs_merged++;
+  }
+
+  // Per-agent summary over the window
+  const agentNames = [...store.agents.keys()];
+  const agentStats = agentNames.map(name => {
+    const agentEvents = events.filter(e => e.agent === name);
+    const closed = tasks.filter(t =>
+      (t.state === 'closed' || t.state === 'merged') &&
+      t.updated_at >= sinceMs &&
+      (t.assignee === name || t.author === name)
+    );
+    return {
+      name,
+      commits: agentEvents.filter(e => e.action === 'pushed').length,
+      comments: agentEvents.filter(e => e.action === 'commented').length,
+      issues_closed: closed.filter(t => t.type === 'issue').length,
+      mrs_merged: closed.filter(t => t.type === 'mr').length,
+      total_events: agentEvents.length,
+    };
+  }).sort((a, b) => b.total_events - a.total_events);
+
+  return {
+    buckets: [...dayMap.values()].sort((a, b) => a.timestamp - b.timestamp),
+    agents: agentStats,
+  };
+};
+
+// Per-agent detailed stats snapshot
+const getAgentStats = () => {
+  const tasks = [...store.tasks.values()];
+  const thirtyDaysAgo = Date.now() - 30 * 86400000;
+  const recentEvents = store.events.filter(e => e.timestamp >= thirtyDaysAgo);
+
+  return [...store.agents.values()].map(agent => {
+    const agentTasks = tasks.filter(t => t.assignee === agent.name || t.author === agent.name);
+    const agentEvents = recentEvents.filter(e => e.agent === agent.name);
+    const lastEvent = agentEvents[0]; // sorted desc
+
+    return {
+      name: agent.name,
+      online: agent.online,
+      last_seen_at: agent.last_seen_at,
+      last_active: lastEvent?.timestamp || null,
+      open_tasks: agentTasks.filter(t => t.state === 'opened').length,
+      closed_tasks: agentTasks.filter(t => t.state === 'closed' || t.state === 'merged').length,
+      mr_count: agentTasks.filter(t => t.type === 'mr').length,
+      event_count_30d: agentEvents.length,
+    };
+  }).sort((a, b) => b.event_count_30d - a.event_count_30d);
+};
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent,
   upsertTask, getTasksByState, getTasksForAgent,
   insertEvent, getTimeline, getEventsForAgent,
   upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent, getTopCollaborator,
-  getProjects
+  getProjects,
+  buildTimeline, buildTrends, getAgentStats,
 };
