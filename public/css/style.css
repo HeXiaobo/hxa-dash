@@ -614,6 +614,93 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   .nav-item { white-space: nowrap; font-size: 12px; padding: 5px 10px; }
 }
 
+/* Health Score Dot (#45) */
+.health-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 6px; flex-shrink: 0;
+}
+.health-dot.health-green { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.health-dot.health-yellow { background: var(--orange); box-shadow: 0 0 4px var(--orange); }
+.health-dot.health-red { background: var(--red); box-shadow: 0 0 4px var(--red); }
+
+/* Card top-left layout for health dot + name */
+.card-top-left { display: flex; align-items: center; min-width: 0; }
+
+/* Last seen for offline agents (#44) */
+.card-last-seen {
+  font-size: 11px; color: var(--orange); margin-top: 4px; font-weight: 500;
+}
+
+/* Tags / specialization badges (#44) */
+.card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.tag-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  background: rgba(188,140,255,.15); color: var(--purple); font-weight: 500;
+}
+
+/* Capacity bar (#44) */
+.card-capacity {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px;
+}
+.cap-label { color: var(--text-secondary); min-width: 28px; white-space: nowrap; }
+.cap-bar {
+  flex: 1; height: 4px; background: rgba(255,255,255,.08); border-radius: 2px;
+  overflow: hidden;
+}
+.cap-fill { height: 100%; border-radius: 2px; transition: width .3s ease; }
+.cap-fill.cap-low { background: var(--green); }
+.cap-fill.cap-mid { background: var(--orange); }
+.cap-fill.cap-high { background: var(--red); }
+
+/* Active projects badges (#44) */
+.card-active-projects { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.project-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 8px;
+  background: rgba(88,166,255,.12); color: var(--accent); font-weight: 500;
+}
+
+/* Top collaborator (#44) */
+.card-top-collab {
+  font-size: 11px; color: var(--text-secondary); margin-top: 4px;
+}
+
+/* Team Capacity Overview (#45) */
+.team-capacity-section {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 20px;
+}
+.team-capacity-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
+}
+.tc-stat-box {
+  background: var(--bg); border-radius: var(--radius); padding: 14px; text-align: center;
+}
+.tc-stat-num { font-size: 24px; font-weight: 700; color: var(--accent); }
+.tc-stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+.tc-stat-num.tc-warn { color: var(--orange); }
+.tc-stat-num.tc-danger { color: var(--red); }
+
+.tc-utilization-bar {
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.tc-util-header {
+  display: flex; justify-content: space-between; font-size: 12px;
+  color: var(--text-secondary); margin-bottom: 4px;
+}
+.tc-util-track {
+  height: 8px; background: rgba(255,255,255,.08); border-radius: 4px; overflow: hidden;
+}
+.tc-util-fill { height: 100%; border-radius: 4px; transition: width .3s ease; }
+.tc-util-fill.util-low { background: var(--green); }
+.tc-util-fill.util-mid { background: var(--orange); }
+.tc-util-fill.util-high { background: var(--red); }
+
+.tc-bottleneck {
+  margin-top: 10px; font-size: 12px; padding: 8px 10px;
+  background: rgba(248,81,73,.08); border-radius: 6px;
+  color: var(--red); display: flex; align-items: center; gap: 6px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }

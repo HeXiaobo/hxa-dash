@@ -40,6 +40,47 @@ const CardWall = {
     const statusLabels = { busy: '🔴 繁忙', idle: '🟢 空闲', offline: '⚫ 离线' };
     const statusLabel = statusLabels[workStatus] || statusLabels.offline;
 
+    // Health score indicator (#45)
+    const hs = agent.health_score != null ? agent.health_score : null;
+    const hsClass = hs != null ? (hs > 70 ? 'health-green' : hs >= 40 ? 'health-yellow' : 'health-red') : '';
+    const healthHTML = hs != null
+      ? `<span class="health-dot ${hsClass}" title="健康分: ${hs}"></span>`
+      : '';
+
+    // Last seen prominently for offline agents (#44)
+    const lastSeenHTML = (!agent.online && lastSeen)
+      ? `<div class="card-last-seen">最后活跃: ${lastSeen}</div>`
+      : '';
+
+    // Tags / specialization badges (#44)
+    const tags = agent.tags || [];
+    const tagsHTML = tags.length > 0
+      ? `<div class="card-tags">${tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div>`
+      : '';
+
+    // Capacity bar (#44)
+    const cap = agent.capacity || { current: 0, max: 5 };
+    const capPct = Math.min(100, Math.round((cap.current / cap.max) * 100));
+    const capClass = capPct > 80 ? 'cap-high' : capPct > 50 ? 'cap-mid' : 'cap-low';
+    const capacityHTML = `
+      <div class="card-capacity" title="负载: ${cap.current}/${cap.max}">
+        <span class="cap-label">${cap.current}/${cap.max}</span>
+        <div class="cap-bar"><div class="cap-fill ${capClass}" style="width:${capPct}%"></div></div>
+      </div>
+    `;
+
+    // Active projects (#44)
+    const activeProjects = agent.active_projects || [];
+    const projectsHTML = activeProjects.length > 0
+      ? `<div class="card-active-projects">${activeProjects.map(p => `<span class="project-badge">${esc(p)}</span>`).join('')}</div>`
+      : '';
+
+    // Top collaborator (#44)
+    const topCollab = agent.top_collaborator;
+    const collabHTML = topCollab
+      ? `<div class="card-top-collab" title="最佳拍档 (权重 ${topCollab.weight})">🤝 ${esc(topCollab.name)}</div>`
+      : '';
+
     // Stats bar: quick glance numbers
     const statsHTML = `
       <div class="card-stats">
@@ -90,11 +131,16 @@ const CardWall = {
     return `
       <div class="agent-card ${onlineClass}" data-name="${esc(agent.name)}">
         <div class="card-top">
-          <span class="agent-name">${esc(agent.name)}</span>
+          <div class="card-top-left">${healthHTML}<span class="agent-name">${esc(agent.name)}</span></div>
           <span class="work-status-badge ${workStatus}" title="${workStatus}">${statusLabel}</span>
         </div>
         <div class="agent-role">${esc(agent.role || '—')}</div>
         ${agent.bio ? `<div class="agent-bio">${esc(truncate(agent.bio, 60))}</div>` : ''}
+        ${lastSeenHTML}
+        ${tagsHTML}
+        ${capacityHTML}
+        ${projectsHTML}
+        ${collabHTML}
         ${statsHTML}
         ${historyHTML}
         ${tasksHTML}

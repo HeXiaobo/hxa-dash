@@ -207,6 +207,9 @@ const App = {
       ? this.data.team.filter(a => filter.has(a.name))
       : this.data.team;
 
+    // Team Capacity (#45)
+    TeamCapacity.render(agents);
+
     // Cards
     CardWall.renderTo('overview-agent-cards', 'overview-team-stats', agents);
 
