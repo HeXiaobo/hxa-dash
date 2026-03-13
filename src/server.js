@@ -52,8 +52,7 @@ if (config.entities) {
 connectFetcher.init(config);
 gitlabFetcher.init(config);
 
-// Init auto-assign engine
-autoAssignEngine.init(config);
+// Auto-assign engine initialized in startPolling() with ws reference
 
 // Express app
 const app = express();
@@ -85,6 +84,8 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     uptime_seconds: Math.floor(process.uptime()),
+    clients: ws.getClientCount(),
+    timestamp: Date.now(),
     data: {
       agents_loaded: agents.length,
       tasks_loaded: tasks.length,
@@ -108,16 +109,6 @@ app.get('/api/graph', (req, res) => {
 // Projects endpoint
 app.get('/api/projects', (req, res) => {
   res.json({ projects: db.getProjects() });
-});
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    uptime: process.uptime(),
-    clients: ws.getClientCount(),
-    timestamp: Date.now()
-  });
 });
 
 // Init report routes (needs ws + config)
@@ -182,7 +173,8 @@ async function startPolling() {
   };
   ws.sendSnapshot(snapshot);
 
-  // Start auto-assign engine (#61)
+  // Start auto-assign engine (#61 + #74: pass ws for unassigned broadcasts)
+  autoAssignEngine.init(config, ws);
   autoAssignEngine.start();
 
   // Connect polling (30s) — always broadcast so clients stay in sync (#40)
