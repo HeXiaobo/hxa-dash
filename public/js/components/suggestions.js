@@ -1,18 +1,30 @@
-// Action Suggestions Component (#57)
+// Action Suggestions Component (#57, #61)
 // Rule engine: generates next-step recommendations from team/task/event data
 const Suggestions = {
   container: null,
+  autoAssignHistory: [],
 
   init() {
     this.container = document.getElementById('suggestions-list');
+    this._loadAutoAssignHistory();
+    // Refresh auto-assign history every 5 minutes
+    setInterval(() => this._loadAutoAssignHistory(), 5 * 60 * 1000);
+  },
+
+  _loadAutoAssignHistory() {
+    fetch('/api/auto-assign/history?limit=5')
+      .then(r => r.json())
+      .then(data => { this.autoAssignHistory = data.events || []; })
+      .catch(() => {});
   },
 
   // Generate and render suggestions
   render(agents, tasks, events) {
     if (!this.container) return;
     const suggestions = this.generate(agents, tasks, events);
+    const historyItems = this._renderAutoAssignHistory();
 
-    if (suggestions.length === 0) {
+    if (suggestions.length === 0 && historyItems === '') {
       this.container.innerHTML = '<div class="sug-empty">✅ 暂无待办建议，团队状态良好</div>';
       return;
     }
@@ -26,7 +38,25 @@ const Suggestions = {
           ${s.reason ? `<div class="sug-reason">${esc(s.reason)}</div>` : ''}
         </div>
       </div>
-    `).join('');
+    `).join('') + historyItems;
+  },
+
+  _renderAutoAssignHistory() {
+    if (!this.autoAssignHistory || this.autoAssignHistory.length === 0) return '';
+    const items = this.autoAssignHistory.map(e => {
+      const when = e.ts ? new Date(e.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+      return `
+        <div class="sug-item sug-info">
+          <span class="sug-rank">—</span>
+          <span class="sug-icon">🔄</span>
+          <div class="sug-body">
+            <div class="sug-text">自动重分配: Issue !${esc(String(e.issue_iid))} → <strong>${esc(e.to_agent)}</strong></div>
+            <div class="sug-reason">${esc(e.from_agent)} → ${esc(e.to_agent)}${when ? ' · ' + when : ''}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    return `<div class="sug-section-header" style="padding:4px 8px;font-size:11px;color:#888;margin-top:6px;">最近自动重分配</div>${items}`;
   },
 
   // Rule engine: produce sorted suggestions

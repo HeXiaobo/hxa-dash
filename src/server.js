@@ -19,6 +19,8 @@ const statsRoutes = require('./routes/stats');
 const trendsRoutes = require('./routes/trends');
 const myRoutes = require('./routes/my');
 const blockersRoutes = require('./routes/blockers');
+const autoAssignRoutes = require('./routes/auto-assign');
+const autoAssignEngine = require('./auto-assign-engine');
 
 const PORT = process.env.PORT || 3479;
 
@@ -47,6 +49,9 @@ if (config.entities) {
 connectFetcher.init(config);
 gitlabFetcher.init(config);
 
+// Init auto-assign engine
+autoAssignEngine.init(config);
+
 // Express app
 const app = express();
 const server = http.createServer(app);
@@ -65,6 +70,7 @@ app.use('/api/stats', statsRoutes);
 app.use('/api/trends', trendsRoutes);
 app.use('/api/my', myRoutes);
 app.use('/api/blockers', blockersRoutes);
+app.use('/api/auto-assign', autoAssignRoutes);
 app.use('/api', reportRoutes.router);
 
 // Graph endpoint (supports ?project= filter)
@@ -151,6 +157,9 @@ async function startPolling() {
     graph: collab.getGraph()
   };
   ws.sendSnapshot(snapshot);
+
+  // Start auto-assign engine (#61)
+  autoAssignEngine.start();
 
   // Connect polling (30s) — always broadcast so clients stay in sync (#40)
   setInterval(async () => {

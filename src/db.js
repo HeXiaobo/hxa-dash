@@ -311,6 +311,16 @@ const getIdleAgents = (now, thresholdMs) => {
     .sort((a, b) => b.last_seen_hours - a.last_seen_hours);
 };
 
+// Auto-assign event log (persisted via SQLite-like in-memory store)
+const autoAssignEvents = [];
+
+const logAutoAssign = ({ ts, project_id, issue_iid, from_agent, to_agent, reason }) => {
+  autoAssignEvents.unshift({ id: autoAssignEvents.length + 1, ts, project_id, issue_iid, from_agent, to_agent, reason });
+  if (autoAssignEvents.length > 200) autoAssignEvents.length = 200;
+};
+
+const getAutoAssignHistory = (limit = 20) => autoAssignEvents.slice(0, limit);
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent,
   upsertTask, getTasksByState, getTasksForAgent, getAllTasks,
@@ -320,4 +330,5 @@ module.exports = {
   buildTimeline, buildTrends, getAgentStats,
   getStaleIssues, getUnreviewedMRs, getIdleAgents,
   getWorkloadReport,
+  logAutoAssign, getAutoAssignHistory,
 };
