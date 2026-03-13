@@ -1,8 +1,9 @@
-// My View Component (#55) — Personal TODO + pending reviews panel
+// My View Component (#55, #73) — Personal TODO + pending reviews panel
 const MyView = {
   _selectedAgent: localStorage.getItem('myview-agent') || '',
   _data: null,
   _loading: false,
+  _agentMap: new Map(), // name -> agent info (including kind)
 
   init() {
     const select = document.getElementById('myview-agent-select');
@@ -19,13 +20,31 @@ const MyView = {
     const select = document.getElementById('myview-agent-select');
     if (!select) return;
 
+    // Cache agent info for kind lookup
+    this._agentMap.clear();
+    agents.forEach(a => this._agentMap.set(a.name, a));
+
     const saved = this._selectedAgent;
     const validNames = new Set(agents.map(a => a.name));
 
-    select.innerHTML = '<option value="">选择身份…</option>' +
-      agents.map(a =>
-        `<option value="${esc(a.name)}"${a.name === saved ? ' selected' : ''}>${esc(a.name)}${a.online ? '' : ' (离线)'}</option>`
-      ).join('');
+    // Group by kind: humans first, then agents (#73)
+    const humans = agents.filter(a => a.kind === 'human');
+    const bots = agents.filter(a => a.kind !== 'human');
+
+    let options = '<option value="">选择身份…</option>';
+    if (humans.length > 0) {
+      options += '<optgroup label="Human">' +
+        humans.map(a =>
+          `<option value="${esc(a.name)}"${a.name === saved ? ' selected' : ''}>${esc(a.name)} (${esc(a.role || 'human')})</option>`
+        ).join('') + '</optgroup>';
+    }
+    if (bots.length > 0) {
+      options += '<optgroup label="Agent">' +
+        bots.map(a =>
+          `<option value="${esc(a.name)}"${a.name === saved ? ' selected' : ''}>${esc(a.name)}${a.online ? '' : ' (离线)'}</option>`
+        ).join('') + '</optgroup>';
+    }
+    select.innerHTML = options;
 
     // Restore saved selection if still valid
     if (saved && validNames.has(saved)) {
@@ -123,10 +142,26 @@ const MyView = {
   },
 
   _renderAgentHeader(agent) {
+    const cached = this._agentMap.get(agent.name);
+    const isHuman = cached && cached.kind === 'human';
+    const kindBadge = isHuman ? '<span class="kind-badge human">Human</span>' : '<span class="kind-badge agent">Agent</span>';
+
+    if (isHuman) {
+      // Humans don't have online/offline status — show role instead
+      return `
+        <div class="myview-header">
+          ${kindBadge}
+          <span class="myview-name">${esc(agent.name)}</span>
+          <span class="myview-role">${esc(agent.role || '')}</span>
+        </div>
+      `;
+    }
+
     const statusClass = agent.online ? 'online' : 'offline';
     const statusText = agent.online ? '在线' : '离线';
     return `
       <div class="myview-header">
+        ${kindBadge}
         <span class="online-dot ${statusClass}"></span>
         <span class="myview-name">${esc(agent.name)}</span>
         <span class="myview-role">${esc(agent.role || '')}</span>

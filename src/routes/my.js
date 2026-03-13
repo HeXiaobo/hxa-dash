@@ -5,11 +5,11 @@ const router = Router();
 
 const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
 
-// GET /api/my/:name — personal view for the specified agent
+// GET /api/my/:name — personal view for the specified agent or human team member (#73)
 router.get('/:name', (req, res) => {
   const { name } = req.params;
   const agent = db.getAgent(name);
-  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  if (!agent) return res.status(404).json({ error: 'Team member not found' });
 
   const allTasks = [...db.getAllTasks()];
   const now = Date.now();

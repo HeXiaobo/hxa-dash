@@ -2,6 +2,14 @@
   "_comment": "Agent entity definitions — copy to config/entities.json (tracked in repo) or add as 'entities' array in sources.json. Role/bio act as fallback when Connect API returns null.",
   "entities": [
     {
+      "id": "Kevin",
+      "display_name": "Kevin",
+      "kind": "human",
+      "role": "产品负责人",
+      "bio": "HxA Link 创始人和产品负责人",
+      "identities": { "connect": "Kevin", "gitlab": "Administrator" }
+    },
+    {
       "id": "Jessie",
       "display_name": "Jessie",
       "kind": "human",

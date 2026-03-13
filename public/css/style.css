@@ -888,7 +888,9 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .workload-loading, .workload-empty { text-align: center; color: var(--text-secondary); padding: 24px; }
 
 /* HxA Friendly Identity Badges (#58) */
-.kind-badge { font-size: 12px; margin-right: 2px; opacity: 0.7; }
+.kind-badge { font-size: 11px; margin-right: 4px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
+.kind-badge.human { background: rgba(88,166,255,.15); color: #58a6ff; }
+.kind-badge.agent { background: rgba(139,148,158,.15); color: #8b949e; }
 .kind-badge:hover { opacity: 1; }
 .kind-human { opacity: 0.9; }
 .kind-agent { opacity: 0.6; }
