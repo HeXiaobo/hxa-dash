@@ -56,6 +56,7 @@ const App = {
     Timeline.init();
     CollabMatrix.init();
     TrendsChart.init();
+    Blockers.init();
 
     // Init graphs
     const overviewCanvas = document.getElementById('overview-collab-canvas');
@@ -211,6 +212,9 @@ const App = {
     // Team Capacity (#45)
     TeamCapacity.render(agents);
 
+    // Blocker Detection (#56)
+    this._renderBlockers(agents);
+
     // Cards
     CardWall.renderTo('overview-agent-cards', 'overview-team-stats', agents);
 
@@ -291,6 +295,27 @@ const App = {
   },
 
   // --- Filter Helpers ---
+  // Blocker detection — try API first, fallback to local computation (#56)
+  async _renderBlockers(agents) {
+    try {
+      const res = await fetch(`${BASE}/api/blockers`);
+      if (res.ok) {
+        const data = await res.json();
+        Blockers.render(data.blockers || []);
+        return;
+      }
+    } catch (_) { /* API not available, fallback */ }
+
+    // Fallback: compute from local data
+    const allTasks = [
+      ...(this.data.board.todo || []),
+      ...(this.data.board.doing || []),
+      ...(this.data.board.done || [])
+    ];
+    const blockers = Blockers.computeFromData(agents, allTasks, this.data.timeline || []);
+    Blockers.render(blockers);
+  },
+
   _filterBoard(context, board) {
     const f = AgentFilter.getFilter(context);
     if (!f) return board;

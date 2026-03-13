@@ -826,3 +826,28 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .at-link { color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .at-link:hover { text-decoration: underline; }
 .at-project { font-size: 10px; color: var(--text-secondary); background: rgba(255,255,255,.06); border-radius: 3px; padding: 0 4px; flex-shrink: 0; }
+
+/* Blocker Detection (#56) */
+.blocker-section { border: 1px solid var(--red); border-radius: 8px; background: rgba(248,81,73,.04); }
+.blocker-section.blocker-clear { border-color: var(--green); background: rgba(63,185,80,.04); }
+.blocker-ok { text-align: center; padding: 12px; color: var(--green); font-size: 14px; }
+.blocker-list { display: flex; flex-direction: column; gap: 6px; }
+.blocker-item {
+  display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px;
+  border-radius: 6px; background: rgba(255,255,255,.03);
+}
+.blocker-critical { border-left: 3px solid var(--red); }
+.blocker-warning { border-left: 3px solid var(--orange); }
+.blocker-info { border-left: 3px solid #484f58; }
+.blocker-icon { font-size: 14px; flex-shrink: 0; margin-top: 2px; }
+.blocker-body { flex: 1; min-width: 0; }
+.blocker-title { font-size: 13px; line-height: 1.4; }
+.blocker-link { color: var(--accent); text-decoration: none; }
+.blocker-link:hover { text-decoration: underline; }
+.blocker-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+.blocker-assignee { color: var(--text); font-weight: 500; }
+.blocker-project { background: rgba(255,255,255,.06); border-radius: 3px; padding: 0 4px; }
+.blocker-time { color: var(--red); }
+.blocker-warning .blocker-time { color: var(--orange); }
+.blocker-info .blocker-time { color: var(--text-secondary); }
+.blocker-type { font-style: italic; }
