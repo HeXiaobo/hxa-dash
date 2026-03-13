@@ -16,6 +16,7 @@
         <a href="#collab" class="nav-item" data-page="collab">协作</a>
         <a href="#tasks" class="nav-item" data-page="tasks">任务</a>
         <a href="#timeline" class="nav-item" data-page="timeline">时间轴</a>
+        <a href="#report" class="nav-item" data-page="report">报表</a>
       </nav>
     </div>
     <div class="header-right">
@@ -268,6 +269,40 @@
       </section>
     </div>
 
+    <div id="page-report" class="page">
+      <section class="section">
+        <div class="section-header">
+          <h2>工作量报表</h2>
+          <span id="workload-period-label" class="team-stats">过去 30 天</span>
+          <div class="section-tools">
+            <div class="btn-group">
+              <button data-workload-period="7" class="btn-toggle">7天</button>
+              <button data-workload-period="14" class="btn-toggle">14天</button>
+              <button data-workload-period="30" class="btn-toggle active">30天</button>
+            </div>
+            <button id="workload-export-btn" class="btn-secondary">导出 JSON</button>
+          </div>
+        </div>
+        <div class="workload-table-wrap">
+          <table class="workload-table">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="name">Agent</th>
+                <th class="sortable" data-sort="closed_issues">完成任务</th>
+                <th class="sortable" data-sort="merged_mrs">合并 MR</th>
+                <th class="sortable" data-sort="commits">提交</th>
+                <th class="sortable" data-sort="comments">评论</th>
+                <th class="sortable" data-sort="total_events">总活动</th>
+              </tr>
+            </thead>
+            <tbody id="workload-table-body">
+              <tr><td colspan="6" class="workload-loading">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
     <!-- Agent Detail Drawer -->
     <div id="detail-drawer" class="drawer hidden">
       <div class="drawer-overlay"></div>
@@ -309,6 +344,7 @@
   <script src="js/components/agent-filter.js"></script>
   <script src="js/components/collab-matrix.js"></script>
   <script src="js/components/blockers.js"></script>
+  <script src="js/components/workload-report.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -851,3 +851,24 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .blocker-warning .blocker-time { color: var(--orange); }
 .blocker-info .blocker-time { color: var(--text-secondary); }
 .blocker-type { font-style: italic; }
+
+/* === Workload Report (#59) === */
+.workload-table-wrap { overflow-x: auto; }
+.workload-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.workload-table th {
+  text-align: left; padding: 8px 12px; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border); font-weight: 500; white-space: nowrap;
+}
+.workload-table th.sortable { cursor: pointer; user-select: none; }
+.workload-table th.sortable:hover { color: var(--text-primary); }
+.workload-table td { padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; }
+.workload-table tr:hover td { background: rgba(255,255,255,.03); }
+.workload-name { display: flex; align-items: center; gap: 6px; font-weight: 500; white-space: nowrap; }
+.workload-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.workload-dot.online { background: #3fb950; }
+.workload-dot.offline { background: var(--text-secondary); }
+.workload-bar-wrap { display: flex; align-items: center; gap: 6px; min-width: 80px; }
+.workload-bar { height: 8px; border-radius: 3px; min-width: 2px; transition: width .3s; flex-shrink: 0; }
+.workload-bar-val { font-size: 12px; color: var(--text-secondary); min-width: 20px; }
+.workload-total { font-weight: 500; color: var(--text-primary); }
+.workload-loading, .workload-empty { text-align: center; color: var(--text-secondary); padding: 24px; }

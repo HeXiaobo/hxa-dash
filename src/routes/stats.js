@@ -34,4 +34,13 @@ router.get('/agents', (req, res) => {
   res.json({ agents: db.getAgentStats() });
 });
 
+// GET /api/stats/workload
+// Per-agent workload report: closed issues, merged MRs, commits, comments.
+// Query params:
+//   days - lookback window in days (default: 30, max: 90)
+router.get('/workload', (req, res) => {
+  const days = Math.min(parseInt(req.query.days) || 30, 90);
+  res.json({ days, agents: db.getWorkloadReport(days) });
+});
+
 module.exports = router;

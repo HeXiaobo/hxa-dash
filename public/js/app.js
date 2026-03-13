@@ -57,6 +57,14 @@ const App = {
     CollabMatrix.init();
     TrendsChart.init();
     Blockers.init();
+    WorkloadReport.init();
+
+    // Workload report: sortable headers + export
+    document.querySelectorAll('.workload-table thead .sortable').forEach(th => {
+      th.addEventListener('click', () => WorkloadReport._sortBy(th.dataset.sort));
+    });
+    const exportBtn = document.getElementById('workload-export-btn');
+    if (exportBtn) exportBtn.addEventListener('click', () => WorkloadReport.exportJSON());
 
     // Init graphs
     const overviewCanvas = document.getElementById('overview-collab-canvas');
@@ -112,7 +120,7 @@ const App = {
   },
 
   navigateTo(page, pushState = true) {
-    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline'];
+    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report'];
     if (!validPages.includes(page)) page = 'overview';
 
     // Update nav

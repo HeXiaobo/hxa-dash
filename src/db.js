@@ -244,6 +244,32 @@ const getAgentStats = () => {
 
 const getAllTasks = () => [...store.tasks.values()];
 
+// Workload report: per-agent productivity breakdown over a configurable time window
+const getWorkloadReport = (days = 30) => {
+  const sinceMs = Date.now() - days * 86400000;
+  const recentEvents = store.events.filter(e => e.timestamp >= sinceMs);
+  const tasks = [...store.tasks.values()];
+
+  return [...store.agents.values()].map(agent => {
+    const agentEvents = recentEvents.filter(e => e.agent === agent.name);
+    const closedTasks = tasks.filter(t =>
+      (t.state === 'closed' || t.state === 'merged') &&
+      t.updated_at >= sinceMs &&
+      (t.assignee === agent.name || t.author === agent.name)
+    );
+
+    return {
+      name: agent.name,
+      online: agent.online,
+      closed_issues: closedTasks.filter(t => t.type === 'issue').length,
+      merged_mrs: closedTasks.filter(t => t.type === 'mr').length,
+      commits: agentEvents.filter(e => e.action === 'pushed').length,
+      comments: agentEvents.filter(e => e.action === 'commented').length,
+      total_events: agentEvents.length,
+    };
+  }).sort((a, b) => b.total_events - a.total_events);
+};
+
 // Blocker detection helpers
 
 // Stale issues: open issues with no activity for more than thresholdMs
@@ -293,4 +319,5 @@ module.exports = {
   getProjects,
   buildTimeline, buildTrends, getAgentStats,
   getStaleIssues, getUnreviewedMRs, getIdleAgents,
+  getWorkloadReport,
 };
