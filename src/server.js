@@ -23,6 +23,7 @@ const autoAssignRoutes = require('./routes/auto-assign');
 const autoAssignEngine = require('./auto-assign-engine');
 const metricsRoutes = require('./routes/metrics');
 const { computeMetrics } = metricsRoutes;
+const agentRoutes = require('./routes/agent');
 
 const PORT = process.env.PORT || 3479;
 
@@ -74,7 +75,24 @@ app.use('/api/my', myRoutes);
 app.use('/api/blockers', blockersRoutes);
 app.use('/api/auto-assign', autoAssignRoutes);
 app.use('/api/metrics', metricsRoutes);
+app.use('/api/agent', agentRoutes);
 app.use('/api', reportRoutes.router);
+
+// GET /api/health — system health check (#48)
+app.get('/api/health', (req, res) => {
+  const agents = db.getAllAgents();
+  const tasks = db.getAllTasks();
+  res.json({
+    status: 'ok',
+    uptime_seconds: Math.floor(process.uptime()),
+    data: {
+      agents_loaded: agents.length,
+      tasks_loaded: tasks.length,
+      events_in_store: db.getTimeline(1000).length,
+      gitlab_sources: config.gitlab?.projects?.length || 0,
+    },
+  });
+});
 
 // Graph endpoint (supports ?project= filter)
 app.get('/api/graph', (req, res) => {
