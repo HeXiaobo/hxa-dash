@@ -107,7 +107,8 @@ router.get('/:name', (req, res) => {
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
   const tasks = db.getTasksForAgent(agent.name);
-  const events = db.getEventsForAgent(agent.name, 30);
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const events = db.getEventsForAgent(agent.name, 200).filter(e => (e.timestamp || 0) > sevenDaysAgo);
   const collabs = db.getCollabsForAgent(agent.name);
 
   res.json({

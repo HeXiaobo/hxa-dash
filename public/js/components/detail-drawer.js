@@ -31,6 +31,70 @@ const DetailDrawer = {
     this.drawer.classList.add('hidden');
   },
 
+  // Event type icon mapping
+  _eventIcon(action) {
+    const icons = {
+      'opened': '📋', 'closed': '✅', 'merged': '🔀', 'commented on': '💬',
+      'pushed to': '📦', 'approved': '👍', 'assigned': '👤', 'updated': '✏️'
+    };
+    return icons[action] || '•';
+  },
+
+  // Group events by day and render activity timeline (#46)
+  _renderActivityTimeline(events) {
+    const grouped = {};
+    events.forEach(e => {
+      const d = new Date(e.timestamp);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(e);
+    });
+
+    const dayLabels = (key) => {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const d = new Date(key + 'T00:00:00');
+      const diff = Math.floor((today - d) / 86400000);
+      if (diff === 0) return '今天';
+      if (diff === 1) return '昨天';
+      if (diff < 7) return `${diff} 天前`;
+      return key;
+    };
+
+    const days = Object.keys(grouped).sort().reverse();
+    const totalEvents = events.length;
+
+    return `
+      <div class="drawer-section">
+        <h4>工作时间线 <span style="font-weight:normal;color:var(--text-secondary);font-size:12px;">(近7天 · ${totalEvents} 条)</span></h4>
+        <div class="activity-timeline">
+          ${days.map(day => `
+            <div class="at-day-group">
+              <div class="at-day-label">${dayLabels(day)} <span class="at-day-date">${day}</span> <span class="at-day-count">${grouped[day].length}</span></div>
+              <div class="at-events">
+                ${grouped[day].map(e => {
+                  const time = new Date(e.timestamp);
+                  const hm = String(time.getHours()).padStart(2,'0') + ':' + String(time.getMinutes()).padStart(2,'0');
+                  const url = e.url || e.target_url || '';
+                  const title = e.target_title || '';
+                  const titleHtml = url
+                    ? `<a href="${esc(url)}" target="_blank" class="at-link">${esc(truncate(title, 60))}</a>`
+                    : `<span>${esc(truncate(title, 60))}</span>`;
+                  return `
+                    <div class="at-event">
+                      <span class="at-icon">${this._eventIcon(e.action)}</span>
+                      <span class="at-time">${hm}</span>
+                      <span class="at-action">${esc(e.action)}</span>
+                      ${titleHtml}
+                      ${e.project ? `<span class="at-project">${esc(e.project)}</span>` : ''}
+                    </div>`;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  },
+
   renderDetail(data) {
     const { agent, current_tasks, recent_done, events, collabs, stats } = data;
 
@@ -113,22 +177,7 @@ const DetailDrawer = {
         </div>
       ` : ''}
 
-      ${events.length > 0 ? `
-        <div class="drawer-section">
-          <h4>活动记录</h4>
-          <ul class="drawer-event-list">
-            ${events.slice(0, 15).map(e => `
-              <li>
-                <span style="color: var(--text-secondary); font-size: 11px; font-family: monospace;">
-                  ${formatTime(e.timestamp)}
-                </span>
-                <span style="margin-left: 8px;">${esc(e.action)}</span>
-                <span style="color: var(--text-secondary); margin-left: 4px;">${esc(truncate(e.target_title, 50))}</span>
-              </li>
-            `).join('')}
-          </ul>
-        </div>
-      ` : ''}
+      ${events.length > 0 ? this._renderActivityTimeline(events) : ''}
     `;
   }
 };
