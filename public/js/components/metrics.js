@@ -1,4 +1,4 @@
-// Team Utilization & Output Metrics Panel (#62 Phase 1)
+// Team Utilization & Output Metrics Panel (#62 Phase 1, #66 real-time, #67 per-agent filter)
 const Metrics = {
   data: null,
   container: null,
@@ -6,7 +6,14 @@ const Metrics = {
   init() {
     this.container = document.getElementById('metrics-panel');
     this.load();
+    // Fallback polling every 5min in case WS disconnects
     setInterval(() => this.load(), 5 * 60 * 1000);
+  },
+
+  // Accept data pushed via WebSocket (#66)
+  update(metricsData) {
+    this.data = metricsData;
+    this.render();
   },
 
   async load() {
@@ -22,23 +29,36 @@ const Metrics = {
     if (!this.container || !this.data) return;
     const { team, agents } = this.data;
 
-    const cycleTime = team.cycle_time_median_hours != null
-      ? `${team.cycle_time_median_hours}h`
+    // Apply agent filter from overview page (#67)
+    const filter = AgentFilter.getFilter('overview');
+    const filteredAgents = filter
+      ? agents.filter(a => filter.has(a.name))
+      : agents;
+
+    // Recompute summary stats for filtered agents (#67)
+    const summary = filter ? this._computeFilteredSummary(filteredAgents) : team;
+
+    const cycleTime = summary.cycle_time_median_hours != null
+      ? `${summary.cycle_time_median_hours}h`
       : '—';
+
+    const filterLabel = filter
+      ? `<span class="metrics-filter-badge">${filteredAgents.length}/${agents.length} 已选</span>`
+      : '';
 
     // Summary cards
     const cards = `
       <div class="metrics-cards">
         <div class="metrics-card">
-          <div class="metrics-card-value">${team.idle_pct}<span class="metrics-card-unit">%</span></div>
-          <div class="metrics-card-label">在线空闲率</div>
+          <div class="metrics-card-value">${summary.idle_pct}<span class="metrics-card-unit">%</span></div>
+          <div class="metrics-card-label">在线空闲率 ${filterLabel}</div>
         </div>
         <div class="metrics-card">
-          <div class="metrics-card-value">${team.issues_closed_7d}</div>
+          <div class="metrics-card-value">${summary.issues_closed_7d}</div>
           <div class="metrics-card-label">Issue 完成 / 7天</div>
         </div>
         <div class="metrics-card">
-          <div class="metrics-card-value">${team.mrs_merged_7d}</div>
+          <div class="metrics-card-value">${summary.mrs_merged_7d}</div>
           <div class="metrics-card-label">MR 合并 / 7天</div>
         </div>
         <div class="metrics-card">
@@ -48,8 +68,8 @@ const Metrics = {
       </div>
     `;
 
-    // Agent table
-    const rows = agents.map(a => `
+    // Agent table (filtered)
+    const rows = filteredAgents.map(a => `
       <tr>
         <td class="metrics-agent-name">${esc(a.name)}</td>
         <td><span class="work-status-badge ${esc(a.status)}">${this._statusLabel(a.status)}</span></td>
@@ -77,9 +97,29 @@ const Metrics = {
     `;
 
     // Weekly trend bar chart (CSS bars, no canvas)
-    const trend = this._renderTrend(team.weekly_closed || []);
+    const trend = this._renderTrend(summary.weekly_closed || []);
 
     this.container.innerHTML = cards + table + trend;
+  },
+
+  // Recompute summary for a filtered subset of agents (#67)
+  _computeFilteredSummary(filteredAgents) {
+    const names = new Set(filteredAgents.map(a => a.name));
+    const online = filteredAgents.filter(a => a.status !== 'offline');
+    const idle = online.filter(a => a.status === 'idle');
+    const idlePct = online.length > 0
+      ? Math.round((idle.length / online.length) * 100)
+      : 0;
+    const issuesClosed7d = filteredAgents.reduce((s, a) => s + a.closed_7d, 0);
+    const mrsMerged7d = filteredAgents.reduce((s, a) => s + a.mrs_7d, 0);
+
+    return {
+      idle_pct: idlePct,
+      issues_closed_7d: issuesClosed7d,
+      mrs_merged_7d: mrsMerged7d,
+      cycle_time_median_hours: this.data.team.cycle_time_median_hours,
+      weekly_closed: this.data.team.weekly_closed || [],
+    };
   },
 
   _statusLabel(s) {

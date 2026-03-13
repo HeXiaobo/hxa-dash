@@ -452,7 +452,10 @@ const App = {
   // Called by AgentFilter when filter changes
   onFilterChange(context) {
     switch (context) {
-      case 'overview': this.renderOverview(); break;
+      case 'overview':
+        this.renderOverview();
+        Metrics.render(); // Re-render metrics with new filter (#67)
+        break;
       case 'collab': this.renderCollab(); break;
       case 'tasks': this.renderTasks(); break;
       case 'timeline': this.renderTimeline(); break;
@@ -521,7 +524,12 @@ const App = {
         if (msg.data.board) this.data.board = msg.data.board;
         if (msg.data.timeline) this.data.timeline = msg.data.timeline;
         if (msg.data.graph) this.data.graph = msg.data.graph;
+        if (msg.data.metrics) Metrics.update(msg.data.metrics);
         this.renderAllPages();
+        break;
+
+      case 'metrics:update':
+        Metrics.update(msg.data);
         break;
 
       case 'team:update':

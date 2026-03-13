@@ -22,6 +22,7 @@ const blockersRoutes = require('./routes/blockers');
 const autoAssignRoutes = require('./routes/auto-assign');
 const autoAssignEngine = require('./auto-assign-engine');
 const metricsRoutes = require('./routes/metrics');
+const { computeMetrics } = metricsRoutes;
 
 const PORT = process.env.PORT || 3479;
 
@@ -104,12 +105,13 @@ app.get('/api/health', (req, res) => {
 // Init report routes (needs ws + config)
 reportRoutes.init(ws, config);
 
-// Init WebSocket with snapshot provider
+// Init WebSocket with snapshot provider (includes metrics for real-time updates #66)
 ws.init(server, () => ({
   team: buildAgents(),
   board: buildBoard(),
   timeline: db.getTimeline(50),
-  graph: collab.getGraph()
+  graph: collab.getGraph(),
+  metrics: computeMetrics()
 }));
 
 // Data polling engine
@@ -127,12 +129,13 @@ async function pollAll() {
     // Analyze collaboration
     const graph = collab.analyze();
 
-    // Build full snapshot
+    // Build full snapshot (includes metrics for real-time updates #66)
     const snapshot = {
       team: buildAgents(),
       board: buildBoard(),
       timeline: db.getTimeline(50),
-      graph
+      graph,
+      metrics: computeMetrics()
     };
 
     // Always broadcast full snapshot after each poll cycle (#40)
@@ -156,7 +159,8 @@ async function startPolling() {
     team: buildAgents(),
     board: buildBoard(),
     timeline: db.getTimeline(50),
-    graph: collab.getGraph()
+    graph: collab.getGraph(),
+    metrics: computeMetrics()
   };
   ws.sendSnapshot(snapshot);
 
@@ -178,6 +182,8 @@ async function startPolling() {
     ws.broadcast('board:update', buildBoard());
     ws.broadcast('timeline:new', db.getTimeline(50));
     ws.broadcast('graph:update', graph);
+    // Refresh metrics after GitLab data changes (#66)
+    ws.broadcast('metrics:update', computeMetrics());
   }, config.polling?.gitlab_interval_ms || 60000);
 }
 

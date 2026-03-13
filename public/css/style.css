@@ -954,6 +954,16 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   margin-top: 4px;
   white-space: nowrap;
 }
+.metrics-filter-badge {
+  display: inline-block;
+  font-size: 9px;
+  background: var(--accent-blue, #3b82f6);
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: 8px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
 
 /* Agent table */
 .metrics-table-wrap { overflow-x: auto; }

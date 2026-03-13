@@ -14,8 +14,8 @@ function isoWeek(ts) {
   return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-// GET /api/metrics
-router.get('/', (req, res) => {
+// Compute metrics data (reusable by REST + WS broadcast)
+function computeMetrics() {
   const now = Date.now();
   const ms7d  = 7  * 24 * 3600 * 1000;
   const ms30d = 30 * 24 * 3600 * 1000;
@@ -63,10 +63,8 @@ router.get('/', (req, res) => {
   }
 
   // ── Throughput trend: last 4 weeks ───────────────────────────
-  // Build week buckets
   const weekMap = new Map();
 
-  // Pre-fill 4 complete weeks going backwards from now
   for (let w = 0; w < 4; w++) {
     const weekTs = now - w * 7 * 24 * 3600 * 1000;
     const weekKey = isoWeek(weekTs);
@@ -113,7 +111,7 @@ router.get('/', (req, res) => {
     };
   });
 
-  res.json({
+  return {
     team: {
       idle_pct: idlePct,
       issues_closed_7d: closed7d.length,
@@ -122,7 +120,13 @@ router.get('/', (req, res) => {
       weekly_closed: weeklyClosed,
     },
     agents: agentRows,
-  });
+  };
+}
+
+// GET /api/metrics
+router.get('/', (req, res) => {
+  res.json(computeMetrics());
 });
 
 module.exports = router;
+module.exports.computeMetrics = computeMetrics;
