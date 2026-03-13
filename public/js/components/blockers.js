@@ -1,4 +1,4 @@
-// Blocker Detection Component (#56, #63, #68)
+// Blocker Detection Component (#56, #63, #68, #71)
 // Displays stale issues, unreviewed MRs, and silent agents as alerts
 const Blockers = {
   section: null,
@@ -7,18 +7,53 @@ const Blockers = {
   defEl: null,
   _data: [],
   _collapsed: false,
+  _dismissed: new Set(),
+  _STORAGE_KEY: 'hxa-dash-dismissed-blockers',
 
   init() {
     this.section = document.getElementById('blocker-section');
     this.list = document.getElementById('blocker-list');
     this.countEl = document.getElementById('blocker-count');
     this.defEl = document.getElementById('blocker-definitions');
+    this._loadDismissed();
     // Toggle collapse on header click
     const header = this.section && this.section.querySelector('.section-header');
     if (header) {
       header.style.cursor = 'pointer';
       header.addEventListener('click', () => this._toggle());
     }
+  },
+
+  _blockerKey(b) {
+    return `${b.type}::${b.title}`;
+  },
+
+  _loadDismissed() {
+    try {
+      const raw = localStorage.getItem(this._STORAGE_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        this._dismissed = new Set(arr);
+      }
+    } catch (_) { /* ignore */ }
+  },
+
+  _saveDismissed() {
+    try {
+      localStorage.setItem(this._STORAGE_KEY, JSON.stringify([...this._dismissed]));
+    } catch (_) { /* ignore */ }
+  },
+
+  dismiss(key) {
+    this._dismissed.add(key);
+    this._saveDismissed();
+    this.render(this._data, this._thresholds);
+  },
+
+  resetDismissed() {
+    this._dismissed.clear();
+    this._saveDismissed();
+    this.render(this._data, this._thresholds);
   },
 
   _toggle() {
@@ -31,7 +66,8 @@ const Blockers = {
 
   // Render blockers from API data or computed locally
   render(blockers, thresholds) {
-    this._data = blockers || [];
+    if (blockers) this._data = blockers;
+    this._thresholds = thresholds;
     if (!this.section || !this.list) return;
 
     // Update definitions tooltip with thresholds
@@ -43,26 +79,33 @@ const Blockers = {
         `<span>⚫ Agent 离线超过 ${t.idle_agent_hours}h</span>`;
     }
 
-    if (this._data.length === 0) {
+    // Filter out dismissed blockers
+    const visible = this._data.filter(b => !this._dismissed.has(this._blockerKey(b)));
+    const dismissedCount = this._data.length - visible.length;
+
+    if (visible.length === 0) {
       this.section.classList.remove('hidden');
       this.section.classList.add('blocker-clear');
-      this.list.innerHTML = '';
-      this.countEl.textContent = '无卡点';
-      // Auto-collapse when no blockers (#68)
+      this.list.innerHTML = dismissedCount > 0
+        ? `<div class="blocker-dismissed-hint">${dismissedCount} 项已关闭 · <a href="#" onclick="Blockers.resetDismissed();return false">全部恢复</a></div>`
+        : '';
+      this.countEl.textContent = dismissedCount > 0 ? `${dismissedCount} 项已关闭` : '无卡点';
+      // Auto-collapse when no visible blockers (#68)
       if (!this._collapsed) this._toggle();
       return;
     }
 
     this.section.classList.remove('hidden', 'blocker-clear');
-    this.countEl.textContent = `${this._data.length} 项`;
+    this.countEl.textContent = `${visible.length} 项` + (dismissedCount > 0 ? ` (${dismissedCount} 已关闭)` : '');
     // Auto-expand when there are blockers
     if (this._collapsed) this._toggle();
 
     // Sort: critical > warning > info
     const order = { critical: 0, warning: 1, info: 2 };
-    this._data.sort((a, b) => (order[a.severity] || 9) - (order[b.severity] || 9));
+    visible.sort((a, b) => (order[a.severity] || 9) - (order[b.severity] || 9));
 
-    this.list.innerHTML = this._data.map(b => {
+    this.list.innerHTML = visible.map(b => {
+      const key = this._blockerKey(b);
       const icon = b.severity === 'critical' ? '🔴'
         : b.severity === 'warning' ? '🟡' : '⚫';
       const timeStr = b.stale_hours ? `${Math.round(b.stale_hours)}h` : '';
@@ -81,8 +124,10 @@ const Blockers = {
               <span class="blocker-type">${esc(b.type_label || b.type || '')}</span>
             </div>
           </div>
+          <button class="blocker-dismiss" onclick="Blockers.dismiss('${esc(key)}')" title="关闭此告警">✕</button>
         </div>`;
-    }).join('');
+    }).join('')
+    + (dismissedCount > 0 ? `<div class="blocker-dismissed-hint">${dismissedCount} 项已关闭 · <a href="#" onclick="Blockers.resetDismissed();return false">全部恢复</a></div>` : '');
   },
 
   // Compute blockers from existing data (tasks, agents, events)

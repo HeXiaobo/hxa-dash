@@ -853,6 +853,18 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .blocker-warning .blocker-time { color: var(--orange); }
 .blocker-info .blocker-time { color: var(--text-secondary); }
 .blocker-type { font-style: italic; }
+.blocker-dismiss {
+  background: none; border: none; color: var(--text-secondary); cursor: pointer;
+  font-size: 14px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
+  opacity: 0; transition: opacity .15s;
+}
+.blocker-item:hover .blocker-dismiss { opacity: 1; }
+.blocker-dismiss:hover { background: rgba(255,255,255,.1); color: var(--text); }
+.blocker-dismissed-hint {
+  font-size: 11px; color: var(--text-secondary); text-align: center; padding: 6px 0;
+}
+.blocker-dismissed-hint a { color: var(--accent); text-decoration: none; }
+.blocker-dismissed-hint a:hover { text-decoration: underline; }
 
 /* === Workload Report (#59) === */
 .workload-table-wrap { overflow-x: auto; }
