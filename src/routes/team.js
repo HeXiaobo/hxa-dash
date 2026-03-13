@@ -4,6 +4,9 @@ const collab = require('../analyzers/collab');
 
 const router = Router();
 
+// Default max concurrent tasks per agent (can be overridden per-agent in entities.json later)
+const DEFAULT_MAX_CAPACITY = 5;
+
 // Build enriched agent list — shared between REST and WS broadcasts
 function buildAgents() {
   return db.getAllAgents().map(a => {
@@ -41,8 +44,7 @@ function buildAgents() {
     const topCollaborator = db.getTopCollaborator(a.name);
 
     // Capacity: current open tasks vs max capacity (#44)
-    const maxCapacity = 5;
-    const capacity = { current: openTasks.length, max: maxCapacity };
+    const capacity = { current: openTasks.length, max: DEFAULT_MAX_CAPACITY };
 
     // Health score: 0-100 based on activity recency + completion rate + task load balance (#45)
     const healthScore = computeHealthScore(recentEvents, closedTasks, openTasks, now);
@@ -130,6 +132,7 @@ router.get('/:name', (req, res) => {
 // Compute a 0-100 health score based on activity recency, completion rate, and load balance (#45)
 function computeHealthScore(recentEvents, closedTasks, openTasks, now) {
   // 1. Activity recency (0-40): how recently was the agent active?
+  // recentEvents is sorted desc by timestamp (see db.getEventsForAgent), so [0] is the latest
   let activityScore = 0;
   if (recentEvents.length > 0) {
     const latestTs = recentEvents[0].timestamp || 0;

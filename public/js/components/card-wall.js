@@ -58,9 +58,9 @@ const CardWall = {
       ? `<div class="card-tags">${tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div>`
       : '';
 
-    // Capacity bar (#44)
+    // Capacity bar (#44) — default max matches backend DEFAULT_MAX_CAPACITY
     const cap = agent.capacity || { current: 0, max: 5 };
-    const capPct = Math.min(100, Math.round((cap.current / cap.max) * 100));
+    const capPct = cap.max > 0 ? Math.min(100, Math.round((cap.current / cap.max) * 100)) : 0;
     const capClass = capPct > 80 ? 'cap-high' : capPct > 50 ? 'cap-mid' : 'cap-low';
     const capacityHTML = `
       <div class="card-capacity" title="负载: ${cap.current}/${cap.max}">

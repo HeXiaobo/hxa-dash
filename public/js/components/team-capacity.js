@@ -1,4 +1,5 @@
 // Team Capacity Overview Component (#45)
+// Depends on: esc() and truncate() from app.js (loaded before this script)
 const TeamCapacity = {
   containerId: 'team-capacity',
 
@@ -50,7 +51,7 @@ const TeamCapacity = {
           <span>${utilPct}% 利用率</span>
         </div>
         <div class="tc-util-track">
-          <div class="tc-util-fill ${utilClass}" style="width:${Math.min(100, Math.round((totalOpen / totalCapacity) * 100))}%"></div>
+          <div class="tc-util-fill ${utilClass}" style="width:${totalCapacity > 0 ? Math.min(100, Math.round((totalOpen / totalCapacity) * 100)) : 0}%"></div>
         </div>
       </div>
       ${bottleneck && maxOpen >= 3 ? `
