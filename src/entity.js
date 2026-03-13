@@ -67,7 +67,8 @@ function loadFromConfig(entityConfigs) {
     register(cfg.id, cfg.identities || {}, {
       display_name: cfg.display_name || cfg.id,
       role: cfg.role || '',
-      bio: cfg.bio || ''
+      bio: cfg.bio || '',
+      kind: cfg.kind || ''
     });
   }
 }
