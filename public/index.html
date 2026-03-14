@@ -25,8 +25,12 @@
     </div>
     <div class="header-right">
       <span id="ws-status" class="status-badge disconnected">断开</span>
-      <span id="refresh-countdown"></span>
-      <span id="last-update" class="last-update"></span>
+      <span id="refresh-status" class="refresh-status">
+        <span class="refresh-dot"></span>
+        <span id="refresh-countdown"></span>
+        <span class="refresh-sep">·</span>
+        <span id="last-update"></span>
+      </span>
       <button id="refresh-btn" class="btn-refresh" title="手动刷新 (r)">⟳</button>
     </div>
   </header>

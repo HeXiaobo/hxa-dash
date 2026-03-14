@@ -578,7 +578,7 @@ const App = {
     const el = document.getElementById('last-update');
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
-    el.textContent = `最后更新: ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    el.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   },
 
   // --- #50: Skeleton loading screens ---
@@ -720,19 +720,20 @@ const App = {
     const INTERVAL = 30; // seconds
     let remaining = INTERVAL;
     const el = document.getElementById('refresh-countdown');
+    const statusEl = document.getElementById('refresh-status');
 
     const tick = () => {
       if (!el) return;
       if (remaining <= 0) {
         el.textContent = '刷新中…';
-        el.classList.add('refreshing');
+        if (statusEl) statusEl.classList.add('refreshing');
         this.fetchAll().finally(() => {
           remaining = INTERVAL;
-          el.classList.remove('refreshing');
+          if (statusEl) statusEl.classList.remove('refreshing');
         });
       } else {
-        el.textContent = `${remaining}s 后刷新`;
-        el.classList.remove('refreshing');
+        el.textContent = `${remaining}s`;
+        if (statusEl) statusEl.classList.remove('refreshing');
         remaining--;
       }
     };
@@ -744,9 +745,10 @@ const App = {
     const origFetch = this.fetchAll.bind(this);
     this.fetchAll = (...args) => {
       remaining = INTERVAL;
-      if (el) { el.textContent = '刷新中…'; el.classList.add('refreshing'); }
+      if (el) el.textContent = '刷新中…';
+      if (statusEl) statusEl.classList.add('refreshing');
       return origFetch(...args).finally(() => {
-        if (el) el.classList.remove('refreshing');
+        if (statusEl) statusEl.classList.remove('refreshing');
       });
     };
   }
