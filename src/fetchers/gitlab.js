@@ -83,9 +83,12 @@ async function fetchIssues() {
       const assignee = assignees[0] || (issue.assignee ? mapUsername(issue.assignee.username) : null);
       const task = {
         id: `issue-${issue.project_id}-${issue.iid}`,
+        iid: issue.iid,
+        project_id: issue.project_id,
         type: 'issue',
         project: issue.references?.full?.split('#')[0]?.replace(/\/$/, '')?.split('/')?.pop() || 'unknown',
         title: issue.title,
+        description: issue.description || '',
         state: issue.state,
         assignee: assignee,
         author: issue.author ? mapUsername(issue.author.username) : null,

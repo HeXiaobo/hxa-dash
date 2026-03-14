@@ -25,6 +25,7 @@ const metricsRoutes = require('./routes/metrics');
 const { computeMetrics } = metricsRoutes;
 const agentRoutes = require('./routes/agent');
 const tokenRoutes = require('./routes/tokens');
+const webhookRoutes = require('./routes/webhook');
 
 const PORT = process.env.PORT || 3479;
 
@@ -77,6 +78,7 @@ app.use('/api/auto-assign', autoAssignRoutes);
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/tokens', tokenRoutes);
+app.use('/api/webhook', webhookRoutes);
 app.use('/api', reportRoutes.router);
 
 // GET /api/health — system health check (#48)
@@ -115,6 +117,9 @@ app.get('/api/projects', (req, res) => {
 
 // Init report routes (needs ws + config)
 reportRoutes.init(ws, config);
+
+// Init webhook routes (needs ws + config for downstream notifications)
+webhookRoutes.init(config, ws);
 
 // Init WebSocket with snapshot provider (includes metrics for real-time updates #66)
 ws.init(server, () => ({
