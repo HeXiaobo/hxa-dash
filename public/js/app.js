@@ -97,6 +97,7 @@ const App = {
     Metrics.init();
     MyView.init();
     TokenDashboard.init();
+    LiveDashboard.init();
     HealthDiagnostics.init();
 
     // Workload report: sortable headers + export
@@ -186,7 +187,7 @@ const App = {
   },
 
   navigateTo(page, pushState = true) {
-    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'health', 'myview'];
+    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'live', 'health', 'myview'];
     if (!validPages.includes(page)) page = 'overview';
 
     // Update nav
@@ -213,6 +214,8 @@ const App = {
 
     // Lazy-load token data when first visiting tokens page
     if (page === 'tokens' && !TokenDashboard._data) TokenDashboard.fetch();
+    // Lazy-load live dashboard (#95)
+    if (page === 'live') LiveDashboard.fetch();
     // Lazy-load health diagnostics (#94)
     if (page === 'health') HealthDiagnostics.fetch();
   },
@@ -283,6 +286,7 @@ const App = {
       case 'collab': this.renderCollab(); break;
       case 'tasks': this.renderTasks(); break;
       case 'timeline': this.renderTimeline(); break;
+      case 'live': LiveDashboard.render(); break;
       case 'myview': this.renderMyView(); break;
     }
   },
