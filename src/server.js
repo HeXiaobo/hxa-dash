@@ -28,6 +28,7 @@ const tokenRoutes = require('./routes/tokens');
 const webhookRoutes = require('./routes/webhook');
 const healthDiagRoutes = require('./routes/health-diagnostics');
 const liveRoutes = require('./routes/live');
+const pipelineRoutes = require('./routes/pipeline');
 
 const PORT = process.env.PORT || 3479;
 
@@ -83,6 +84,7 @@ app.use('/api/tokens', tokenRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/diagnostics', healthDiagRoutes);
 app.use('/api/live', liveRoutes);
+app.use('/api/pipeline', pipelineRoutes);
 app.use('/api', reportRoutes.router);
 
 // GET /api/health — system health check (#48)
