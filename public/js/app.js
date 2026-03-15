@@ -99,6 +99,7 @@ const App = {
     TokenDashboard.init();
     LiveDashboard.init();
     Pipeline.init();
+    TimeEstimates.init();
     HealthDiagnostics.init();
 
     // Workload report: sortable headers + export
@@ -188,7 +189,7 @@ const App = {
   },
 
   navigateTo(page, pushState = true) {
-    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'live', 'pipeline', 'health', 'myview'];
+    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'estimates', 'live', 'pipeline', 'health', 'myview'];
     if (!validPages.includes(page)) page = 'overview';
 
     // Update nav
@@ -219,6 +220,8 @@ const App = {
     if (page === 'live') LiveDashboard.fetch();
     // Lazy-load pipeline (#77)
     if (page === 'pipeline') Pipeline.fetch();
+    // Lazy-load time estimates (#79)
+    if (page === 'estimates') TimeEstimates.fetch();
     // Lazy-load health diagnostics (#94)
     if (page === 'health') HealthDiagnostics.fetch();
   },

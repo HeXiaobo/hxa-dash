@@ -154,5 +154,11 @@ router.get('/velocity', (req, res) => {
   });
 });
 
+// GET /api/metrics/estimates — per-agent completion time analysis (#79)
+router.get('/estimates', (req, res) => {
+  const days = Math.min(parseInt(req.query.days) || 30, 90);
+  res.json(db.getCompletionStats(days));
+});
+
 module.exports = router;
 module.exports.computeMetrics = computeMetrics;

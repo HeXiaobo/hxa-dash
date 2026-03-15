@@ -426,6 +426,110 @@ const getBlockingMRsForAgent = (name, now, thresholdMs = 15 * 60 * 1000) => {
     .sort((a, b) => b.minutes_stale - a.minutes_stale);
 };
 
+// Agent completion time statistics (#79)
+// Returns per-agent, per-estimate-size average completion times
+const getCompletionStats = (days = 30) => {
+  const sinceMs = Date.now() - days * 86400000;
+  const closedTasks = [...store.tasks.values()].filter(t =>
+    (t.state === 'closed' || t.state === 'merged') &&
+    t.updated_at >= sinceMs &&
+    t.created_at > 0
+  );
+
+  // Group by agent → estimate → completion times
+  const agentMap = new Map();
+  for (const t of closedTasks) {
+    const agent = t.assignee || t.author;
+    if (!agent) continue;
+    const est = t.estimate || 'unestimated';
+    const durationMs = t.updated_at - t.created_at;
+    if (durationMs <= 0) continue;
+
+    if (!agentMap.has(agent)) agentMap.set(agent, new Map());
+    const estMap = agentMap.get(agent);
+    if (!estMap.has(est)) estMap.set(est, []);
+    estMap.get(est).push(durationMs);
+  }
+
+  // Compute per-agent stats
+  const agents = [];
+  for (const [name, estMap] of agentMap) {
+    const byEstimate = {};
+    let totalTasks = 0;
+    let totalDuration = 0;
+
+    for (const [est, durations] of estMap) {
+      durations.sort((a, b) => a - b);
+      const sum = durations.reduce((s, d) => s + d, 0);
+      const median = durations[Math.floor(durations.length / 2)];
+      const avgMs = Math.round(sum / durations.length);
+      totalTasks += durations.length;
+      totalDuration += sum;
+
+      byEstimate[est] = {
+        count: durations.length,
+        avg_hours: Math.round(avgMs / 3600000 * 10) / 10,
+        median_hours: Math.round(median / 3600000 * 10) / 10,
+        min_hours: Math.round(durations[0] / 3600000 * 10) / 10,
+        max_hours: Math.round(durations[durations.length - 1] / 3600000 * 10) / 10,
+      };
+    }
+
+    agents.push({
+      name,
+      total_completed: totalTasks,
+      avg_hours_per_task: totalTasks > 0 ? Math.round(totalDuration / totalTasks / 3600000 * 10) / 10 : 0,
+      by_estimate: byEstimate,
+    });
+  }
+
+  // Team-wide aggregates by estimate size
+  const teamByEstimate = {};
+  for (const agent of agents) {
+    for (const [est, stats] of Object.entries(agent.by_estimate)) {
+      if (!teamByEstimate[est]) teamByEstimate[est] = { total: 0, sum_hours: 0, count: 0 };
+      teamByEstimate[est].count += stats.count;
+      teamByEstimate[est].sum_hours += stats.avg_hours * stats.count;
+    }
+  }
+  for (const [est, agg] of Object.entries(teamByEstimate)) {
+    agg.avg_hours = agg.count > 0 ? Math.round(agg.sum_hours / agg.count * 10) / 10 : 0;
+    delete agg.sum_hours;
+  }
+
+  // Predict completion time for open tasks
+  const openTasks = [...store.tasks.values()].filter(t => t.state === 'opened');
+  const predictions = openTasks.slice(0, 20).map(t => {
+    const agent = t.assignee || t.author;
+    const est = t.estimate || 'unestimated';
+    // Use agent-specific avg if available, fallback to team, fallback to ESTIMATE_MINUTES
+    let predictedHours = null;
+    const agentStats = agents.find(a => a.name === agent);
+    if (agentStats?.by_estimate[est]) {
+      predictedHours = agentStats.by_estimate[est].avg_hours;
+    } else if (teamByEstimate[est]) {
+      predictedHours = teamByEstimate[est].avg_hours;
+    } else if (ESTIMATE_MINUTES[est]) {
+      predictedHours = ESTIMATE_MINUTES[est] / 60;
+    }
+    return {
+      title: t.title,
+      assignee: agent || '(unassigned)',
+      estimate: est,
+      predicted_hours: predictedHours,
+      project: t.project,
+      url: t.url,
+    };
+  });
+
+  return {
+    window_days: days,
+    team: teamByEstimate,
+    agents: agents.sort((a, b) => b.total_completed - a.total_completed),
+    predictions,
+  };
+};
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent, removeAgent,
   upsertTask, getTasksByState, getTasksForAgent, getAllTasks, getTask,
@@ -438,6 +542,6 @@ module.exports = {
   getWorkloadReport,
   logAutoAssign, getAutoAssignHistory,
   getUnassignedIssues,
-  getSessionVelocity, getSessionSummary,
+  getSessionVelocity, getSessionSummary, getCompletionStats,
   ESTIMATE_SESSIONS, ESTIMATE_MINUTES,
 };
