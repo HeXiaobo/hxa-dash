@@ -124,6 +124,7 @@ async function fetchMRs() {
         project: mr.references?.full?.split('!')[0]?.replace(/\/$/, '')?.split('/')?.pop() || 'unknown',
         title: mr.title,
         state: mr.state,
+        author: mr.author ? mapUsername(mr.author.username) : null,
         assignee: assignee,
         reviewer: reviewers.join(',') || null,
         url: mr.web_url,
