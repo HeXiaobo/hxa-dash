@@ -81,6 +81,11 @@ async function fetchAgents() {
 
 // Factory: create independent fetcher instance per scope (#100)
 function create(connectConfig, scopeId) {
+  if (!connectConfig || !connectConfig.hub_url || !connectConfig.agent_token) {
+    const scope = scopeId || 'default';
+    console.warn(`[ConnectFetcher:${scope}] Missing hub_url or agent_token — skipping`);
+    return { fetchAgents: async () => ({ agents: [], changes: [] }) };
+  }
   const scopeConf = connectConfig;
   const scope = scopeId || 'default';
 

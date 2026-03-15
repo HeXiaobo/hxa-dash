@@ -223,6 +223,12 @@ async function fetchAll() {
 
 // Factory: create independent fetcher instance per scope (#100)
 function create(gitlabConfig, scopeId) {
+  if (!gitlabConfig || !gitlabConfig.url || !gitlabConfig.token) {
+    const scope = scopeId || 'default';
+    console.warn(`[GitLabFetcher:${scope}] Missing url or token — skipping`);
+    const noop = async () => [];
+    return { fetchIssues: noop, fetchMRs: noop, fetchEvents: noop, fetchAll: async () => ({ issues: [], mrs: [], events: [] }) };
+  }
   const scopeConf = gitlabConfig;
   const scope = scopeId || 'default';
   const scopeProjectNameCache = new Map();

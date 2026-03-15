@@ -64,8 +64,8 @@ if (Array.isArray(config.scopes) && config.scopes.length > 0) {
       id: scopeId,
       name: s.name || scopeId,
       hub_url: s.hub_url || config.connect?.hub_url,
-      connect: { hub_url: s.hub_url || config.connect?.hub_url, agent_token: s.agent_token },
-      gitlab: s.gitlab,
+      connect: { hub_url: s.hub_url || config.connect?.hub_url, agent_token: s.agent_token || config.connect?.agent_token },
+      gitlab: s.gitlab || config.gitlab,
       entities: s.entities || null
     });
     if (s.entities) entity.loadFromConfig(Array.isArray(s.entities) ? s.entities : []);
