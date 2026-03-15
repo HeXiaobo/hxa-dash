@@ -1994,6 +1994,203 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   .live-summary-bar { gap: 8px; }
   .live-stat { padding: 8px 12px; min-width: 60px; }
   .live-stat-num { font-size: 18px; }
+
+/* ===== Projects Page (#76) ===== */
+.project-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.summary-card {
+  background: var(--card-bg, #1e293b);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  border: 1px solid var(--border-color, #334155);
+}
+
+.summary-number {
+  font-size: 1.8em;
+  font-weight: 700;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.summary-label {
+  font-size: 0.85em;
+  color: var(--text-secondary, #94a3b8);
+  margin-top: 4px;
+}
+
+.summary-healthy .summary-number { color: #22c55e; }
+.summary-warning .summary-number { color: #f59e0b; }
+.summary-critical .summary-number { color: #ef4444; }
+
+.project-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.project-card {
+  background: var(--card-bg, #1e293b);
+  border-radius: 8px;
+  padding: 16px;
+  border-left: 4px solid #64748b;
+  transition: box-shadow 0.2s;
+}
+
+.project-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.project-card.health-healthy { border-left-color: #22c55e; }
+.project-card.health-warning { border-left-color: #f59e0b; }
+.project-card.health-critical { border-left-color: #ef4444; }
+
+.project-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.project-name {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.health-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.85em;
+  color: #fff;
+  background: #64748b;
+}
+
+.health-badge.health-healthy { background: #22c55e; }
+.health-badge.health-warning { background: #f59e0b; color: #000; }
+.health-badge.health-critical { background: #ef4444; }
+
+.project-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color, #334155);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #22c55e);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.progress-text {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  min-width: 36px;
+  text-align: right;
+}
+
+.project-stats-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85em;
+  color: var(--text-secondary, #94a3b8);
+  margin-bottom: 4px;
+}
+
+.project-sparkline {
+  margin: 8px 0;
+}
+
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 22px;
+}
+
+.spark-bar {
+  flex: 1;
+  background: #3b82f6;
+  border-radius: 1px;
+  min-width: 4px;
+  opacity: 0.7;
+}
+
+.project-contributors {
+  font-size: 0.8em;
+  color: var(--text-secondary, #94a3b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-stale {
+  font-size: 0.8em;
+  color: #f59e0b;
+  margin-top: 4px;
+}
+
+/* AI Suggestions */
+.project-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--card-bg, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  font-size: 0.9em;
+}
+
+.suggestion-item.suggestion-critical { border-left: 3px solid #ef4444; }
+.suggestion-item.suggestion-warning { border-left: 3px solid #f59e0b; }
+.suggestion-item.suggestion-info { border-left: 3px solid #3b82f6; }
+.suggestion-item.suggestion-success { border-left: 3px solid #22c55e; }
+
+.suggestion-icon { font-size: 1.1em; flex-shrink: 0; }
+.suggestion-project {
+  font-weight: 600;
+  color: var(--text-primary, #f1f5f9);
+  flex-shrink: 0;
+}
+.suggestion-text { color: var(--text-secondary, #94a3b8); }
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 1em;
+}
+
+@media (max-width: 768px) {
+  .project-health-grid { grid-template-columns: 1fr; }
+  .project-summary-cards { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ===== Pipeline View (#77) ===== */

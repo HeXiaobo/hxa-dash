@@ -19,6 +19,7 @@
         <a href="#tasks" class="nav-item" data-page="tasks">任务</a>
         <a href="#timeline" class="nav-item" data-page="timeline">时间轴</a>
         <a href="#report" class="nav-item" data-page="report">报表</a>
+        <a href="#projects" class="nav-item" data-page="projects">项目</a>
         <a href="#tokens" class="nav-item" data-page="tokens">Tokens</a>
         <a href="#estimates" class="nav-item" data-page="estimates">预估</a>
         <a href="#live" class="nav-item" data-page="live">Live</a>
@@ -323,6 +324,30 @@
       </section>
     </div>
 
+    <!-- Page: Projects (#76) -->
+    <div id="page-projects" class="page">
+      <section class="section">
+        <div class="section-header">
+          <h2>项目总览</h2>
+        </div>
+        <div id="project-summary-cards" class="project-summary-cards"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>项目健康</h2>
+        </div>
+        <div id="project-health-grid" class="project-health-grid"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>AI 规划建议</h2>
+        </div>
+        <div id="project-suggestions" class="project-suggestions"></div>
+      </section>
+    </div>
+
     <!-- Page: Token Dashboard (#93) -->
     <div id="page-tokens" class="page">
       <section class="section">
@@ -487,6 +512,7 @@
   <script src="js/components/token-dashboard.js"></script>
   <script src="js/components/time-estimates.js"></script>
   <script src="js/components/health-diagnostics.js"></script>
+  <script src="js/components/projects.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

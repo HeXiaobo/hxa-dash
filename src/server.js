@@ -29,6 +29,8 @@ const webhookRoutes = require('./routes/webhook');
 const healthDiagRoutes = require('./routes/health-diagnostics');
 const liveRoutes = require('./routes/live');
 const pipelineRoutes = require('./routes/pipeline');
+const projectRoutes = require('./routes/projects');
+const { buildProjects } = projectRoutes;
 
 const PORT = process.env.PORT || 3479;
 
@@ -85,6 +87,7 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/diagnostics', healthDiagRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/pipeline', pipelineRoutes);
+app.use('/api/projects', projectRoutes);
 app.use('/api', reportRoutes.router);
 
 // GET /api/health — system health check (#48)
@@ -116,10 +119,6 @@ app.get('/api/graph', (req, res) => {
   }
 });
 
-// Projects endpoint
-app.get('/api/projects', (req, res) => {
-  res.json({ projects: db.getProjects() });
-});
 
 // Init report routes (needs ws + config)
 reportRoutes.init(ws, config);
@@ -133,7 +132,8 @@ ws.init(server, () => ({
   board: buildBoard(),
   timeline: db.getTimeline(50),
   graph: collab.getGraph(),
-  metrics: computeMetrics()
+  metrics: computeMetrics(),
+  projects: buildProjects()
 }));
 
 // Data polling engine
@@ -157,7 +157,8 @@ async function pollAll() {
       board: buildBoard(),
       timeline: db.getTimeline(50),
       graph,
-      metrics: computeMetrics()
+      metrics: computeMetrics(),
+      projects: buildProjects()
     };
 
     // Always broadcast full snapshot after each poll cycle (#40)
@@ -182,7 +183,8 @@ async function startPolling() {
     board: buildBoard(),
     timeline: db.getTimeline(50),
     graph: collab.getGraph(),
-    metrics: computeMetrics()
+    metrics: computeMetrics(),
+    projects: buildProjects()
   };
   ws.sendSnapshot(snapshot);
 

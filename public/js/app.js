@@ -101,6 +101,7 @@ const App = {
     Pipeline.init();
     TimeEstimates.init();
     HealthDiagnostics.init();
+    Projects.init();
 
     // Workload report: sortable headers + export
     document.querySelectorAll('.workload-table thead .sortable').forEach(th => {
@@ -189,7 +190,7 @@ const App = {
   },
 
   navigateTo(page, pushState = true) {
-    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'estimates', 'live', 'pipeline', 'health', 'myview'];
+    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'estimates', 'live', 'pipeline', 'health', 'projects', 'myview'];
     if (!validPages.includes(page)) page = 'overview';
 
     // Update nav
@@ -224,6 +225,7 @@ const App = {
     if (page === 'estimates') TimeEstimates.fetch();
     // Lazy-load health diagnostics (#94)
     if (page === 'health') HealthDiagnostics.fetch();
+    if (page === 'projects' && !Projects.data) Projects.load();
   },
 
   // --- Data Fetching ---
@@ -540,6 +542,9 @@ const App = {
         if (msg.data.metrics) {
           Metrics.update(msg.data.metrics);
           Suggestions.updateMetrics(msg.data.metrics);
+        }
+        if (msg.data.projects) {
+          Projects.update(msg.data.projects);
         }
         this.renderAllPages();
         break;
