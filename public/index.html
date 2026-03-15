@@ -29,6 +29,13 @@
       <button id="nav-close-btn" aria-label="关闭菜单">×</button>
     </div>
     <div class="header-right">
+      <div class="global-agent-filter">
+        <button id="global-select-agents" class="btn-filter-global" title="筛选 Agent">
+          <span class="filter-icon">👥</span>
+          <span id="global-agent-label" class="filter-label-text">全部 Agent</span>
+        </button>
+        <button id="global-clear-filter" class="btn-clear-filter-global" style="display:none" title="清除筛选">✕</button>
+      </div>
       <span id="ws-status" class="status-badge disconnected">断开</span>
       <span id="refresh-status" class="refresh-status">
         <span class="refresh-dot"></span>
@@ -43,14 +50,6 @@
   <main>
     <!-- Page: Overview -->
     <div id="page-overview" class="page active">
-      <!-- Agent Set Selector -->
-      <div class="filter-bar">
-        <span class="filter-label">Agent 集合</span>
-        <button id="overview-select-agents" class="btn-filter">选择 Agent…</button>
-        <span id="overview-agent-count" class="filter-count"></span>
-        <button id="overview-clear-filter" class="btn-clear-filter" style="display:none">清除筛选</button>
-      </div>
-
       <!-- Team Capacity Overview (#45) -->
       <section class="section">
         <div class="section-header">
@@ -207,20 +206,7 @@
 
     <!-- Page: Collab -->
     <div id="page-collab" class="page">
-      <div class="collab-layout">
-        <!-- Left: Agent Selector -->
-        <div class="collab-sidebar">
-          <div class="sidebar-header">
-            <h3>选择 Agent</h3>
-            <div class="sidebar-actions">
-              <button id="collab-select-all" class="btn-sm">全选</button>
-              <button id="collab-clear-all" class="btn-sm">清空</button>
-            </div>
-          </div>
-          <div id="collab-agent-list" class="agent-checklist"></div>
-        </div>
-
-        <!-- Right: Graph -->
+      <div class="collab-layout collab-layout-full">
         <div class="collab-main">
           <div class="section-header">
             <h2>协作关系</h2>
@@ -269,12 +255,6 @@
 
     <!-- Page: Tasks -->
     <div id="page-tasks" class="page">
-      <div class="filter-bar">
-        <span class="filter-label">筛选 Agent</span>
-        <button id="tasks-select-agents" class="btn-filter">选择 Agent…</button>
-        <span id="tasks-agent-count" class="filter-count"></span>
-        <button id="tasks-clear-filter" class="btn-clear-filter" style="display:none">清除筛选</button>
-      </div>
       <section class="section">
         <div class="section-header">
           <h2>任务看板</h2>
@@ -299,12 +279,6 @@
 
     <!-- Page: Timeline -->
     <div id="page-timeline" class="page">
-      <div class="filter-bar">
-        <span class="filter-label">筛选 Agent</span>
-        <button id="timeline-select-agents" class="btn-filter">选择 Agent…</button>
-        <span id="timeline-agent-count" class="filter-count"></span>
-        <button id="timeline-clear-filter" class="btn-clear-filter" style="display:none">清除筛选</button>
-      </div>
       <section class="section">
         <div class="section-header">
           <h2>工作时间线</h2>

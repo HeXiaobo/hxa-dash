@@ -59,6 +59,27 @@ header h1 { font-size: 18px; font-weight: 700; white-space: nowrap; }
 
 .header-right { display: flex; align-items: center; gap: 12px; }
 
+/* Global Agent Filter (#87) */
+.global-agent-filter { display: flex; align-items: center; gap: 4px; }
+.btn-filter-global {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font-size: 13px; cursor: pointer;
+  transition: all .15s;
+}
+.btn-filter-global:hover { background: var(--bg-hover); border-color: var(--accent); }
+.filter-icon { font-size: 14px; }
+.filter-label-text { font-weight: 500; }
+.filter-label-text.filtered { color: var(--accent); }
+.btn-clear-filter-global {
+  padding: 2px 6px; border-radius: 4px;
+  background: none; border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 11px; cursor: pointer;
+  line-height: 1;
+}
+.btn-clear-filter-global:hover { color: var(--red); border-color: var(--red); }
+
 .status-badge {
   font-size: 12px;
   padding: 3px 8px;
@@ -454,17 +475,7 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 
 /* Collab Page Layout */
 .collab-layout { display: flex; gap: 20px; height: calc(100vh - 140px); }
-.collab-sidebar {
-  width: 220px; min-width: 180px;
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-  display: flex; flex-direction: column; overflow: hidden;
-}
-.sidebar-header {
-  padding: 12px; border-bottom: 1px solid var(--border);
-  display: flex; justify-content: space-between; align-items: center;
-}
-.sidebar-header h3 { font-size: 14px; font-weight: 600; }
-.sidebar-actions { display: flex; gap: 4px; }
+.collab-layout-full { display: block; }
 .collab-main { flex: 1; min-width: 0; }
 
 .btn-sm {
@@ -634,9 +645,10 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   .card-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
   .drawer-stat-grid { grid-template-columns: repeat(2, 1fr); }
   .collab-layout { flex-direction: column; height: auto; }
-  .collab-sidebar { width: 100%; max-height: 200px; }
 
   #main-nav { overflow-x: auto; }
+  .filter-label-text { display: none; }
+  .btn-filter-global { padding: 4px 8px; }
   .nav-item { white-space: nowrap; font-size: 12px; padding: 5px 10px; }
 }
 

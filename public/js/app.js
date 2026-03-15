@@ -329,7 +329,6 @@ const App = {
     const graphData = this._filterGraph('overview', this.data.graph);
     if (this.overviewGraph) this.overviewGraph.setData(graphData.nodes, graphData.edges);
 
-    AgentFilter.updateCountDisplay('overview');
   },
 
   renderTeam() {
@@ -384,7 +383,6 @@ const App = {
       const total = (board.todo?.length || 0) + (board.doing?.length || 0) + (board.done?.length || 0);
       totalEl.textContent = `共 ${total} 项`;
     }
-    AgentFilter.updateCountDisplay('tasks');
   },
 
   renderTimeline() {
@@ -394,7 +392,6 @@ const App = {
     const totalEl = document.getElementById('timeline-total');
     if (totalEl) totalEl.textContent = `共 ${events.length} 条`;
 
-    AgentFilter.updateCountDisplay('timeline');
   },
 
   renderMyView() {
@@ -467,17 +464,15 @@ const App = {
     }
   },
 
-  // Called by AgentFilter when filter changes
-  onFilterChange(context) {
-    switch (context) {
-      case 'overview':
-        this.renderOverview();
-        Metrics.render(); // Re-render metrics with new filter (#67)
-        break;
-      case 'collab': this.renderCollab(); break;
-      case 'tasks': this.renderTasks(); break;
-      case 'timeline': this.renderTimeline(); break;
-    }
+  // Called by AgentFilter when global filter changes (#87)
+  onGlobalFilterChange() {
+    this.renderAllPages();
+    Metrics.render();
+  },
+
+  // Legacy compat
+  onFilterChange(_context) {
+    this.onGlobalFilterChange();
   },
 
   // --- WebSocket ---

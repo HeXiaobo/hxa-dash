@@ -1,40 +1,39 @@
-// Agent Filter/Selector Component
-// Manages agent subset selection with localStorage persistence
+// Agent Filter/Selector Component — Global (#87)
+// Single global agent filter applied to all pages
 const AgentFilter = {
-  // Storage keys for different filter contexts
-  STORAGE_KEYS: {
-    overview: 'hxa-dash-filter-overview',
-    collab: 'hxa-dash-filter-collab',
-    tasks: 'hxa-dash-filter-tasks',
-    timeline: 'hxa-dash-filter-timeline'
-  },
+  STORAGE_KEY: 'hxa-dash-filter-global',
 
-  // Current filter state per context
-  filters: {
-    overview: null,  // null = show all, Set = show subset
-    collab: null,
-    tasks: null,
-    timeline: null
-  },
+  // Current filter state: null = show all, Set = show subset
+  filter: null,
 
   // All known agents
   allAgents: [],
 
   init() {
-    // Load persisted filters
-    for (const [ctx, key] of Object.entries(this.STORAGE_KEYS)) {
-      const saved = localStorage.getItem(key);
-      if (saved) {
+    // Load persisted filter
+    const saved = localStorage.getItem(this.STORAGE_KEY);
+    if (saved) {
+      try {
+        const names = JSON.parse(saved);
+        if (Array.isArray(names) && names.length > 0) {
+          this.filter = new Set(names);
+        }
+      } catch {}
+    }
+
+    // Migrate from old per-context storage keys
+    for (const old of ['hxa-dash-filter-overview', 'hxa-dash-filter-collab', 'hxa-dash-filter-tasks', 'hxa-dash-filter-timeline']) {
+      if (!this.filter && localStorage.getItem(old)) {
         try {
-          const names = JSON.parse(saved);
-          if (Array.isArray(names) && names.length > 0) {
-            this.filters[ctx] = new Set(names);
-          }
+          const names = JSON.parse(localStorage.getItem(old));
+          if (Array.isArray(names) && names.length > 0) this.filter = new Set(names);
         } catch {}
       }
+      localStorage.removeItem(old);
     }
 
     this._setupModal();
+    this._setupGlobalButton();
   },
 
   // Update the agent list (called when team data arrives)
@@ -44,71 +43,80 @@ const AgentFilter = {
       online: !!a.online,
       role: a.role || ''
     }));
-
-    // Update collab sidebar if visible
-    this._renderCollabSidebar();
+    this._updateGlobalLabel();
   },
 
-  // Get filtered agent names for a context (null = all)
-  getFilter(context) {
-    return this.filters[context];
+  // Get the global filter (null = all)
+  getFilter(_context) {
+    return this.filter;
   },
 
   // Check if an agent passes the filter
-  passes(context, agentName) {
-    const f = this.filters[context];
-    if (!f) return true;
-    return f.has(agentName);
+  passes(_context, agentName) {
+    if (!this.filter) return true;
+    return this.filter.has(agentName);
   },
 
   // Filter a list of items by agent name
-  filterItems(context, items, agentKey = 'assignee') {
-    const f = this.filters[context];
-    if (!f) return items;
+  filterItems(_context, items, agentKey = 'assignee') {
+    if (!this.filter) return items;
     return items.filter(item => {
       const name = item[agentKey];
-      return !name || f.has(name);
+      return !name || this.filter.has(name);
     });
   },
 
   // Save filter
-  _save(context) {
-    const key = this.STORAGE_KEYS[context];
-    const f = this.filters[context];
-    if (f) {
-      localStorage.setItem(key, JSON.stringify([...f]));
+  _save() {
+    if (this.filter) {
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify([...this.filter]));
     } else {
-      localStorage.removeItem(key);
+      localStorage.removeItem(this.STORAGE_KEY);
     }
   },
 
-  // Update filter count display
-  updateCountDisplay(context) {
-    const countEl = document.getElementById(`${context}-agent-count`);
-    const clearBtn = document.getElementById(`${context}-clear-filter`);
-    const f = this.filters[context];
+  // Update count display (no-op for removed per-page elements, kept for compat)
+  updateCountDisplay(_context) {
+    // Global label is updated via _updateGlobalLabel
+  },
 
-    if (countEl) {
-      if (f) {
-        countEl.textContent = `${f.size} / ${this.allAgents.length} Agent`;
+  // Update global header label
+  _updateGlobalLabel() {
+    const label = document.getElementById('global-agent-label');
+    const clearBtn = document.getElementById('global-clear-filter');
+    if (label) {
+      if (this.filter) {
+        label.textContent = `${this.filter.size} / ${this.allAgents.length} Agent`;
+        label.classList.add('filtered');
       } else {
-        countEl.textContent = `全部 ${this.allAgents.length} Agent`;
+        label.textContent = `全部 ${this.allAgents.length} Agent`;
+        label.classList.remove('filtered');
       }
     }
     if (clearBtn) {
-      clearBtn.style.display = f ? '' : 'none';
+      clearBtn.style.display = this.filter ? '' : 'none';
     }
   },
 
-  // Open agent selector modal for a context
-  _activeContext: null,
+  // Setup global header button
+  _setupGlobalButton() {
+    const btn = document.getElementById('global-select-agents');
+    if (btn) btn.addEventListener('click', () => this.openSelector());
+
+    const clearBtn = document.getElementById('global-clear-filter');
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+      this.filter = null;
+      this._save();
+      this._updateGlobalLabel();
+      if (typeof App !== 'undefined') App.onGlobalFilterChange();
+    });
+  },
+
+  // Open agent selector modal
   _tempSelection: null,
 
-  openSelector(context) {
-    this._activeContext = context;
-    const currentFilter = this.filters[context];
-    this._tempSelection = currentFilter ? new Set(currentFilter) : new Set(this.allAgents.map(a => a.name));
-
+  openSelector() {
+    this._tempSelection = this.filter ? new Set(this.filter) : new Set(this.allAgents.map(a => a.name));
     this._renderModalList();
     document.getElementById('agent-selector-modal').classList.remove('hidden');
   },
@@ -132,34 +140,17 @@ const AgentFilter = {
     });
 
     document.getElementById('modal-apply').addEventListener('click', () => {
-      const ctx = this._activeContext;
-      if (!ctx) return;
-
       if (this._tempSelection.size === 0 || this._tempSelection.size === this.allAgents.length) {
-        this.filters[ctx] = null;
+        this.filter = null;
       } else {
-        this.filters[ctx] = new Set(this._tempSelection);
+        this.filter = new Set(this._tempSelection);
       }
-      this._save(ctx);
-      this.updateCountDisplay(ctx);
+      this._save();
+      this._updateGlobalLabel();
       this._closeModal();
 
-      // Trigger re-render
-      if (typeof App !== 'undefined') App.onFilterChange(ctx);
+      if (typeof App !== 'undefined') App.onGlobalFilterChange();
     });
-
-    // Wire up page filter buttons
-    for (const ctx of ['overview', 'tasks', 'timeline']) {
-      const btn = document.getElementById(`${ctx}-select-agents`);
-      if (btn) btn.addEventListener('click', () => this.openSelector(ctx));
-      const clearBtn = document.getElementById(`${ctx}-clear-filter`);
-      if (clearBtn) clearBtn.addEventListener('click', () => {
-        this.filters[ctx] = null;
-        this._save(ctx);
-        this.updateCountDisplay(ctx);
-        if (typeof App !== 'undefined') App.onFilterChange(ctx);
-      });
-    }
   },
 
   _renderModalList() {
@@ -196,66 +187,10 @@ const AgentFilter = {
 
   _closeModal() {
     document.getElementById('agent-selector-modal').classList.add('hidden');
-    this._activeContext = null;
     this._tempSelection = null;
   },
 
-  // Collab sidebar (dedicated for collab page)
-  _renderCollabSidebar() {
-    const container = document.getElementById('collab-agent-list');
-    if (!container) return;
-
-    const currentFilter = this.filters.collab;
-
-    const sorted = [...this.allAgents].sort((a, b) => {
-      if (a.online !== b.online) return b.online - a.online;
-      return a.name.localeCompare(b.name);
-    });
-
-    container.innerHTML = sorted.map(a => {
-      const checked = currentFilter ? currentFilter.has(a.name) : true;
-      return `
-        <label class="check-item">
-          <input type="checkbox" value="${esc(a.name)}" ${checked ? 'checked' : ''}>
-          <span class="online-dot ${a.online ? 'online' : 'offline'}"></span>
-          <span class="check-name">${esc(a.name)}</span>
-        </label>
-      `;
-    }).join('');
-
-    container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        this._updateCollabFilterFromSidebar();
-      });
-    });
-  },
-
-  _updateCollabFilterFromSidebar() {
-    const checkboxes = document.querySelectorAll('#collab-agent-list input[type="checkbox"]');
-    const selected = new Set();
-    checkboxes.forEach(cb => { if (cb.checked) selected.add(cb.value); });
-
-    if (selected.size === 0 || selected.size === this.allAgents.length) {
-      this.filters.collab = null;
-    } else {
-      this.filters.collab = selected;
-    }
-    this._save('collab');
-    if (typeof App !== 'undefined') App.onFilterChange('collab');
-  },
-
-  initCollabButtons() {
-    const selectAll = document.getElementById('collab-select-all');
-    const clearAll = document.getElementById('collab-clear-all');
-
-    if (selectAll) selectAll.addEventListener('click', () => {
-      document.querySelectorAll('#collab-agent-list input[type="checkbox"]').forEach(cb => cb.checked = true);
-      this._updateCollabFilterFromSidebar();
-    });
-
-    if (clearAll) clearAll.addEventListener('click', () => {
-      document.querySelectorAll('#collab-agent-list input[type="checkbox"]').forEach(cb => cb.checked = false);
-      this._updateCollabFilterFromSidebar();
-    });
-  }
+  // Compat stubs for removed collab sidebar
+  initCollabButtons() {},
+  _renderCollabSidebar() {}
 };
