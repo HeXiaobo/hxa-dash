@@ -49,6 +49,12 @@ function buildAgents() {
     // Health score: 0-100 based on activity recency + completion rate + task load balance (#45)
     const healthScore = computeHealthScore(recentEvents, closedTasks, openTasks, now);
 
+    // Blocking MRs: open MRs stale > 15 min (agent-scale SLA) (#98)
+    const blockingMRs = db.getBlockingMRsForAgent(a.name, now);
+
+    // Last active time: most recent event timestamp (#98)
+    const lastActiveAt = latestEvent ? latestEvent.timestamp : (a.last_seen_at || null);
+
     return {
       ...a,
       tags: safeJSON(a.tags),
@@ -58,6 +64,8 @@ function buildAgents() {
       top_collaborator: topCollaborator,
       capacity,
       health_score: healthScore,
+      last_active_at: lastActiveAt,
+      blocking_mrs: blockingMRs,
       current_tasks: openTasks.slice(0, 3).map(t => ({
         title: t.title,
         type: t.type,

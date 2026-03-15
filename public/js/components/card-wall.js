@@ -6,6 +6,7 @@ const CardWall = {
   _fingerprint(agent) {
     const tasks = (agent.current_tasks || []).map(t => t.title).join('|');
     const s = agent.stats || {};
+    const bmrs = (agent.blocking_mrs || []).map(m => m.title + ':' + m.minutes_stale).join('|');
     return [
       agent.online ? 1 : 0,
       agent.work_status || '',
@@ -19,7 +20,9 @@ const CardWall = {
       (agent.latest_event || {}).target_title,
       (agent.active_projects || []).join('|'),
       (agent.tags || []).join('|'),
-      (agent.top_collaborator || {}).name
+      (agent.top_collaborator || {}).name,
+      agent.last_active_at || '',
+      bmrs
     ].join('\x1f');
   },
 
@@ -112,8 +115,31 @@ const CardWall = {
       ? `<span class="health-dot ${hsClass}" title="健康分: ${hs}"></span>`
       : '';
 
-    const lastSeenHTML = (!agent.online && lastSeen)
-      ? `<div class="card-last-seen">最后活跃: ${lastSeen}</div>`
+    // Last active time (#98) — show for all agents
+    const lastActiveAt = agent.last_active_at;
+    const lastActiveHTML = lastActiveAt
+      ? `<div class="card-last-active">最后活跃: ${timeAgo(lastActiveAt)}</div>`
+      : (!agent.online && lastSeen)
+        ? `<div class="card-last-active">最后活跃: ${lastSeen}</div>`
+        : '';
+
+    // Blocking MRs (#98) — red light for stale MRs
+    const blockingMRs = agent.blocking_mrs || [];
+    const blockingHTML = blockingMRs.length > 0
+      ? `<div class="card-blocking-mrs">
+          ${blockingMRs.slice(0, 2).map(m => {
+            const severity = m.minutes_stale > 30 ? 'critical' : 'warning';
+            const link = m.url
+              ? `<a href="${esc(m.url)}" class="blocking-mr-link" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔀 ${esc(truncate(m.title, 35))}</a>`
+              : `<span class="blocking-mr-link">🔀 ${esc(truncate(m.title, 35))}</span>`;
+            return `<div class="blocking-mr-item ${severity}">
+              <span class="blocking-light"></span>
+              ${link}
+              <span class="blocking-time">${m.minutes_stale}m</span>
+            </div>`;
+          }).join('')}
+          ${blockingMRs.length > 2 ? `<div class="blocking-mr-item more">+${blockingMRs.length - 2} more</div>` : ''}
+        </div>`
       : '';
 
     const tags = agent.tags || [];
@@ -195,7 +221,8 @@ const CardWall = {
         </div>
         <div class="agent-role">${esc(agent.role || '—')}</div>
         ${agent.bio ? `<div class="agent-bio">${esc(truncate(agent.bio, 60))}</div>` : ''}
-        ${lastSeenHTML}
+        ${lastActiveHTML}
+        ${blockingHTML}
         ${tagsHTML}
         ${capacityHTML}
         ${projectsHTML}

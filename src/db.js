@@ -393,6 +393,24 @@ const getSessionSummary = () => {
   };
 };
 
+// Blocking MRs per agent: open MRs where agent is author/assignee, open > thresholdMs
+const getBlockingMRsForAgent = (name, now, thresholdMs = 15 * 60 * 1000) => {
+  return [...store.tasks.values()]
+    .filter(t =>
+      t.type === 'mr' &&
+      t.state === 'opened' &&
+      (t.assignee === name || t.author === name) &&
+      (now - (t.updated_at || t.created_at)) > thresholdMs
+    )
+    .map(t => ({
+      title: t.title,
+      url: t.url,
+      project: t.project,
+      minutes_stale: Math.floor((now - (t.updated_at || t.created_at)) / 60000),
+    }))
+    .sort((a, b) => b.minutes_stale - a.minutes_stale);
+};
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent, removeAgent,
   upsertTask, getTasksByState, getTasksForAgent, getAllTasks, getTask,
@@ -401,6 +419,7 @@ module.exports = {
   getProjects,
   getEventsInWindow, buildTimeline, buildTrends, getAgentStats,
   getStaleIssues, getUnreviewedMRs, getIdleAgents,
+  getBlockingMRsForAgent,
   getWorkloadReport,
   logAutoAssign, getAutoAssignHistory,
   getUnassignedIssues,
