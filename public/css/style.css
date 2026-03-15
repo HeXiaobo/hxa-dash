@@ -1994,6 +1994,7 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   .live-summary-bar { gap: 8px; }
   .live-stat { padding: 8px 12px; min-width: 60px; }
   .live-stat-num { font-size: 18px; }
+}
 
 /* ===== Projects Page (#76) ===== */
 .project-summary-cards {
