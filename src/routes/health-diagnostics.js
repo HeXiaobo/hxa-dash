@@ -1,23 +1,21 @@
-// System Health Diagnostics (#94)
+// System Health Diagnostics (#94, #104)
+// Multi-component health: local system + agent status + service endpoints
 const express = require('express');
 const router = express.Router();
 const { execSync } = require('child_process');
 const os = require('os');
-const fs = require('fs');
+const http = require('http');
+const https = require('https');
+const db = require('../db');
 
-function getSystemHealth() {
-  const now = Date.now();
-
-  // --- OS metrics ---
+function getLocalSystem() {
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
   const memPct = Math.round((usedMem / totalMem) * 100);
   const cpus = os.cpus();
   const loadAvg = os.loadavg();
-  const cpuCount = cpus.length;
 
-  // Disk usage (macOS/Linux)
   let diskPct = null;
   let diskUsed = null;
   let diskTotal = null;
@@ -26,14 +24,12 @@ function getSystemHealth() {
     const lines = dfOut.trim().split('\n');
     if (lines.length >= 2) {
       const parts = lines[1].split(/\s+/);
-      // macOS: Filesystem Size Used Avail Capacity ...
       diskTotal = parts[1];
       diskUsed = parts[2];
       diskPct = parseInt(parts[4], 10) || null;
     }
   } catch { /* ignore */ }
 
-  // --- PM2 services ---
   let pm2Services = [];
   try {
     const pm2Out = execSync('pm2 jlist 2>/dev/null', { timeout: 10000 }).toString();
@@ -42,7 +38,7 @@ function getSystemHealth() {
       name: svc.name,
       status: svc.pm2_env?.status || 'unknown',
       pid: svc.pid,
-      uptime: svc.pm2_env?.pm_uptime ? now - svc.pm2_env.pm_uptime : null,
+      uptime: svc.pm2_env?.pm_uptime ? Date.now() - svc.pm2_env.pm_uptime : null,
       restarts: svc.pm2_env?.restart_time || 0,
       memory: svc.monit?.memory || null,
       cpu: svc.monit?.cpu || null,
@@ -52,65 +48,159 @@ function getSystemHealth() {
   const pm2Online = pm2Services.filter(s => s.status === 'online').length;
   const pm2Total = pm2Services.length;
 
-  // --- Health endpoints ---
-  // These are checked client-side (CORS) — provide endpoint list for frontend to probe
-  const endpoints = [
-    { name: 'HxA Dash API', url: '/api/health', internal: true },
-    { name: 'GitLab API', url: 'https://git.coco.xyz/api/v4/version', external: true },
-  ];
-
-  // --- Dashboard uptime ---
-  const uptimeSec = Math.floor(process.uptime());
-
-  // --- Thresholds ---
   const memStatus = memPct > 90 ? 'critical' : memPct > 80 ? 'warning' : 'ok';
   const diskStatus = diskPct > 90 ? 'critical' : diskPct > 80 ? 'warning' : 'ok';
   const pm2Status = pm2Online === pm2Total && pm2Total > 0 ? 'ok' : pm2Online === 0 ? 'critical' : 'warning';
-  const overallStatus = [memStatus, diskStatus, pm2Status].includes('critical') ? 'critical'
-    : [memStatus, diskStatus, pm2Status].includes('warning') ? 'warning' : 'ok';
 
   return {
-    timestamp: now,
-    overall: overallStatus,
-    uptime_seconds: uptimeSec,
-    system: {
-      hostname: os.hostname(),
-      platform: `${os.type()} ${os.release()}`,
-      arch: os.arch(),
-      cpu_count: cpuCount,
-      cpu_model: cpus[0]?.model || 'unknown',
-      load_avg: loadAvg.map(v => Math.round(v * 100) / 100),
-    },
-    memory: {
-      status: memStatus,
-      total_gb: Math.round(totalMem / 1073741824 * 10) / 10,
-      used_gb: Math.round(usedMem / 1073741824 * 10) / 10,
-      free_gb: Math.round(freeMem / 1073741824 * 10) / 10,
-      pct: memPct,
-    },
-    disk: {
-      status: diskStatus,
-      total: diskTotal,
-      used: diskUsed,
-      pct: diskPct,
-    },
-    pm2: {
-      status: pm2Status,
-      online: pm2Online,
-      total: pm2Total,
-      services: pm2Services,
-    },
-    endpoints,
+    hostname: os.hostname(),
+    platform: `${os.type()} ${os.release()}`,
+    arch: os.arch(),
+    cpu_count: cpus.length,
+    cpu_model: cpus[0]?.model || 'unknown',
+    load_avg: loadAvg.map(v => Math.round(v * 100) / 100),
+    memory: { status: memStatus, total_gb: Math.round(totalMem / 1073741824 * 10) / 10, used_gb: Math.round(usedMem / 1073741824 * 10) / 10, free_gb: Math.round(freeMem / 1073741824 * 10) / 10, pct: memPct },
+    disk: { status: diskStatus, total: diskTotal, used: diskUsed, pct: diskPct },
+    pm2: { status: pm2Status, online: pm2Online, total: pm2Total, services: pm2Services },
   };
 }
 
-router.get('/', (req, res) => {
+// Probe a URL and return status
+function probeEndpoint(url, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const mod = url.startsWith('https') ? https : http;
+    const start = Date.now();
+    try {
+      const req = mod.get(url, { timeout: timeoutMs, rejectUnauthorized: false }, (res) => {
+        const latencyMs = Date.now() - start;
+        res.resume();
+        resolve({
+          status: res.statusCode < 500 ? 'ok' : 'error',
+          http_status: res.statusCode,
+          latency_ms: latencyMs,
+        });
+      });
+      req.on('error', () => {
+        resolve({ status: 'error', http_status: null, latency_ms: Date.now() - start });
+      });
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ status: 'error', http_status: null, latency_ms: timeoutMs });
+      });
+    } catch {
+      resolve({ status: 'error', http_status: null, latency_ms: 0 });
+    }
+  });
+}
+
+// Service endpoints to check
+const SERVICE_ENDPOINTS = [
+  { name: 'HxA Dash', url: 'http://localhost:3479/api/health', category: 'internal' },
+  { name: 'GitLab', url: 'https://git.coco.xyz/api/v4/version', category: 'platform' },
+  { name: 'HxA Hub', url: 'https://jessie.coco.site/hub/api/health', category: 'platform' },
+  { name: 'HxA Link', url: 'https://jessie.coco.site/api/health', category: 'platform' },
+];
+
+// Get agent health from db
+function getAgentHealth() {
+  const agents = db.getAllAgents();
+  const now = Date.now();
+  const fiveMinAgo = now - 5 * 60 * 1000;
+  const thirtyMinAgo = now - 30 * 60 * 1000;
+
+  return agents.map(agent => {
+    const events = db.getEventsForAgent(agent.name, 1);
+    const lastEvent = events[0] || null;
+    const lastActive = lastEvent?.timestamp || agent.last_seen_at || null;
+
+    let activityStatus = 'unknown';
+    if (agent.online) {
+      activityStatus = lastActive && lastActive > fiveMinAgo ? 'active' : 'idle';
+    } else {
+      activityStatus = lastActive && lastActive > thirtyMinAgo ? 'recently_seen' : 'offline';
+    }
+
+    const tasks = db.getTasksForAgent(agent.name, { assigneeOnly: true });
+    const openTasks = tasks.filter(t => t.state === 'opened').length;
+
+    return {
+      name: agent.name,
+      online: agent.online,
+      status: activityStatus,
+      last_seen_at: agent.last_seen_at || null,
+      last_active: lastActive,
+      open_tasks: openTasks,
+    };
+  });
+}
+
+router.get('/', async (req, res) => {
   try {
-    res.json(getSystemHealth());
+    const now = Date.now();
+    const localSystem = getLocalSystem();
+    const agentHealth = getAgentHealth();
+
+    // Probe service endpoints in parallel
+    const probeResults = await Promise.all(
+      SERVICE_ENDPOINTS.map(async (ep) => {
+        const result = await probeEndpoint(ep.url);
+        return { name: ep.name, url: ep.url, category: ep.category, ...result };
+      })
+    );
+
+    const systemStatuses = [localSystem.memory.status, localSystem.disk.status, localSystem.pm2.status];
+    const serviceStatuses = probeResults.map(r => r.status);
+    const agentOnline = agentHealth.filter(a => a.online).length;
+    const agentTotal = agentHealth.length;
+    const agentStatus = agentTotal === 0 ? 'warning' : agentOnline === agentTotal ? 'ok' : agentOnline === 0 ? 'critical' : 'warning';
+
+    const allStatuses = [...systemStatuses, ...serviceStatuses, agentStatus];
+    const overallStatus = allStatuses.includes('critical') ? 'critical'
+      : allStatuses.includes('error') ? 'warning'
+      : allStatuses.includes('warning') ? 'warning' : 'ok';
+
+    res.json({
+      timestamp: now,
+      overall: overallStatus,
+      uptime_seconds: Math.floor(process.uptime()),
+      system: {
+        hostname: localSystem.hostname,
+        platform: localSystem.platform,
+        arch: localSystem.arch,
+        cpu_count: localSystem.cpu_count,
+        cpu_model: localSystem.cpu_model,
+        load_avg: localSystem.load_avg,
+      },
+      memory: localSystem.memory,
+      disk: localSystem.disk,
+      pm2: localSystem.pm2,
+      services: probeResults,
+      agents: {
+        status: agentStatus,
+        online: agentOnline,
+        total: agentTotal,
+        list: agentHealth,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 module.exports = router;
-module.exports.getSystemHealth = getSystemHealth;
+module.exports.getSystemHealth = () => {
+  const local = getLocalSystem();
+  const systemStatuses = [local.memory.status, local.disk.status, local.pm2.status];
+  const overallStatus = systemStatuses.includes('critical') ? 'critical'
+    : systemStatuses.includes('warning') ? 'warning' : 'ok';
+  return {
+    timestamp: Date.now(),
+    overall: overallStatus,
+    uptime_seconds: Math.floor(process.uptime()),
+    system: { hostname: local.hostname, platform: local.platform, arch: local.arch, cpu_count: local.cpu_count, cpu_model: local.cpu_model, load_avg: local.load_avg },
+    memory: local.memory,
+    disk: local.disk,
+    pm2: local.pm2,
+    endpoints: [],
+  };
+};

@@ -1549,17 +1549,16 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .estimate-dot.estimate-none { background: rgba(255,255,255,.2); }
 
 /* ===== #93: Token Dashboard ===== */
-.token-demo-badge {
+.token-estimate-badge {
   display: inline-block;
   font-size: 10px;
-  color: var(--orange);
-  border: 1px solid var(--orange);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 6px;
   margin-bottom: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-weight: 500;
+  cursor: help;
 }
 
 .token-summary {
@@ -1834,9 +1833,43 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 }
 .health-refresh-btn:hover { background: var(--bg-hover); }
 
+/* Agent health grid (#104) */
+.health-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.health-agent-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.health-agent-card.health-ok { border-left: 3px solid var(--green); }
+.health-agent-card.health-warn { border-left: 3px solid var(--orange); }
+.health-agent-card.health-crit { border-left: 3px solid var(--red); }
+.health-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.health-agent-icon { font-size: 12px; }
+.health-agent-name { font-weight: 600; font-size: 13px; color: var(--text); }
+.health-agent-detail { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+.health-agent-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 768px) {
   .health-info-grid { grid-template-columns: 1fr; }
   .health-gauges { flex-direction: column; align-items: center; }
+  .health-agent-grid { grid-template-columns: 1fr 1fr; }
 }
 
 /* ===== Live Dashboard (#95) ===== */

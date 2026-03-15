@@ -1,8 +1,8 @@
-// System Health Diagnostics (#94)
+// System Health Diagnostics (#94, #104)
+// Multi-component view: system + agents + services
 const HealthDiagnostics = {
   _data: null,
   _container: null,
-  _pollTimer: null,
 
   init() {
     this._container = document.getElementById('health-diagnostics');
@@ -34,10 +34,16 @@ const HealthDiagnostics = {
       </div>
     `;
 
+    // Agent health overview
+    const agentSection = this._renderAgentHealth(d.agents);
+
+    // Service endpoints
+    const serviceSection = this._renderServices(d.services);
+
     // System info card
     const sysInfo = `
       <div class="health-card">
-        <div class="health-card-title">🖥️ 系统信息</div>
+        <div class="health-card-title">🖥️ 主机</div>
         <div class="health-info-grid">
           <div class="health-info-item"><span class="health-info-label">主机</span><span class="health-info-value">${esc(d.system.hostname)}</span></div>
           <div class="health-info-item"><span class="health-info-label">平台</span><span class="health-info-value">${esc(d.system.platform)}</span></div>
@@ -56,15 +62,95 @@ const HealthDiagnostics = {
     `;
 
     // PM2 services table
-    const pm2Header = `
-      <div class="health-card">
-        <div class="health-card-title">
-          ${statusIcon[d.pm2.status]} PM2 服务
-          <span class="health-card-badge">${d.pm2.online}/${d.pm2.total} 在线</span>
-        </div>
+    const pm2Section = this._renderPM2(d.pm2, statusIcon);
+
+    // Footer
+    const footer = `
+      <div class="health-footer">
+        最后检查: ${new Date(d.timestamp).toLocaleString('zh-CN')}
+        <button class="btn-sm health-refresh-btn" onclick="HealthDiagnostics.fetch()">🔄 刷新</button>
+      </div>
     `;
 
-    const pm2Rows = d.pm2.services.map(svc => {
+    this._container.innerHTML = banner + agentSection + serviceSection + sysInfo + resources + pm2Section + footer;
+  },
+
+  _renderAgentHealth(agents) {
+    if (!agents || !agents.list || agents.list.length === 0) return '';
+
+    const statusConfig = {
+      active:        { icon: '🟢', label: '活跃', cls: 'health-ok' },
+      idle:          { icon: '🟡', label: '在线/空闲', cls: 'health-warn' },
+      recently_seen: { icon: '🟠', label: '近期活跃', cls: 'health-warn' },
+      offline:       { icon: '🔴', label: '离线', cls: 'health-crit' },
+      unknown:       { icon: '⚪', label: '未知', cls: '' },
+    };
+
+    const agentCards = agents.list.map(a => {
+      const cfg = statusConfig[a.status] || statusConfig.unknown;
+      const lastActiveStr = a.last_active ? this._formatTimeAgo(a.last_active) : '无记录';
+      return `
+        <div class="health-agent-card ${cfg.cls}">
+          <div class="health-agent-header">
+            <span class="health-agent-icon">${cfg.icon}</span>
+            <span class="health-agent-name">${esc(a.name)}</span>
+          </div>
+          <div class="health-agent-detail">${cfg.label}</div>
+          <div class="health-agent-meta">
+            <span>最近活动: ${lastActiveStr}</span>
+            ${a.open_tasks > 0 ? `<span>待办: ${a.open_tasks}</span>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="health-card">
+        <div class="health-card-title">
+          🤖 Agent 状态
+          <span class="health-card-badge">${agents.online}/${agents.total} 在线</span>
+        </div>
+        <div class="health-agent-grid">${agentCards}</div>
+      </div>
+    `;
+  },
+
+  _renderServices(services) {
+    if (!services || services.length === 0) return '';
+
+    const rows = services.map(svc => {
+      const isOk = svc.status === 'ok';
+      const cls = isOk ? 'health-ok' : 'health-crit';
+      const icon = isOk ? '🟢' : '🔴';
+      const statusText = svc.http_status ? `${svc.http_status}` : '超时';
+      const latency = svc.latency_ms != null ? `${svc.latency_ms}ms` : '—';
+      return `
+        <tr class="${cls}">
+          <td>${icon} ${esc(svc.name)}</td>
+          <td>${esc(svc.category)}</td>
+          <td class="health-num">${statusText}</td>
+          <td class="health-num">${latency}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="health-card">
+        <div class="health-card-title">🌐 服务状态</div>
+        <div class="health-table-wrap">
+          <table class="health-table">
+            <thead>
+              <tr><th>服务</th><th>类别</th><th>状态码</th><th>延迟</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  _renderPM2(pm2, statusIcon) {
+    const pm2Rows = pm2.services.map(svc => {
       const svcClass = svc.status === 'online' ? 'health-ok' : 'health-crit';
       const mem = svc.memory ? `${Math.round(svc.memory / 1048576)}MB` : '—';
       const uptime = svc.uptime != null ? this._formatUptime(Math.floor(svc.uptime / 1000)) : '—';
@@ -81,19 +167,17 @@ const HealthDiagnostics = {
       `;
     }).join('');
 
-    const pm2Table = `
-      ${pm2Header}
+    return `
+      <div class="health-card">
+        <div class="health-card-title">
+          ${statusIcon[pm2.status]} PM2 服务
+          <span class="health-card-badge">${pm2.online}/${pm2.total} 在线</span>
+        </div>
         <div class="health-table-wrap">
           <table class="health-table">
             <thead>
               <tr>
-                <th>服务</th>
-                <th>状态</th>
-                <th>PID</th>
-                <th>内存</th>
-                <th>CPU</th>
-                <th>运行时间</th>
-                <th>重启次数</th>
+                <th>服务</th><th>状态</th><th>PID</th><th>内存</th><th>CPU</th><th>运行时间</th><th>重启次数</th>
               </tr>
             </thead>
             <tbody>${pm2Rows || '<tr><td colspan="7" class="health-empty">未检测到 PM2 服务</td></tr>'}</tbody>
@@ -101,16 +185,6 @@ const HealthDiagnostics = {
         </div>
       </div>
     `;
-
-    // Last check timestamp
-    const footer = `
-      <div class="health-footer">
-        最后检查: ${new Date(d.timestamp).toLocaleString('zh-CN')}
-        <button class="btn-sm health-refresh-btn" onclick="HealthDiagnostics.fetch()">🔄 刷新</button>
-      </div>
-    `;
-
-    this._container.innerHTML = banner + sysInfo + resources + pm2Table + footer;
   },
 
   _renderGauge(label, pct, status, detail) {
@@ -143,5 +217,13 @@ const HealthDiagnostics = {
     const d = Math.floor(seconds / 86400);
     const h = Math.floor((seconds % 86400) / 3600);
     return `${d}天${h}小时`;
+  },
+
+  _formatTimeAgo(ts) {
+    const diff = Date.now() - ts;
+    if (diff < 60000) return '刚刚';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+    return `${Math.floor(diff / 86400000)}天前`;
   }
 };

@@ -1,101 +1,108 @@
-// Token consumption attribution routes (#93)
-// Data source: simulated for now — replace with real API integration later
+// Token consumption attribution routes (#93, #102)
+// Estimates token usage from actual GitLab activity data
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
-// Cost per 1M tokens (USD) — configurable
-const COST_PER_M_INPUT  = 3.00;   // Claude Sonnet input
-const COST_PER_M_OUTPUT = 15.00;  // Claude Sonnet output
+// Cost per 1M tokens (USD) — Claude Sonnet pricing
+const COST_PER_M_INPUT  = 3.00;
+const COST_PER_M_OUTPUT = 15.00;
 
-// Simulated token data store
-// In production, this would come from Claude API usage logs or a billing API
-const tokenStore = {
-  daily: new Map(),  // "YYYY-MM-DD" -> { total_input, total_output, agents: { name: { input, output } } }
+// Per-action token estimates (based on typical Claude API usage patterns)
+// These are rough estimates — actual usage depends on prompt/response complexity
+const TOKEN_PER_ACTION = {
+  pushed:        8000,   // Code review / commit generation: ~6K input + ~2K output
+  commented:     3000,   // Reading context + writing comment: ~2K input + ~1K output
+  mr_opened:     12000,  // MR creation: reading diff, writing description
+  mr_merged:     2000,   // Merge action: minimal tokens
+  issue_opened:  5000,   // Issue triage / creation
+  issue_closed:  1500,   // Close action
+  reviewed:      6000,   // Code review: reading diff + writing feedback
+  approved:      1000,   // Approval: minimal
+  default:       3000,   // Fallback for unknown actions
 };
 
-// Seed demo data based on agent activity patterns
-function seedDemoData() {
-  const agents = db.getAllAgents();
-  if (agents.length === 0) return;
+// Input/output ratio by action type
+const OUTPUT_RATIO = {
+  pushed:        0.25,   // 25% output (code generation)
+  commented:     0.35,   // 35% output (writing comments)
+  mr_opened:     0.30,
+  issue_opened:  0.30,
+  reviewed:      0.30,
+  default:       0.20,
+};
 
-  const now = Date.now();
-  const dayMs = 86400000;
-
-  for (let d = 0; d < 30; d++) {
-    const date = new Date(now - d * dayMs);
-    const key = date.toISOString().slice(0, 10);
-    if (tokenStore.daily.has(key)) continue;
-
-    const entry = { total_input: 0, total_output: 0, agents: {} };
-
-    for (const agent of agents) {
-      // Simulate usage based on agent's event activity
-      const dayStart = Math.floor(date.getTime() / dayMs) * dayMs;
-      const dayEvents = db.getEventsInWindow(dayStart, agent.name)
-        .filter(e => e.timestamp < dayStart + dayMs);
-      const activity = dayEvents.length;
-
-      // Base tokens per agent-day + activity multiplier + randomness
-      const baseFactor = agent.online ? 1.2 : 0.3;
-      const activityFactor = 1 + activity * 0.5;
-      const noise = 0.7 + Math.random() * 0.6; // 0.7-1.3x
-
-      const inputTokens = Math.round(50000 * baseFactor * activityFactor * noise);
-      const outputTokens = Math.round(inputTokens * (0.15 + Math.random() * 0.15)); // 15-30% of input
-
-      entry.agents[agent.name] = { input: inputTokens, output: outputTokens };
-      entry.total_input += inputTokens;
-      entry.total_output += outputTokens;
-    }
-
-    tokenStore.daily.set(key, entry);
-  }
-}
-
-// Refresh demo data on each request (picks up new agents)
-function ensureData() {
-  seedDemoData();
-}
-
-// GET /api/tokens — summary for a time window
+// GET /api/tokens — token consumption estimates for a time window
 router.get('/', (req, res) => {
-  ensureData();
-
   const days = Math.min(parseInt(req.query.days) || 7, 30);
   const now = Date.now();
   const dayMs = 86400000;
+  const sinceMs = now - days * dayMs;
 
-  let totalInput = 0;
-  let totalOutput = 0;
-  const agentTotals = new Map();
-  const dailySeries = [];
+  const agents = db.getAllAgents();
+  if (agents.length === 0) {
+    return res.json({
+      window_days: days,
+      estimated: true,
+      summary: { total_input: 0, total_output: 0, total_tokens: 0, total_cost_usd: 0, avg_daily_tokens: 0, avg_daily_cost_usd: 0 },
+      daily: [],
+      agents: [],
+      pricing: { input_per_m: COST_PER_M_INPUT, output_per_m: COST_PER_M_OUTPUT },
+    });
+  }
 
+  // Build per-day, per-agent token estimates from real event data
+  const dailyMap = new Map(); // "YYYY-MM-DD" -> { total_input, total_output, agents: {} }
+  const agentTotals = new Map(); // agent name -> { input, output }
+
+  // Initialize all days in window
   for (let d = days - 1; d >= 0; d--) {
     const date = new Date(now - d * dayMs);
     const key = date.toISOString().slice(0, 10);
-    const entry = tokenStore.daily.get(key);
+    dailyMap.set(key, { total_input: 0, total_output: 0, agents: {} });
+  }
 
-    if (entry) {
-      totalInput += entry.total_input;
-      totalOutput += entry.total_output;
+  // Process real events from the database
+  const allEvents = db.getEventsInWindow(sinceMs);
 
-      dailySeries.push({
-        date: key,
-        input: entry.total_input,
-        output: entry.total_output,
-      });
+  for (const event of allEvents) {
+    const date = new Date(event.timestamp);
+    const key = date.toISOString().slice(0, 10);
+    const agent = event.agent;
+    if (!agent || !dailyMap.has(key)) continue;
 
-      for (const [name, usage] of Object.entries(entry.agents)) {
-        const prev = agentTotals.get(name) || { input: 0, output: 0 };
-        agentTotals.set(name, {
-          input: prev.input + usage.input,
-          output: prev.output + usage.output,
-        });
-      }
-    } else {
-      dailySeries.push({ date: key, input: 0, output: 0 });
-    }
+    const action = event.action || 'default';
+    const totalTokens = TOKEN_PER_ACTION[action] || TOKEN_PER_ACTION.default;
+    const outputRatio = OUTPUT_RATIO[action] || OUTPUT_RATIO.default;
+    const outputTokens = Math.round(totalTokens * outputRatio);
+    const inputTokens = totalTokens - outputTokens;
+
+    // Add to daily totals
+    const day = dailyMap.get(key);
+    day.total_input += inputTokens;
+    day.total_output += outputTokens;
+
+    if (!day.agents[agent]) day.agents[agent] = { input: 0, output: 0 };
+    day.agents[agent].input += inputTokens;
+    day.agents[agent].output += outputTokens;
+
+    // Add to agent totals
+    const prev = agentTotals.get(agent) || { input: 0, output: 0 };
+    agentTotals.set(agent, {
+      input: prev.input + inputTokens,
+      output: prev.output + outputTokens,
+    });
+  }
+
+  // Build daily series
+  const dailySeries = [];
+  let totalInput = 0;
+  let totalOutput = 0;
+
+  for (const [key, day] of dailyMap) {
+    dailySeries.push({ date: key, input: day.total_input, output: day.total_output });
+    totalInput += day.total_input;
+    totalOutput += day.total_output;
   }
 
   // Per-agent breakdown sorted by total tokens desc
@@ -114,7 +121,9 @@ router.get('/', (req, res) => {
 
   res.json({
     window_days: days,
-    demo: true, // Flag: this is simulated data
+    estimated: true,
+    methodology: '基于 GitLab 活动事件估算，每类操作按典型 Claude API 用量换算 token 数',
+    event_count: allEvents.length,
     summary: {
       total_input: totalInput,
       total_output: totalOutput,
