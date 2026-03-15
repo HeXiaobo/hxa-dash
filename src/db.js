@@ -304,6 +304,21 @@ const getUnreviewedMRs = (now, thresholdMs) => {
     .sort((a, b) => b.hours_open - a.hours_open);
 };
 
+// Stale MRs: open MRs with no activity (updated_at) beyond threshold — 30min SLA default
+const getStaleMRs = (now, thresholdMs) => {
+  return [...store.tasks.values()]
+    .filter(t => t.type === 'mr' && t.state === 'opened' && (now - t.updated_at) > thresholdMs)
+    .map(t => ({
+      title: t.title,
+      url: t.url,
+      project: t.project,
+      author: t.assignee || null,
+      reviewer: t.reviewer || null,
+      stale_minutes: Math.floor((now - t.updated_at) / 60000),
+    }))
+    .sort((a, b) => b.stale_minutes - a.stale_minutes);
+};
+
 // Idle agents: offline agents not seen for more than thresholdMs
 const getIdleAgents = (now, thresholdMs) => {
   return [...store.agents.values()]
@@ -418,7 +433,7 @@ module.exports = {
   upsertEdge, clearEdges, getCollabEdges, getCollabsForAgent, getTopCollaborator,
   getProjects,
   getEventsInWindow, buildTimeline, buildTrends, getAgentStats,
-  getStaleIssues, getUnreviewedMRs, getIdleAgents,
+  getStaleIssues, getUnreviewedMRs, getStaleMRs, getIdleAgents,
   getBlockingMRsForAgent,
   getWorkloadReport,
   logAutoAssign, getAutoAssignHistory,

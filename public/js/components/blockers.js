@@ -72,8 +72,9 @@ const Blockers = {
 
     // Update definitions tooltip with thresholds
     if (this.defEl) {
-      const t = thresholds || { stale_issue_hours: 72, unreviewed_mr_hours: 24, idle_agent_hours: 4 };
+      const t = thresholds || { stale_issue_hours: 72, unreviewed_mr_hours: 24, stale_mr_minutes: 30, idle_agent_hours: 4 };
       this.defEl.innerHTML =
+        `<span>🔴 MR 超过 ${t.stale_mr_minutes}min 无活动</span>` +
         `<span>🔴 Issue 超过 ${t.stale_issue_hours}h 无更新</span>` +
         `<span>🟡 MR 开启超过 ${t.unreviewed_mr_hours}h 未 review</span>` +
         `<span>⚫ Agent 离线超过 ${t.idle_agent_hours}h</span>`;
@@ -108,7 +109,8 @@ const Blockers = {
       const key = this._blockerKey(b);
       const icon = b.severity === 'critical' ? '🔴'
         : b.severity === 'warning' ? '🟡' : '⚫';
-      const timeStr = b.stale_hours ? `${Math.round(b.stale_hours)}h` : '';
+      const timeStr = b.stale_minutes ? `${Math.round(b.stale_minutes)}min`
+        : b.stale_hours ? `${Math.round(b.stale_hours)}h` : '';
       const link = b.url
         ? `<a href="${esc(b.url)}" target="_blank" class="blocker-link">${esc(b.title)}</a>`
         : `<span>${esc(b.title)}</span>`;
@@ -155,8 +157,26 @@ const Blockers = {
       }
     }
 
-    // 2. Unreviewed MRs: opened > 24h
+    // 2. Stale MRs: opened > 30min with no activity (SLA alert)
     const openMRs = tasks.filter(t => t.state === 'opened' && t.type === 'mr');
+    for (const mr of openMRs) {
+      const staleMinutes = (now - (mr.updated_at || mr.created_at)) / (1000 * 60);
+      if (staleMinutes > 30) {
+        blockers.push({
+          severity: 'critical',
+          type: 'stale_mr',
+          type_label: '停滞 MR',
+          title: mr.title,
+          url: mr.url || null,
+          assignee: mr.assignee || null,
+          reviewer: mr.reviewer || null,
+          project: mr.project || null,
+          stale_minutes: staleMinutes
+        });
+      }
+    }
+
+    // 3. Unreviewed MRs: opened > 24h
     for (const mr of openMRs) {
       const age = (now - (mr.created_at || mr.updated_at)) / (1000 * 60 * 60);
       if (age > 24) {
@@ -173,7 +193,7 @@ const Blockers = {
       }
     }
 
-    // 3. Silent agents: online but no events in 4h
+    // 4. Silent agents: online but no events in 4h
     for (const agent of agents) {
       if (!agent.online) continue;
       const agentEvents = events.filter(e => e.agent === agent.name);
