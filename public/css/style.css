@@ -1602,3 +1602,179 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   .token-layout { flex-direction: column; }
   .token-summary { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* Health Diagnostics (#94) */
+.health-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+.health-banner.health-ok { background: rgba(63,185,80,.12); border: 1px solid rgba(63,185,80,.3); }
+.health-banner.health-warn { background: rgba(210,153,34,.12); border: 1px solid rgba(210,153,34,.3); }
+.health-banner.health-crit { background: rgba(248,81,73,.12); border: 1px solid rgba(248,81,73,.3); }
+.health-banner-icon { font-size: 20px; }
+.health-banner-text { flex: 1; }
+.health-banner-uptime { font-size: 13px; color: var(--text-secondary); }
+
+.health-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+.health-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.health-card-badge {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.health-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.health-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.health-info-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.health-info-value {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.health-gauges {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin-bottom: 16px;
+  padding: 20px 0;
+}
+.health-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.health-gauge-ring {
+  position: relative;
+  width: 90px;
+  height: 90px;
+}
+.health-gauge-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.health-gauge-bg {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 3;
+}
+.health-gauge-fill {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.6s ease;
+}
+.health-gauge-fill.health-ok { stroke: var(--green); }
+.health-gauge-fill.health-warn { stroke: var(--orange); }
+.health-gauge-fill.health-crit { stroke: var(--red); }
+.health-gauge-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: 600;
+}
+.health-gauge-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+.health-gauge-detail {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.health-table-wrap {
+  overflow-x: auto;
+}
+.health-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.health-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.health-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(48,54,61,.5);
+}
+.health-table tr.health-crit td { color: var(--red); }
+.health-svc-name { font-weight: 500; }
+.health-num { text-align: right; font-variant-numeric: tabular-nums; }
+.health-empty { text-align: center; color: var(--text-secondary); padding: 20px; }
+
+.health-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.health-status-dot.health-ok { background: var(--green); }
+.health-status-dot.health-warn { background: var(--orange); }
+.health-status-dot.health-crit { background: var(--red); }
+
+.health-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.health-refresh-btn {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.health-refresh-btn:hover { background: var(--bg-hover); }
+
+@media (max-width: 768px) {
+  .health-info-grid { grid-template-columns: 1fr; }
+  .health-gauges { flex-direction: column; align-items: center; }
+}
