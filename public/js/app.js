@@ -97,6 +97,7 @@ const App = {
     Metrics.init();
     MyView.init();
     TokenDashboard.init();
+    HealthDiagnostics.init();
 
     // Workload report: sortable headers + export
     document.querySelectorAll('.workload-table thead .sortable').forEach(th => {
@@ -185,7 +186,7 @@ const App = {
   },
 
   navigateTo(page, pushState = true) {
-    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'myview'];
+    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'health', 'myview'];
     if (!validPages.includes(page)) page = 'overview';
 
     // Update nav
@@ -212,6 +213,8 @@ const App = {
 
     // Lazy-load token data when first visiting tokens page
     if (page === 'tokens' && !TokenDashboard._data) TokenDashboard.fetch();
+    // Lazy-load health diagnostics (#94)
+    if (page === 'health') HealthDiagnostics.fetch();
   },
 
   // --- Data Fetching ---

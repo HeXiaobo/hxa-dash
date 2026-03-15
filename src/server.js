@@ -26,6 +26,7 @@ const { computeMetrics } = metricsRoutes;
 const agentRoutes = require('./routes/agent');
 const tokenRoutes = require('./routes/tokens');
 const webhookRoutes = require('./routes/webhook');
+const healthDiagRoutes = require('./routes/health-diagnostics');
 
 const PORT = process.env.PORT || 3479;
 
@@ -79,6 +80,7 @@ app.use('/api/metrics', metricsRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/tokens', tokenRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/diagnostics', healthDiagRoutes);
 app.use('/api', reportRoutes.router);
 
 // GET /api/health — system health check (#48)
