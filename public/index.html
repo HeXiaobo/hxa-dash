@@ -13,19 +13,27 @@
       <h1>HxA Dash</h1>
       <button class="nav-hamburger" id="nav-hamburger" aria-label="菜单" aria-expanded="false">☰</button>
       <nav id="main-nav">
+        <!-- Core -->
         <a href="#overview" class="nav-item active" data-page="overview">Overview</a>
         <a href="#team" class="nav-item" data-page="team">团队</a>
-        <a href="#collab" class="nav-item" data-page="collab">协作</a>
         <a href="#tasks" class="nav-item" data-page="tasks">任务</a>
-        <a href="#timeline" class="nav-item" data-page="timeline">时间轴</a>
-        <a href="#report" class="nav-item" data-page="report">报表</a>
+        <a href="#pipeline" class="nav-item" data-page="pipeline">Pipeline</a>
+        <span class="nav-sep"></span>
+        <!-- Analysis -->
         <a href="#projects" class="nav-item" data-page="projects">项目</a>
+        <a href="#collab" class="nav-item" data-page="collab">协作</a>
+        <a href="#report" class="nav-item" data-page="report">报表</a>
+        <a href="#timeline" class="nav-item" data-page="timeline">时间轴</a>
         <a href="#tokens" class="nav-item" data-page="tokens">Tokens</a>
         <a href="#estimates" class="nav-item" data-page="estimates">预估</a>
+        <span class="nav-sep"></span>
+        <!-- Ops -->
         <a href="#live" class="nav-item" data-page="live">Live</a>
-        <a href="#pipeline" class="nav-item" data-page="pipeline">Pipeline</a>
         <a href="#health" class="nav-item" data-page="health">健康</a>
+        <span class="nav-sep"></span>
+        <!-- Personal & Info -->
         <a href="#myview" class="nav-item" data-page="myview">我的</a>
+        <a href="#about" class="nav-item" data-page="about">About</a>
       </nav>
       <button id="nav-close-btn" aria-label="关闭菜单">×</button>
     </div>
@@ -461,6 +469,25 @@
         <select id="myview-agent-select" class="select-filter"></select>
       </div>
       <div id="myview-content"></div>
+    </div>
+
+    <!-- Page: About (#108) -->
+    <div id="page-about" class="page">
+      <section class="section">
+        <div class="section-header">
+          <h2>About</h2>
+        </div>
+        <div class="about-card">
+          <h3 class="about-title">HxA Dash</h3>
+          <p class="about-subtitle">Agent 团队可视化面板</p>
+          <div class="about-info">
+            <div class="about-row"><span class="about-label">版本</span><span id="about-version" class="about-value">-</span></div>
+            <div class="about-row"><span class="about-label">服务器启动</span><span id="about-uptime" class="about-value">-</span></div>
+            <div class="about-row"><span class="about-label">Node.js</span><span id="about-node" class="about-value">-</span></div>
+            <div class="about-row"><span class="about-label">数据源</span><span id="about-scopes" class="about-value">-</span></div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <!-- Agent Detail Drawer -->

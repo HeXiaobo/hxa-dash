@@ -286,7 +286,7 @@ const App = {
   },
 
   navigateTo(page, pushState = true) {
-    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'estimates', 'live', 'pipeline', 'health', 'projects', 'myview'];
+    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'estimates', 'live', 'pipeline', 'health', 'projects', 'myview', 'about'];
     if (!validPages.includes(page)) page = 'overview';
 
     // Update nav
@@ -322,6 +322,7 @@ const App = {
     // Lazy-load health diagnostics (#94)
     if (page === 'health') HealthDiagnostics.fetch();
     if (page === 'projects' && !Projects.data) Projects.load();
+    if (page === 'about') this.loadAbout();
   },
 
   // --- Data Fetching ---
@@ -834,6 +835,21 @@ const App = {
   _kbdClearFocus() {
     document.querySelectorAll('.agent-card.kbd-focused').forEach(c => c.classList.remove('kbd-focused'));
     this._kbdIndex = -1;
+  },
+
+  // --- #50: Auto-refresh countdown (30s) ---
+  // --- #108: About page ---
+  async loadAbout() {
+    try {
+      const res = await fetch(`${BASE}/api/about`);
+      if (!res.ok) return;
+      const info = await res.json();
+      const el = (id) => document.getElementById(id);
+      if (el('about-version')) el('about-version').textContent = info.version || '-';
+      if (el('about-uptime')) el('about-uptime').textContent = info.uptime || '-';
+      if (el('about-node')) el('about-node').textContent = info.node || '-';
+      if (el('about-scopes')) el('about-scopes').textContent = info.scopes || '-';
+    } catch { /* ignore */ }
   },
 
   // --- #50: Auto-refresh countdown (30s) ---

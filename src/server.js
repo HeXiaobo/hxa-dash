@@ -124,6 +124,23 @@ app.use('/api/pipeline', pipelineRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api', reportRoutes.router);
 
+// GET /api/about — version and system info (#108)
+const pkg = require('../package.json');
+const SERVER_START = new Date();
+app.get('/api/about', (req, res) => {
+  const uptimeSec = Math.floor(process.uptime());
+  const h = Math.floor(uptimeSec / 3600);
+  const m = Math.floor((uptimeSec % 3600) / 60);
+  const uptime = h > 0 ? `${h}h ${m}m` : `${m}m`;
+  const scopeCount = config.scopes?.length || 1;
+  res.json({
+    version: pkg.version,
+    uptime: `${uptime} (since ${SERVER_START.toISOString().slice(0, 16).replace('T', ' ')})`,
+    node: process.version,
+    scopes: `${scopeCount} scope${scopeCount > 1 ? 's' : ''}`,
+  });
+});
+
 // GET /api/health — system health check (#48)
 app.get('/api/health', (req, res) => {
   const agents = db.getAllAgents();
