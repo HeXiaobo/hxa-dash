@@ -213,6 +213,7 @@ const App = {
     CollabMatrix.init();
     TrendsChart.init();
     Blockers.init();
+    WorkloadHeatmap.init();
     WorkloadReport.init();
     Suggestions.init();
     Metrics.init();
@@ -458,6 +459,7 @@ const App = {
     this.renderTasks();
     this.renderTimeline();
     this.renderMyView();
+    WorkloadHeatmap.render(this.data.team);
   },
 
   renderCurrentPage() {

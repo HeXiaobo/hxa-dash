@@ -2540,3 +2540,31 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .mrb-suggested { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 11px; display: flex; align-items: center; gap: 6px; }
 .mrb-suggested-label { color: var(--text-secondary); }
 .mrb-suggested-name { color: var(--green); font-weight: 500; }
+
+/* Workload Heatmap (#111) */
+.workload-heatmap-wrap { overflow-x: auto; }
+.heatmap-table {
+  border-collapse: collapse; width: 100%;
+}
+.heatmap-table th, .heatmap-table td {
+  padding: 8px 12px; text-align: center; font-size: 12px;
+  border: 1px solid var(--border);
+}
+.heatmap-table th {
+  font-weight: 600; color: var(--text-secondary); background: var(--surface);
+  white-space: nowrap;
+}
+.heatmap-agent {
+  text-align: left !important; font-weight: 500; white-space: nowrap;
+}
+.heatmap-cell {
+  font-weight: 600; font-variant-numeric: tabular-nums;
+  transition: transform .1s;
+}
+.heatmap-cell:hover {
+  transform: scale(1.08); z-index: 1; position: relative;
+}
+.heatmap-green { background: rgba(63,185,80,.18); color: var(--green); }
+.heatmap-yellow { background: rgba(210,153,34,.22); color: var(--orange); }
+.heatmap-orange { background: rgba(248,81,73,.18); color: var(--red); }
+.heatmap-red { background: rgba(248,81,73,.45); color: #ff6b6b; font-weight: 700; }
