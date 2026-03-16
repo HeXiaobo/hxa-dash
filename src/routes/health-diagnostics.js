@@ -101,12 +101,14 @@ const SERVICE_ENDPOINTS = [
   { name: 'HxA Link', url: 'https://jessie.coco.site/api/health', category: 'platform' },
 ];
 
-// Get agent health from db
+// Get agent health from db (activity + system metrics #115)
 function getAgentHealth() {
   const agents = db.getAllAgents();
+  const allSystemHealth = db.getAllAgentHealth();
   const now = Date.now();
   const fiveMinAgo = now - 5 * 60 * 1000;
   const thirtyMinAgo = now - 30 * 60 * 1000;
+  const STALE_MS = 10 * 60 * 1000;
 
   return agents.map(agent => {
     const events = db.getEventsForAgent(agent.name, 1);
@@ -123,6 +125,10 @@ function getAgentHealth() {
     const tasks = db.getTasksForAgent(agent.name, { assigneeOnly: true });
     const openTasks = tasks.filter(t => t.state === 'opened').length;
 
+    // System health (#115)
+    const sysHealth = allSystemHealth[agent.name] || null;
+    const sysStale = sysHealth ? (now - sysHealth.reported_at > STALE_MS) : true;
+
     return {
       name: agent.name,
       online: agent.online,
@@ -130,6 +136,8 @@ function getAgentHealth() {
       last_seen_at: agent.last_seen_at || null,
       last_active: lastActive,
       open_tasks: openTasks,
+      system_health: sysHealth && !sysStale ? sysHealth : null,
+      system_health_stale: sysStale,
     };
   });
 }

@@ -1908,6 +1908,35 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 .health-agent-icon { font-size: 12px; }
 .health-agent-name { font-weight: 600; font-size: 13px; color: var(--text); }
 .health-agent-detail { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+.health-agent-sys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 10px;
+}
+.health-agent-sys span {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-secondary, #f5f5f5);
+}
+.health-agent-sys .health-crit {
+  background: #fee2e2;
+  color: #dc2626;
+  font-weight: 600;
+}
+.health-agent-sys .health-warn {
+  background: #fef3c7;
+  color: #d97706;
+}
+.health-agent-sys .health-ok {
+  background: #dcfce7;
+  color: #16a34a;
+}
+.health-agent-sys .health-stale {
+  color: var(--text-secondary);
+  font-style: italic;
+}
 .health-agent-meta {
   display: flex;
   flex-direction: column;

@@ -3,7 +3,8 @@ const store = {
   agents: new Map(),      // name -> agent
   tasks: new Map(),       // id -> task
   events: [],             // sorted by timestamp desc
-  collab_edges: new Map() // "source|target|type" -> edge
+  collab_edges: new Map(), // "source|target|type" -> edge
+  agent_health: new Map()  // name -> { disk, memory, cpu, pm2, reported_at }
 };
 
 // Agent operations
@@ -530,6 +531,21 @@ const getCompletionStats = (days = 30) => {
   };
 };
 
+// Agent health operations (#115)
+const upsertAgentHealth = (name, health) => {
+  store.agent_health.set(name, { ...health, reported_at: Date.now() });
+};
+
+const getAgentHealth = (name) => store.agent_health.get(name) || null;
+
+const getAllAgentHealth = () => {
+  const result = {};
+  for (const [name, health] of store.agent_health) {
+    result[name] = health;
+  }
+  return result;
+};
+
 module.exports = {
   upsertAgent, getAllAgents, getAgent, removeAgent,
   upsertTask, getTasksByState, getTasksForAgent, getAllTasks, getTask,
@@ -543,5 +559,6 @@ module.exports = {
   logAutoAssign, getAutoAssignHistory,
   getUnassignedIssues,
   getSessionVelocity, getSessionSummary, getCompletionStats,
+  upsertAgentHealth, getAgentHealth, getAllAgentHealth,
   ESTIMATE_SESSIONS, ESTIMATE_MINUTES,
 };

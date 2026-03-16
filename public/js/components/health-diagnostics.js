@@ -89,6 +89,27 @@ const HealthDiagnostics = {
     const agentCards = agents.list.map(a => {
       const cfg = statusConfig[a.status] || statusConfig.unknown;
       const lastActiveStr = a.last_active ? this._formatTimeAgo(a.last_active) : '无记录';
+
+      // System health indicators (#115)
+      let sysHealthHtml = '';
+      if (a.system_health) {
+        const sh = a.system_health;
+        const diskCls = sh.disk.status === 'critical' ? 'health-crit' : sh.disk.status === 'warning' ? 'health-warn' : 'health-ok';
+        const memCls = sh.memory.status === 'critical' ? 'health-crit' : sh.memory.status === 'warning' ? 'health-warn' : 'health-ok';
+        const diskIcon = sh.disk.status === 'critical' ? '🔴' : sh.disk.status === 'warning' ? '⚠️' : '✅';
+        const memIcon = sh.memory.status === 'critical' ? '🔴' : sh.memory.status === 'warning' ? '⚠️' : '✅';
+
+        sysHealthHtml = `
+          <div class="health-agent-sys">
+            <span class="${diskCls}" title="磁盘: ${esc(String(sh.disk.used || '?'))}/${esc(String(sh.disk.total || '?'))}">${diskIcon} 磁盘 ${sh.disk.pct != null ? esc(String(sh.disk.pct)) + '%' : '?'}</span>
+            <span class="${memCls}" title="内存: ${esc(String(sh.memory.used_gb || '?'))}GB/${esc(String(sh.memory.total_gb || '?'))}GB">${memIcon} 内存 ${sh.memory.pct != null ? esc(String(sh.memory.pct)) + '%' : '?'}</span>
+            ${sh.pm2 ? `<span title="PM2 服务">⚙️ ${esc(String(sh.pm2.online))}/${esc(String(sh.pm2.total))}</span>` : ''}
+          </div>
+        `;
+      } else if (a.system_health_stale) {
+        sysHealthHtml = '<div class="health-agent-sys"><span class="health-stale">📡 未报告系统状态</span></div>';
+      }
+
       return `
         <div class="health-agent-card ${cfg.cls}">
           <div class="health-agent-header">
@@ -96,6 +117,7 @@ const HealthDiagnostics = {
             <span class="health-agent-name">${esc(a.name)}</span>
           </div>
           <div class="health-agent-detail">${cfg.label}</div>
+          ${sysHealthHtml}
           <div class="health-agent-meta">
             <span>最近活动: ${lastActiveStr}</span>
             ${a.open_tasks > 0 ? `<span>待办: ${a.open_tasks}</span>` : ''}
