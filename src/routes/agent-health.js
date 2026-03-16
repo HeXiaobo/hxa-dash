@@ -1,5 +1,5 @@
 // Agent Health Reporting (#115)
-// POST /api/agent-health/:name — agents push their system metrics
+// POST /api/agent-health/:name — agents push their system metrics (auth required)
 // GET  /api/agent-health        — retrieve all agent health data
 // GET  /api/agent-health/:name  — retrieve single agent health
 const { Router } = require('express');
@@ -10,8 +10,43 @@ const router = Router();
 // Max age before health data is considered stale (10 minutes)
 const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
-// POST /api/agent-health/:name — agent reports its system health
-router.post('/:name', (req, res) => {
+// Shared secret for POST auth — set via HEALTH_API_KEY env var
+const HEALTH_API_KEY = process.env.HEALTH_API_KEY || null;
+
+// Auth middleware for POST — requires Bearer token or X-API-Key header
+function requireHealthAuth(req, res, next) {
+  if (!HEALTH_API_KEY) {
+    // No key configured = reject all writes (fail-closed)
+    return res.status(403).json({ error: 'HEALTH_API_KEY not configured on server' });
+  }
+
+  const authHeader = req.headers.authorization;
+  const apiKeyHeader = req.headers['x-api-key'];
+
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : apiKeyHeader || null;
+
+  if (!token || token !== HEALTH_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// Sanitize string: strip HTML tags, clamp length
+function sanitizeStr(val, maxLen = 64) {
+  if (typeof val !== 'string') return null;
+  return val.replace(/<[^>]*>/g, '').slice(0, maxLen);
+}
+
+// Clamp a number to [min, max], return null if not a number
+function clampNum(val, min = 0, max = 100) {
+  if (typeof val !== 'number' || isNaN(val)) return null;
+  return Math.max(min, Math.min(max, Math.round(val * 10) / 10));
+}
+
+// POST /api/agent-health/:name — agent reports its system health (auth required)
+router.post('/:name', requireHealthAuth, (req, res) => {
   const { name } = req.params;
   const agent = db.getAgent(name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
@@ -23,29 +58,37 @@ router.post('/:name', (req, res) => {
     return res.status(400).json({ error: 'disk and memory are required' });
   }
 
+  const diskPct = clampNum(disk.pct, 0, 100);
+  const memPct = clampNum(memory.pct, 0, 100);
+
   const health = {
-    hostname: hostname || null,
+    hostname: sanitizeStr(hostname, 128),
     disk: {
-      pct: typeof disk.pct === 'number' ? disk.pct : null,
-      used: disk.used || null,
-      total: disk.total || null,
-      status: disk.pct > 90 ? 'critical' : disk.pct > 80 ? 'warning' : 'ok',
+      pct: diskPct,
+      used: sanitizeStr(disk.used),
+      total: sanitizeStr(disk.total),
+      status: diskPct > 90 ? 'critical' : diskPct > 80 ? 'warning' : 'ok',
     },
     memory: {
-      pct: typeof memory.pct === 'number' ? memory.pct : null,
-      used_gb: memory.used_gb || null,
-      total_gb: memory.total_gb || null,
-      status: memory.pct > 90 ? 'critical' : memory.pct > 80 ? 'warning' : 'ok',
+      pct: memPct,
+      used_gb: clampNum(memory.used_gb, 0, 99999),
+      total_gb: clampNum(memory.total_gb, 0, 99999),
+      status: memPct > 90 ? 'critical' : memPct > 80 ? 'warning' : 'ok',
     },
     cpu: cpu ? {
-      pct: typeof cpu.pct === 'number' ? cpu.pct : null,
-      load_avg: cpu.load_avg || null,
-      cores: cpu.cores || null,
+      pct: clampNum(cpu.pct, 0, 100),
+      load_avg: Array.isArray(cpu.load_avg) ? cpu.load_avg.slice(0, 3).map(v => clampNum(v, 0, 9999)) : null,
+      cores: clampNum(cpu.cores, 1, 1024),
     } : null,
     pm2: pm2 ? {
-      online: pm2.online || 0,
-      total: pm2.total || 0,
-      services: (pm2.services || []).slice(0, 20), // cap at 20
+      online: clampNum(pm2.online, 0, 999),
+      total: clampNum(pm2.total, 0, 999),
+      services: (pm2.services || []).slice(0, 20).map(s => ({
+        name: sanitizeStr(s.name, 64),
+        status: sanitizeStr(s.status, 16),
+        memory: clampNum(s.memory, 0, 999999999999),
+        cpu: clampNum(s.cpu, 0, 100),
+      })),
     } : null,
   };
 

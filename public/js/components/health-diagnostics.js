@@ -101,9 +101,9 @@ const HealthDiagnostics = {
 
         sysHealthHtml = `
           <div class="health-agent-sys">
-            <span class="${diskCls}" title="磁盘: ${sh.disk.used || '?'}/${sh.disk.total || '?'}">${diskIcon} 磁盘 ${sh.disk.pct != null ? sh.disk.pct + '%' : '?'}</span>
-            <span class="${memCls}" title="内存: ${sh.memory.used_gb || '?'}GB/${sh.memory.total_gb || '?'}GB">${memIcon} 内存 ${sh.memory.pct != null ? sh.memory.pct + '%' : '?'}</span>
-            ${sh.pm2 ? `<span title="PM2 服务">⚙️ ${sh.pm2.online}/${sh.pm2.total}</span>` : ''}
+            <span class="${diskCls}" title="磁盘: ${esc(String(sh.disk.used || '?'))}/${esc(String(sh.disk.total || '?'))}">${diskIcon} 磁盘 ${sh.disk.pct != null ? esc(String(sh.disk.pct)) + '%' : '?'}</span>
+            <span class="${memCls}" title="内存: ${esc(String(sh.memory.used_gb || '?'))}GB/${esc(String(sh.memory.total_gb || '?'))}GB">${memIcon} 内存 ${sh.memory.pct != null ? esc(String(sh.memory.pct)) + '%' : '?'}</span>
+            ${sh.pm2 ? `<span title="PM2 服务">⚙️ ${esc(String(sh.pm2.online))}/${esc(String(sh.pm2.total))}</span>` : ''}
           </div>
         `;
       } else if (a.system_health_stale) {
