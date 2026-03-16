@@ -13,28 +13,12 @@
       <h1>HxA Dash</h1>
       <button class="nav-hamburger" id="nav-hamburger" aria-label="菜单" aria-expanded="false">☰</button>
       <nav id="main-nav">
-        <!-- Core -->
         <a href="#overview" class="nav-item active" data-page="overview">Overview</a>
         <a href="#team" class="nav-item" data-page="team">团队</a>
         <a href="#tasks" class="nav-item" data-page="tasks">任务</a>
-        <a href="#pipeline" class="nav-item" data-page="pipeline">Pipeline</a>
-        <a href="#mr-board" class="nav-item" data-page="mr-board">MR Board</a>
-        <span class="nav-sep"></span>
-        <!-- Analysis -->
-        <a href="#projects" class="nav-item" data-page="projects">项目</a>
-        <a href="#collab" class="nav-item" data-page="collab">协作</a>
-        <a href="#report" class="nav-item" data-page="report">报表</a>
-        <a href="#timeline" class="nav-item" data-page="timeline">时间轴</a>
-        <a href="#tokens" class="nav-item" data-page="tokens">Tokens</a>
-        <a href="#estimates" class="nav-item" data-page="estimates">预估</a>
-        <span class="nav-sep"></span>
-        <!-- Ops -->
-        <a href="#live" class="nav-item" data-page="live">Live</a>
-        <a href="#health" class="nav-item" data-page="health">健康</a>
-        <span class="nav-sep"></span>
-        <!-- Personal & Info -->
+        <a href="#analysis" class="nav-item" data-page="analysis">分析</a>
+        <a href="#system" class="nav-item" data-page="system">系统</a>
         <a href="#myview" class="nav-item" data-page="myview">我的</a>
-        <a href="#about" class="nav-item" data-page="about">About</a>
       </nav>
       <button id="nav-close-btn" aria-label="关闭菜单">×</button>
     </div>
@@ -59,6 +43,32 @@
   </header>
 
   <main>
+    <!-- Sub-tabs for grouped pages (#114) -->
+    <div class="sub-tabs hidden" data-group="team">
+      <a href="#team" class="sub-tab active" data-subpage="team">团队</a>
+      <a href="#team/collab" class="sub-tab" data-subpage="collab">协作</a>
+      <a href="#team/live" class="sub-tab" data-subpage="live">Live</a>
+    </div>
+    <div class="sub-tabs hidden" data-group="tasks">
+      <a href="#tasks" class="sub-tab active" data-subpage="tasks">任务</a>
+      <a href="#tasks/pipeline" class="sub-tab" data-subpage="pipeline">Pipeline</a>
+      <a href="#tasks/mr-board" class="sub-tab" data-subpage="mr-board">MR Board</a>
+    </div>
+    <div class="sub-tabs hidden" data-group="analysis">
+      <a href="#analysis" class="sub-tab active" data-subpage="report">报表</a>
+      <a href="#analysis/timeline" class="sub-tab" data-subpage="timeline">时间轴</a>
+      <a href="#analysis/tokens" class="sub-tab" data-subpage="tokens">Tokens</a>
+      <a href="#analysis/estimates" class="sub-tab" data-subpage="estimates">预估</a>
+    </div>
+    <div class="sub-tabs hidden" data-group="system">
+      <a href="#system" class="sub-tab active" data-subpage="health">健康</a>
+      <a href="#system/projects" class="sub-tab" data-subpage="projects">项目</a>
+    </div>
+    <div class="sub-tabs hidden" data-group="myview">
+      <a href="#myview" class="sub-tab active" data-subpage="myview">我的</a>
+      <a href="#myview/about" class="sub-tab" data-subpage="about">About</a>
+    </div>
+
     <!-- Page: Overview -->
     <div id="page-overview" class="page active">
       <!-- Team Capacity Overview (#45) -->

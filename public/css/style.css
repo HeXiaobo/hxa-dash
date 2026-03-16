@@ -57,7 +57,7 @@ header h1 { font-size: 18px; font-weight: 700; white-space: nowrap; }
   border-bottom: 2px solid var(--accent);
 }
 
-/* Nav group separators (#108) */
+/* Nav group separators (#108) — kept for compat */
 .nav-sep {
   width: 1px;
   height: 18px;
@@ -65,6 +65,30 @@ header h1 { font-size: 18px; font-weight: 700; white-space: nowrap; }
   margin: 0 6px;
   align-self: center;
   flex-shrink: 0;
+}
+
+/* Sub-tabs (#114) */
+.sub-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 24px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+.sub-tabs.hidden { display: none; }
+.sub-tab {
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-radius: 4px;
+  transition: all .15s;
+  font-weight: 500;
+}
+.sub-tab:hover { color: var(--text); background: var(--bg-hover); }
+.sub-tab.active {
+  color: var(--accent);
+  background: rgba(88,166,255,.08);
 }
 
 .header-right { display: flex; align-items: center; gap: 12px; }

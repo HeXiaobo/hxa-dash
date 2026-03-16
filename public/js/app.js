@@ -41,6 +41,24 @@ const BASE = (() => {
   return path.includes('/hxa-dash') ? '/hxa-dash' : '';
 })();
 
+// #114: navbar grouping — map primary tabs to sub-pages
+const NAV_GROUPS = {
+  overview: { subpages: ['overview'], default: 'overview' },
+  team:     { subpages: ['team', 'collab', 'live'], default: 'team' },
+  tasks:    { subpages: ['tasks', 'pipeline', 'mr-board'], default: 'tasks' },
+  analysis: { subpages: ['report', 'timeline', 'tokens', 'estimates'], default: 'report' },
+  system:   { subpages: ['health', 'projects'], default: 'health' },
+  myview:   { subpages: ['myview', 'about'], default: 'myview' },
+};
+
+// Reverse lookup: subpage → group
+const SUBPAGE_TO_GROUP = {};
+for (const [group, cfg] of Object.entries(NAV_GROUPS)) {
+  for (const sp of cfg.subpages) {
+    SUBPAGE_TO_GROUP[sp] = group;
+  }
+}
+
 // Utility functions (used by components)
 function esc(str) {
   if (!str) return '';
@@ -270,29 +288,77 @@ const App = {
     // Skeletons are shown by renderSkeletons() called before first fetchAll
   },
 
-  // --- Router ---
+  // --- Router (#114: grouped nav) ---
   initRouter() {
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => {
+    // Primary nav items
+    document.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', (e) => {
         e.preventDefault();
-        const page = item.dataset.page;
-        this.navigateTo(page);
+        const group = item.dataset.page;
+        const cfg = NAV_GROUPS[group];
+        this.navigateTo(cfg ? cfg.default : group);
       });
+    });
+
+    // Sub-tab items
+    document.querySelectorAll('.sub-tab').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.navigateTo(item.dataset.subpage);
+      });
+    });
+
+    // Handle browser back/forward
+    window.addEventListener('hashchange', () => {
+      const hash = location.hash.replace('#', '') || 'overview';
+      const resolved = this._resolveHash(hash);
+      this.navigateTo(resolved, false);
     });
 
     // Handle initial hash
     const hash = location.hash.replace('#', '') || 'overview';
-    this.navigateTo(hash, false);
+    const resolved = this._resolveHash(hash);
+    this.navigateTo(resolved, false);
+  },
+
+  // #114: resolve hash string to actual subpage
+  _resolveHash(hash) {
+    // Handle "group/subpage" format (e.g., "tasks/pipeline")
+    if (hash.includes('/')) {
+      const [group, sub] = hash.split('/');
+      const cfg = NAV_GROUPS[group];
+      if (cfg && cfg.subpages.includes(sub)) return sub;
+      // Invalid sub, fall back to group default
+      if (cfg) return cfg.default;
+      return 'overview';
+    }
+    // Handle legacy flat hashes (e.g., "#collab" → collab page)
+    if (SUBPAGE_TO_GROUP[hash]) return hash;
+    // Handle group name directly (e.g., "#team" → team default)
+    if (NAV_GROUPS[hash]) return NAV_GROUPS[hash].default;
+    return 'overview';
   },
 
   navigateTo(page, pushState = true) {
-    const validPages = ['overview', 'team', 'collab', 'tasks', 'timeline', 'report', 'tokens', 'estimates', 'live', 'pipeline', 'mr-board', 'health', 'projects', 'myview', 'about'];
-    if (!validPages.includes(page)) page = 'overview';
+    const allSubpages = Object.values(NAV_GROUPS).flatMap(g => g.subpages);
+    if (!allSubpages.includes(page)) page = 'overview';
 
-    // Update nav
+    const group = SUBPAGE_TO_GROUP[page];
+
+    // Update primary nav
     document.querySelectorAll('.nav-item').forEach(n => {
-      n.classList.toggle('active', n.dataset.page === page);
+      n.classList.toggle('active', n.dataset.page === group);
+    });
+
+    // Update sub-tabs visibility
+    document.querySelectorAll('.sub-tabs').forEach(st => {
+      const isActiveGroup = st.dataset.group === group;
+      st.classList.toggle('hidden', !isActiveGroup);
+    });
+
+    // Update sub-tab active state
+    document.querySelectorAll('.sub-tab').forEach(st => {
+      st.classList.toggle('active', st.dataset.subpage === page);
     });
 
     // Update pages
@@ -301,7 +367,12 @@ const App = {
     });
 
     this.currentPage = page;
-    if (pushState) location.hash = page;
+    if (pushState) {
+      // Build hash: group/subpage or just group if it's the default
+      const cfg = NAV_GROUPS[group];
+      const hash = (cfg && page === cfg.default) ? group : `${group}/${page}`;
+      location.hash = hash;
+    }
 
     // Resize graphs when their page becomes visible
     requestAnimationFrame(() => {
@@ -312,17 +383,12 @@ const App = {
     // Re-render current page with filters
     this.renderCurrentPage();
 
-    // Lazy-load token data when first visiting tokens page
+    // Lazy-load pages
     if (page === 'tokens' && !TokenDashboard._data) TokenDashboard.fetch();
-    // Lazy-load live dashboard (#95)
     if (page === 'live') LiveDashboard.fetch();
-    // Lazy-load pipeline (#77)
     if (page === 'pipeline') Pipeline.fetch();
-    // Lazy-load MR board (#109 + #110)
     if (page === 'mr-board') MRBoard.fetch();
-    // Lazy-load time estimates (#79)
     if (page === 'estimates') TimeEstimates.fetch();
-    // Lazy-load health diagnostics (#94)
     if (page === 'health') HealthDiagnostics.fetch();
     if (page === 'projects' && !Projects.data) Projects.load();
     if (page === 'about') this.loadAbout();
