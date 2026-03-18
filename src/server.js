@@ -35,6 +35,7 @@ const { buildProjects } = projectRoutes;
 const overviewRoutes = require('./routes/overview');
 const agentHealthRoutes = require('./routes/agent-health');
 const healthWatchdog = require('./health-watchdog');
+const pm2Routes = require('./routes/pm2-services');
 
 const PORT = process.env.PORT || 3479;
 
@@ -129,6 +130,7 @@ app.use('/api/mr-board', mrBoardRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use('/api/agent-health', agentHealthRoutes);
+app.use('/api/pm2', pm2Routes);
 
 // Health watchdog alerts endpoint (#129)
 app.get('/api/health-watchdog/alerts', (req, res) => {
@@ -299,6 +301,28 @@ async function startPolling() {
     // Refresh metrics after GitLab data changes (#66)
     ws.broadcast('metrics:update', computeMetrics());
   }, config.polling?.gitlab_interval_ms || 60000);
+
+  // PM2 service health polling (30s) — broadcast service status for real-time alerts (#123)
+  const { getPM2Services } = pm2Routes;
+  let lastPM2Down = new Set();
+  setInterval(() => {
+    try {
+      const services = getPM2Services();
+      const down = services.filter(s => s.status !== 'online');
+      const downNames = new Set(down.map(s => s.name));
+      const online = services.filter(s => s.status === 'online').length;
+      const status = online === services.length && services.length > 0 ? 'ok' : online === 0 ? 'critical' : 'warning';
+      // Only broadcast if status changed
+      const changed = downNames.size !== lastPM2Down.size || [...downNames].some(n => !lastPM2Down.has(n));
+      if (changed) {
+        ws.broadcast('pm2:update', { status, online, total: services.length, services });
+        if (down.length > 0) {
+          console.log(`[PM2] Alert: ${down.map(s => s.name + '(' + s.status + ')').join(', ')}`);
+        }
+      }
+      lastPM2Down = downNames;
+    } catch { /* ignore PM2 poll errors */ }
+  }, 30000);
 }
 
 // Start server

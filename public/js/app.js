@@ -766,6 +766,13 @@ const App = {
         this.renderOverview();
         this.renderCollab();
         break;
+
+      case 'pm2:update':
+        // Real-time PM2 status update (#123) — refresh health page if visible
+        if (this.currentPage === 'system') {
+          HealthDiagnostics.fetch();
+        }
+        break;
     }
   },
 

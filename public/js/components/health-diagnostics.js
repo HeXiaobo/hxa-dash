@@ -172,10 +172,22 @@ const HealthDiagnostics = {
   },
 
   _renderPM2(pm2, statusIcon) {
+    // Alert banner for down/errored services (#123)
+    const downServices = pm2.services.filter(s => s.status !== 'online');
+    const alertBanner = downServices.length > 0 ? `
+      <div class="pm2-alert-banner">
+        <span class="pm2-alert-icon">🚨</span>
+        <span class="pm2-alert-text">${downServices.length} 个服务异常: ${downServices.map(s => esc(s.name) + ' (' + esc(s.status) + ')').join(', ')}</span>
+      </div>
+    ` : '';
+
     const pm2Rows = pm2.services.map(svc => {
       const svcClass = svc.status === 'online' ? 'health-ok' : 'health-crit';
       const mem = svc.memory ? `${Math.round(svc.memory / 1048576)}MB` : '—';
       const uptime = svc.uptime != null ? this._formatUptime(Math.floor(svc.uptime / 1000)) : '—';
+      const restartBtn = svc.status !== 'online'
+        ? `<button class="btn-pm2-restart btn-pm2-restart-urgent" data-service="${esc(svc.name)}" onclick="HealthDiagnostics._restartService('${esc(svc.name)}', this)">重启</button>`
+        : `<button class="btn-pm2-restart" data-service="${esc(svc.name)}" onclick="HealthDiagnostics._restartService('${esc(svc.name)}', this)">重启</button>`;
       return `
         <tr class="${svcClass}">
           <td class="health-svc-name">${esc(svc.name)}</td>
@@ -185,6 +197,7 @@ const HealthDiagnostics = {
           <td class="health-num">${svc.cpu != null ? svc.cpu + '%' : '—'}</td>
           <td class="health-num">${uptime}</td>
           <td class="health-num">${svc.restarts}</td>
+          <td class="health-num">${restartBtn}</td>
         </tr>
       `;
     }).join('');
@@ -195,14 +208,15 @@ const HealthDiagnostics = {
           ${statusIcon[pm2.status]} PM2 服务
           <span class="health-card-badge">${pm2.online}/${pm2.total} 在线</span>
         </div>
+        ${alertBanner}
         <div class="health-table-wrap">
           <table class="health-table">
             <thead>
               <tr>
-                <th>服务</th><th>状态</th><th>PID</th><th>内存</th><th>CPU</th><th>运行时间</th><th>重启次数</th>
+                <th>服务</th><th>状态</th><th>PID</th><th>内存</th><th>CPU</th><th>运行时间</th><th>重启次数</th><th>操作</th>
               </tr>
             </thead>
-            <tbody>${pm2Rows || '<tr><td colspan="7" class="health-empty">未检测到 PM2 服务</td></tr>'}</tbody>
+            <tbody>${pm2Rows || '<tr><td colspan="8" class="health-empty">未检测到 PM2 服务</td></tr>'}</tbody>
           </table>
         </div>
       </div>
@@ -226,6 +240,35 @@ const HealthDiagnostics = {
         <div class="health-gauge-detail">${detail}</div>
       </div>
     `;
+  },
+
+  async _restartService(name, btn) {
+    if (!confirm(`确定重启服务 "${name}"?`)) return;
+    btn.disabled = true;
+    btn.textContent = '重启中…';
+    try {
+      const r = await fetch(`${BASE}/api/pm2/${encodeURIComponent(name)}/restart`, {
+        method: 'POST',
+        headers: { 'X-API-Key': localStorage.getItem('health_api_key') || '' },
+      });
+      const data = await r.json();
+      if (r.ok) {
+        btn.textContent = '已重启';
+        btn.classList.add('btn-pm2-restart-ok');
+        setTimeout(() => this.fetch(), 2000);
+      } else {
+        btn.textContent = '失败';
+        alert(`重启失败: ${data.error || '未知错误'}`);
+      }
+    } catch (e) {
+      btn.textContent = '失败';
+      alert(`重启失败: ${e.message}`);
+    }
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = '重启';
+      btn.classList.remove('btn-pm2-restart-ok');
+    }, 5000);
   },
 
   _formatUptime(seconds) {

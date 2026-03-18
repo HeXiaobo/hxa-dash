@@ -1951,6 +1951,48 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   .health-agent-grid { grid-template-columns: 1fr 1fr; }
 }
 
+/* PM2 restart buttons & alert banner (#123) */
+.btn-pm2-restart {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  transition: all 0.2s;
+}
+.btn-pm2-restart:hover { background: var(--bg-hover); color: var(--text); }
+.btn-pm2-restart:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-pm2-restart-urgent {
+  border-color: var(--red);
+  color: var(--red);
+  font-weight: 600;
+  animation: pm2-pulse 1.5s infinite;
+}
+.btn-pm2-restart-urgent:hover { background: var(--red); color: #fff; }
+.btn-pm2-restart-ok { border-color: var(--green); color: var(--green); }
+
+@keyframes pm2-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.pm2-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin: 8px 0;
+  background: rgba(248, 81, 73, 0.12);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 500;
+}
+.pm2-alert-icon { font-size: 16px; }
+
 /* ===== Live Dashboard (#95) ===== */
 .live-summary-bar {
   display: flex;

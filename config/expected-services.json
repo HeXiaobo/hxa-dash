@@ -1,0 +1,20 @@
+{
+  "_comment": "Expected PM2 services registry (#124). 'critical: true' means alert immediately if missing.",
+  "services": [
+    { "name": "scheduler", "description": "C5 task scheduler", "critical": true },
+    { "name": "web-console", "description": "C4 web console channel", "critical": true },
+    { "name": "c4-dispatcher", "description": "C4 message dispatcher", "critical": true },
+    { "name": "activity-monitor", "description": "C2 liveness monitor", "critical": true },
+    { "name": "caddy", "description": "C6 HTTP reverse proxy", "critical": true },
+    { "name": "zylos-telegram", "description": "Telegram bot channel", "critical": true },
+    { "name": "zylos-lark", "description": "Lark bot channel", "critical": true },
+    { "name": "zylos-hxa-connect", "description": "HxA Connect bot bridge", "critical": true },
+    { "name": "zylos-chrome", "description": "Headless Chrome for browser automation", "critical": false },
+    { "name": "zylos-xvfb", "description": "Virtual framebuffer for Chrome", "critical": false },
+    { "name": "zylos-vnc", "description": "VNC server", "critical": false },
+    { "name": "clawmark-server", "description": "ClawMark extension server", "critical": false },
+    { "name": "gitlab-webhook", "description": "GitLab webhook receiver", "critical": true },
+    { "name": "gitlab-lark-bridge", "description": "GitLab-Lark notification bridge", "critical": false },
+    { "name": "github-webhook", "description": "GitHub webhook receiver", "critical": false }
+  ]
+}
