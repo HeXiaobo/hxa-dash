@@ -60,11 +60,17 @@ router.get('/', async (req, res) => {
     // Filter by project_id if provided — prevents cross-project MR mixing
     const projectIdFilter = req.query.project_id;
     if (projectIdFilter) {
+      const pid = parseInt(projectIdFilter, 10);
+      if (!Number.isInteger(pid) || pid <= 0) {
+        return res.status(400).json({ error: 'Invalid project_id: must be a positive integer' });
+      }
       // Use project-level endpoint instead of group-level
-      mrEndpoint = `/projects/${projectIdFilter}/merge_requests?state=opened&per_page=50&order_by=updated_at&sort=desc`;
+      mrEndpoint = `/projects/${pid}/merge_requests?state=opened&per_page=50&order_by=updated_at&sort=desc`;
     }
 
-    const mrs = await apiFetchFn(mrEndpoint);
+    const mrsRaw = await apiFetchFn(mrEndpoint);
+    // Double-check state — GitLab API may return stale merged/closed MRs
+    const mrs = mrsRaw.filter(mr => mr.state === 'opened');
 
     // Fetch pipeline status for each MR in parallel
     const enriched = await Promise.all(mrs.map(async (mr) => {
