@@ -214,20 +214,25 @@ const Metrics = {
     const dist = summary.open;
     const distBar = this._renderEstimateDist(dist);
 
-    // Per-agent velocity table
-    const agentRows = agents.map(a => `
+    // Per-agent velocity table (#118: show activity + estimate breakdown)
+    const agentRows = agents.map(a => {
+      const source = (a.activity_sessions || 0) > (a.estimate_sessions || 0) ? '📊' : '📋';
+      return `
       <tr>
         <td class="metrics-agent-name">${esc(a.name)}</td>
         <td class="metrics-num">${a.total_sessions}</td>
         <td class="metrics-num">${a.sessions_per_day}</td>
+        <td class="metrics-num">${a.events || 0}</td>
+        <td class="metrics-num">${source}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
     const agentTable = agents.length > 0 ? `
       <div class="metrics-table-wrap">
         <table class="metrics-table">
           <thead>
-            <tr><th>Agent</th><th>Sessions (7d)</th><th>Sessions/天</th></tr>
+            <tr><th>Agent</th><th>Sessions (7d)</th><th>Sessions/天</th><th>Events</th><th>来源</th></tr>
           </thead>
           <tbody>${agentRows}</tbody>
         </table>

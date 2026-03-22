@@ -354,29 +354,61 @@ const ESTIMATE_SESSIONS = { S: 0.5, M: 1, L: 2, XL: 4 };
 // Session estimate → human-readable minutes mapping
 const ESTIMATE_MINUTES = { S: 20, M: 45, L: 90, XL: 180 };
 
+// Activity weights: approximate session-equivalent effort per GitLab event (#118)
+const ACTIVITY_WEIGHTS = {
+  pushed: 0.15,     // ~7 commits ≈ 1 session
+  commented: 0.05,  // ~20 comments ≈ 1 session
+  opened: 0.3,      // opening an issue/MR
+  merged: 0.5,      // merging an MR
+  closed: 0.1,      // closing an issue
+};
+
 // Get session velocity: sessions completed per day per agent (rolling window)
+// Combines task estimates + GitLab activity for accurate workload picture (#118)
 const getSessionVelocity = (days = 7) => {
   const sinceMs = Date.now() - days * 86400000;
+
+  // 1. Task-estimate-based sessions (original)
   const closedTasks = [...store.tasks.values()].filter(t =>
     (t.state === 'closed' || t.state === 'merged') &&
     t.updated_at >= sinceMs &&
     t.estimate
   );
 
-  const agentSessions = new Map();
+  const agentData = new Map();
+  const ensureAgent = (name) => {
+    if (!agentData.has(name)) {
+      agentData.set(name, { estimate_sessions: 0, activity_sessions: 0, events: 0 });
+    }
+    return agentData.get(name);
+  };
+
   for (const t of closedTasks) {
     const agent = t.assignee || t.author;
     if (!agent) continue;
-    const sessions = ESTIMATE_SESSIONS[t.estimate] || 0;
-    agentSessions.set(agent, (agentSessions.get(agent) || 0) + sessions);
+    ensureAgent(agent).estimate_sessions += ESTIMATE_SESSIONS[t.estimate] || 0;
   }
 
+  // 2. GitLab activity-based sessions (#118)
+  const recentEvents = store.events.filter(e => e.timestamp >= sinceMs);
+  for (const e of recentEvents) {
+    if (!e.agent) continue;
+    const d = ensureAgent(e.agent);
+    d.events++;
+    d.activity_sessions += ACTIVITY_WEIGHTS[e.action] || 0.05;
+  }
+
+  // 3. Combine: use the higher of estimate vs activity (avoid double-counting)
   const result = [];
-  for (const [name, totalSessions] of agentSessions) {
+  for (const [name, d] of agentData) {
+    const totalSessions = Math.max(d.estimate_sessions, d.activity_sessions);
     result.push({
       name,
-      total_sessions: totalSessions,
+      total_sessions: Math.round(totalSessions * 100) / 100,
       sessions_per_day: Math.round((totalSessions / days) * 100) / 100,
+      estimate_sessions: Math.round(d.estimate_sessions * 100) / 100,
+      activity_sessions: Math.round(d.activity_sessions * 100) / 100,
+      events: d.events,
     });
   }
 

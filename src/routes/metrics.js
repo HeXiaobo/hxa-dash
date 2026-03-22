@@ -138,12 +138,16 @@ router.get('/velocity', (req, res) => {
   const totalSessions = velocity.reduce((s, v) => s + v.total_sessions, 0);
   const activeAgents = velocity.length;
 
+  // Total events across all agents (#118)
+  const totalEvents = velocity.reduce((s, v) => s + (v.events || 0), 0);
+
   res.json({
     window_days: days,
     team: {
       total_sessions: totalSessions,
       sessions_per_day: activeAgents > 0 ? Math.round((totalSessions / days) * 100) / 100 : 0,
       active_agents: activeAgents,
+      total_events: totalEvents,
     },
     agents: velocity,
     summary,
