@@ -53,9 +53,10 @@ const HealthDiagnostics = {
       </div>
     `;
 
-    // Resource gauges
+    // Resource gauges (#122: add CPU gauge)
     const resources = `
       <div class="health-gauges">
+        ${d.cpu ? this._renderGauge('CPU', d.cpu.pct, d.cpu.status, `${d.cpu.cores} 核 · 负载 ${d.system.load_avg.join(' / ')}`) : ''}
         ${this._renderGauge('内存', d.memory.pct, d.memory.status, `${d.memory.used_gb}GB / ${d.memory.total_gb}GB`)}
         ${this._renderGauge('磁盘', d.disk.pct, d.disk.status, `${d.disk.used || '?'} / ${d.disk.total || '?'}`)}
       </div>
@@ -99,8 +100,20 @@ const HealthDiagnostics = {
         const diskIcon = sh.disk.status === 'critical' ? '🔴' : sh.disk.status === 'warning' ? '⚠️' : '✅';
         const memIcon = sh.memory.status === 'critical' ? '🔴' : sh.memory.status === 'warning' ? '⚠️' : '✅';
 
+        // CPU indicator (#122)
+        let cpuHtml = '';
+        if (sh.cpu) {
+          const cpuPct = sh.cpu.pct;
+          const cpuStatus = cpuPct > 90 ? 'critical' : cpuPct > 80 ? 'warning' : 'ok';
+          const cpuCls = cpuStatus === 'critical' ? 'health-crit' : cpuStatus === 'warning' ? 'health-warn' : 'health-ok';
+          const cpuIcon = cpuStatus === 'critical' ? '🔴' : cpuStatus === 'warning' ? '⚠️' : '✅';
+          const loadStr = sh.cpu.load_avg ? sh.cpu.load_avg.map(v => v.toFixed(1)).join(', ') : '?';
+          cpuHtml = `<span class="${cpuCls}" title="CPU: ${esc(String(cpuPct))}% | 负载: ${esc(loadStr)} | ${esc(String(sh.cpu.cores || '?'))} 核">${cpuIcon} CPU ${esc(String(cpuPct))}%</span>`;
+        }
+
         sysHealthHtml = `
           <div class="health-agent-sys">
+            ${cpuHtml}
             <span class="${diskCls}" title="磁盘: ${esc(String(sh.disk.used || '?'))}/${esc(String(sh.disk.total || '?'))}">${diskIcon} 磁盘 ${sh.disk.pct != null ? esc(String(sh.disk.pct)) + '%' : '?'}</span>
             <span class="${memCls}" title="内存: ${esc(String(sh.memory.used_gb || '?'))}GB/${esc(String(sh.memory.total_gb || '?'))}GB">${memIcon} 内存 ${sh.memory.pct != null ? esc(String(sh.memory.pct)) + '%' : '?'}</span>
             ${sh.pm2 ? `<span title="PM2 服务">⚙️ ${esc(String(sh.pm2.online))}/${esc(String(sh.pm2.total))}</span>` : ''}

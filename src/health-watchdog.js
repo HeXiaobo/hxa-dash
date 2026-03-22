@@ -100,6 +100,7 @@ function runOnce() {
         const health = allHealth[agent.name];
         if (health && (now - health.reported_at < HEALTH_STALE_MS)) {
           const criticals = [];
+          if (health.cpu?.pct > 90) criticals.push(`cpu ${health.cpu.pct}%`);
           if (health.disk?.status === 'critical') criticals.push(`disk ${health.disk.pct}%`);
           if (health.memory?.status === 'critical') criticals.push(`memory ${health.memory.pct}%`);
           if (health.pm2 && health.pm2.online === 0) criticals.push('all PM2 services down');
@@ -173,7 +174,7 @@ function getAlerts() {
       agentAlert.issues.push('output_stall');
     }
     if (health && (now - health.reported_at < HEALTH_STALE_MS)) {
-      if (health.disk?.status === 'critical' || health.memory?.status === 'critical' ||
+      if (health.cpu?.pct > 90 || health.disk?.status === 'critical' || health.memory?.status === 'critical' ||
           (health.pm2 && health.pm2.online === 0)) {
         agentAlert.system_critical = true;
         agentAlert.issues.push('system_critical');

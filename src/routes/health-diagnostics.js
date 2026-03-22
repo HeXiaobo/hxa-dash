@@ -48,6 +48,9 @@ function getLocalSystem() {
   const pm2Online = pm2Services.filter(s => s.status === 'online').length;
   const pm2Total = pm2Services.length;
 
+  const cpuPct = cpus.length > 0 ? Math.min(100, Math.round((loadAvg[0] / cpus.length) * 100)) : null;
+
+  const cpuStatus = cpuPct > 90 ? 'critical' : cpuPct > 80 ? 'warning' : 'ok';
   const memStatus = memPct > 90 ? 'critical' : memPct > 80 ? 'warning' : 'ok';
   const diskStatus = diskPct > 90 ? 'critical' : diskPct > 80 ? 'warning' : 'ok';
   const pm2Status = pm2Online === pm2Total && pm2Total > 0 ? 'ok' : pm2Online === 0 ? 'critical' : 'warning';
@@ -59,6 +62,7 @@ function getLocalSystem() {
     cpu_count: cpus.length,
     cpu_model: cpus[0]?.model || 'unknown',
     load_avg: loadAvg.map(v => Math.round(v * 100) / 100),
+    cpu: { status: cpuStatus, pct: cpuPct, cores: cpus.length },
     memory: { status: memStatus, total_gb: Math.round(totalMem / 1073741824 * 10) / 10, used_gb: Math.round(usedMem / 1073741824 * 10) / 10, free_gb: Math.round(freeMem / 1073741824 * 10) / 10, pct: memPct },
     disk: { status: diskStatus, total: diskTotal, used: diskUsed, pct: diskPct },
     pm2: { status: pm2Status, online: pm2Online, total: pm2Total, services: pm2Services },
@@ -156,7 +160,7 @@ router.get('/', async (req, res) => {
       })
     );
 
-    const systemStatuses = [localSystem.memory.status, localSystem.disk.status, localSystem.pm2.status];
+    const systemStatuses = [localSystem.cpu.status, localSystem.memory.status, localSystem.disk.status, localSystem.pm2.status];
     const serviceStatuses = probeResults.map(r => r.status);
     const agentOnline = agentHealth.filter(a => a.online).length;
     const agentTotal = agentHealth.length;
