@@ -142,9 +142,12 @@ app.use('/api', reportRoutes.router);
 // GET /api/about — version and system info (#108, #133)
 const pkg = require('../package.json');
 const SERVER_START = new Date();
-const SERVER_BUILD_TIME = SERVER_START.toISOString();
 const SERVER_COMMIT = (() => {
   try { return execSync('git rev-parse --short HEAD', { cwd: __dirname, encoding: 'utf-8' }).trim(); }
+  catch { return 'unknown'; }
+})();
+const SERVER_BUILD_TIME = (() => {
+  try { return execSync('git show -s --format=%cI HEAD', { cwd: __dirname, encoding: 'utf-8' }).trim(); }
   catch { return 'unknown'; }
 })();
 app.get('/api/about', (req, res) => {
