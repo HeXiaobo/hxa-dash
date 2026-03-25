@@ -23,8 +23,9 @@ const DetailDrawer = {
       this.renderDetail(data);
       this.drawer.classList.remove('hidden');
 
-      // Async-load output trends (#127)
+      // Async-load output trends (#127) + hardware (#122)
       this._loadOutputSection(name);
+      this._loadHardwareSection(name);
     } catch (err) {
       console.error('Failed to load agent detail:', err);
     }
@@ -40,6 +41,48 @@ const DetailDrawer = {
     } else {
       placeholder.innerHTML = '';
     }
+  },
+
+  async _loadHardwareSection(name) {
+    const el = document.getElementById('drawer-hardware-section');
+    if (!el) return;
+    try {
+      const res = await fetch(`${BASE}/api/agent-health/${encodeURIComponent(name)}`);
+      if (!res.ok) { el.innerHTML = ''; return; }
+      const data = await res.json();
+      if (!data.health || data.stale) { el.innerHTML = ''; return; }
+      el.innerHTML = this._renderHardware(data);
+    } catch { el.innerHTML = ''; }
+  },
+
+  _renderHardware(data) {
+    const h = data.health;
+    const gauge = (label, pct, status, detail) => {
+      if (pct == null) return '';
+      const cls = status === 'critical' ? 'hw-crit' : status === 'warning' ? 'hw-warn' : 'hw-ok';
+      return `<div class="drawer-hw-gauge">
+        <div class="drawer-hw-bar-wrap">
+          <div class="drawer-hw-bar ${cls}" style="width:${pct}%"></div>
+        </div>
+        <div class="drawer-hw-info"><span class="drawer-hw-label">${label}</span><span class="drawer-hw-val">${pct}%</span></div>
+        ${detail ? `<div class="drawer-hw-detail">${esc(detail)}</div>` : ''}
+      </div>`;
+    };
+
+    const diskDetail = h.disk ? `${h.disk.used || '?'} / ${h.disk.total || '?'}` : '';
+    const memDetail = h.memory ? `${h.memory.used_gb || '?'}GB / ${h.memory.total_gb || '?'}GB` : '';
+    const cpuDetail = h.cpu && h.cpu.load_avg ? `负载: ${h.cpu.load_avg.join(' / ')}` : '';
+
+    const pm2HTML = h.pm2 ? `<div class="drawer-hw-pm2">⚙️ PM2: ${h.pm2.online}/${h.pm2.total} 在线</div>` : '';
+    const reportedAgo = data.health.reported_at ? timeAgo(data.health.reported_at) : '';
+
+    return `<div class="drawer-section">
+      <h4>硬件资源 <span style="font-weight:normal;color:var(--text-secondary);font-size:12px;">${reportedAgo}上报</span></h4>
+      ${gauge('💾 磁盘', h.disk?.pct, h.disk?.status, diskDetail)}
+      ${gauge('🧠 内存', h.memory?.pct, h.memory?.status, memDetail)}
+      ${gauge('⚡ CPU', h.cpu?.pct, h.cpu?.pct > 90 ? 'critical' : h.cpu?.pct > 80 ? 'warning' : 'ok', cpuDetail)}
+      ${pm2HTML}
+    </div>`;
   },
 
   close() {
@@ -143,6 +186,7 @@ const DetailDrawer = {
       </div>
 
       <div id="drawer-output-section"></div>
+      <div id="drawer-hardware-section"></div>
 
       ${current_tasks.length > 0 ? `
         <div class="drawer-section">

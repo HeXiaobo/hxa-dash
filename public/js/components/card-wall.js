@@ -23,7 +23,8 @@ const CardWall = {
       (agent.top_collaborator || {}).name,
       agent.last_active_at || '',
       bmrs,
-      (agent.sparkline_7d || []).join(',')
+      (agent.sparkline_7d || []).join(','),
+      agent.hardware ? `${agent.hardware.disk_pct}|${agent.hardware.mem_pct}|${agent.hardware.cpu_pct}` : ''
     ].join('\x1f');
   },
 
@@ -178,6 +179,22 @@ const CardWall = {
       ? `<div class="card-top-collab" title="最佳拍档 (权重 ${topCollab.weight})">🤝 ${esc(topCollab.name)}</div>`
       : '';
 
+    // Hardware resource badges (#122)
+    const hw = agent.hardware;
+    const hwHTML = hw && !hw.stale ? (() => {
+      const badge = (label, pct, status) => {
+        if (pct == null) return '';
+        const cls = status === 'critical' ? 'hw-crit' : status === 'warning' ? 'hw-warn' : 'hw-ok';
+        return `<span class="hw-badge ${cls}" title="${label}: ${pct}%">${label} ${pct}%</span>`;
+      };
+      return `<div class="card-hardware">
+        ${badge('💾', hw.disk_pct, hw.disk_status)}
+        ${badge('🧠', hw.mem_pct, hw.mem_status)}
+        ${hw.cpu_pct != null ? badge('⚡', hw.cpu_pct, hw.cpu_pct > 90 ? 'critical' : hw.cpu_pct > 80 ? 'warning' : 'ok') : ''}
+        ${hw.pm2_total != null ? `<span class="hw-badge hw-ok" title="PM2: ${hw.pm2_online}/${hw.pm2_total}">⚙️ ${hw.pm2_online}/${hw.pm2_total}</span>` : ''}
+      </div>`;
+    })() : '';
+
     const statsHTML = `
       <div class="card-stats">
         <span class="card-stat" title="进行中任务">📋 ${stats.open_tasks || 0}</span>
@@ -240,6 +257,7 @@ const CardWall = {
         ${blockingHTML}
         ${tagsHTML}
         ${capacityHTML}
+        ${hwHTML}
         ${projectsHTML}
         ${collabHTML}
         ${statsHTML}

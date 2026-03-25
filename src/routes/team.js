@@ -81,6 +81,7 @@ function buildAgents() {
         project: latestEvent.project
       } : null,
       sparkline_7d: db.getAgentSparkline7d(a.name),
+      hardware: buildHardwareSummary(a.name),
       stats: {
         open_tasks: openTasks.length,
         closed_tasks: closedTasks.length,
@@ -148,6 +149,25 @@ router.get('/:name', (req, res) => {
     }
   });
 });
+
+// Build compact hardware summary from agent-health data (#122)
+function buildHardwareSummary(agentName) {
+  const health = db.getAgentHealth(agentName);
+  if (!health) return null;
+
+  const stale = (Date.now() - health.reported_at) > 10 * 60 * 1000;
+  return {
+    disk_pct: health.disk ? health.disk.pct : null,
+    disk_status: health.disk ? health.disk.status : null,
+    mem_pct: health.memory ? health.memory.pct : null,
+    mem_status: health.memory ? health.memory.status : null,
+    cpu_pct: health.cpu ? health.cpu.pct : null,
+    pm2_online: health.pm2 ? health.pm2.online : null,
+    pm2_total: health.pm2 ? health.pm2.total : null,
+    stale,
+    reported_at: health.reported_at,
+  };
+}
 
 // Compute a 0-100 health score based on activity recency, completion rate, and load balance (#45)
 function computeHealthScore(recentEvents, closedTasks, openTasks, now) {
