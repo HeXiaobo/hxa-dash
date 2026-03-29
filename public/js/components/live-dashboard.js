@@ -38,22 +38,19 @@ const LiveDashboard = {
     if (this._fingerprints._summary === fp) return;
     this._fingerprints._summary = fp;
 
+    const tier = summary.tier || {};
     el.innerHTML = `
-      <div class="live-stat live-stat-working">
-        <span class="live-stat-num">${summary.working}</span>
-        <span class="live-stat-label">Working</span>
+      <div class="live-stat live-stat-active" title="GitLab 30min 内有活动">
+        <span class="live-stat-num">${tier.active || 0}</span>
+        <span class="live-stat-label">🟢 活跃</span>
       </div>
-      <div class="live-stat live-stat-active">
-        <span class="live-stat-num">${summary.active}</span>
-        <span class="live-stat-label">Active</span>
+      <div class="live-stat live-stat-online" title="在线但无近期 GitLab 活动">
+        <span class="live-stat-num">${tier.online || 0}</span>
+        <span class="live-stat-label">🟡 在线</span>
       </div>
-      <div class="live-stat live-stat-idle">
-        <span class="live-stat-num">${summary.idle}</span>
-        <span class="live-stat-label">Idle</span>
-      </div>
-      <div class="live-stat live-stat-offline">
-        <span class="live-stat-num">${summary.offline}</span>
-        <span class="live-stat-label">Offline</span>
+      <div class="live-stat live-stat-offline" title="离线">
+        <span class="live-stat-num">${tier.offline || 0}</span>
+        <span class="live-stat-label">⚫ 离线</span>
       </div>
       <div class="live-stat">
         <span class="live-stat-num">${summary.total}</span>
@@ -98,7 +95,10 @@ const LiveDashboard = {
 
   _agentRowHTML(agent) {
     const statusClass = `live-status-${agent.effectiveStatus}`;
-    const statusLabel = { working: '🔨 Working', active: '⚡ Active', idle: '💤 Idle', offline: '⭘ Offline' }[agent.effectiveStatus] || agent.effectiveStatus;
+    // 3-tier status (#136) takes precedence for display label
+    const tierStatus = agent.tierStatus || (agent.online ? 'online' : 'offline');
+    const tierLabels = { active: '🟢 活跃', online: '🟡 在线', offline: '⚫ 离线' };
+    const statusLabel = tierLabels[tierStatus] || tierLabels.offline;
 
     const tasksHTML = agent.currentTasks.length
       ? agent.currentTasks.map(t => {

@@ -116,10 +116,10 @@ const CardWall = {
       ? '<span class="kind-badge kind-human" title="Human">🧑</span>'
       : '<span class="kind-badge kind-agent" title="Agent">🤖</span>';
 
-    // Work status badge (#38)
-    const workStatus = agent.work_status || (agent.online ? 'idle' : 'offline');
-    const statusLabels = { busy: '🔴 繁忙', idle: '🟢 空闲', offline: '⚫ 离线' };
-    const statusLabel = statusLabels[workStatus] || statusLabels.offline;
+    // 3-tier status badge (#136): active (GitLab) / online (Connect) / offline
+    const tierStatus = agent.tier_status || (agent.online ? 'online' : 'offline');
+    const tierLabels = { active: '🟢 活跃', online: '🟡 在线', offline: '⚫ 离线' };
+    const statusLabel = tierLabels[tierStatus] || tierLabels.offline;
 
     const hs = agent.health_score != null ? agent.health_score : null;
     const hsClass = hs != null ? (hs > 70 ? 'health-green' : hs >= 40 ? 'health-yellow' : 'health-red') : '';

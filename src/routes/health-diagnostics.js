@@ -126,6 +126,10 @@ function getAgentHealth() {
       activityStatus = lastActive && lastActive > thirtyMinAgo ? 'recently_seen' : 'offline';
     }
 
+    // 3-tier status (#136): active (GitLab 30min) / online (Connect) / offline
+    const hasRecentGitLab = lastEvent && lastEvent.timestamp > thirtyMinAgo;
+    const tierStatus = hasRecentGitLab ? 'active' : agent.online ? 'online' : 'offline';
+
     const tasks = db.getTasksForAgent(agent.name, { assigneeOnly: true });
     const openTasks = tasks.filter(t => t.state === 'opened').length;
 
@@ -137,6 +141,7 @@ function getAgentHealth() {
       name: agent.name,
       online: agent.online,
       status: activityStatus,
+      tier_status: tierStatus,
       last_seen_at: agent.last_seen_at || null,
       last_active: lastActive,
       open_tasks: openTasks,

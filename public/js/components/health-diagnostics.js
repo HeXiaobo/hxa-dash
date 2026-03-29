@@ -87,8 +87,16 @@ const HealthDiagnostics = {
       unknown:       { icon: '⚪', label: '未知', cls: '' },
     };
 
+    // 3-tier status config (#136)
+    const tierConfig = {
+      active:  { icon: '🟢', label: '活跃', cls: 'health-ok' },
+      online:  { icon: '🟡', label: '在线', cls: 'health-warn' },
+      offline: { icon: '⚫', label: '离线', cls: 'health-crit' },
+    };
+
     const agentCards = agents.list.map(a => {
-      const cfg = statusConfig[a.status] || statusConfig.unknown;
+      // Use 3-tier status as primary display (#136)
+      const cfg = a.tier_status ? (tierConfig[a.tier_status] || statusConfig.unknown) : (statusConfig[a.status] || statusConfig.unknown);
       const lastActiveStr = a.last_active ? this._formatTimeAgo(a.last_active) : '无记录';
 
       // System health indicators (#115)
