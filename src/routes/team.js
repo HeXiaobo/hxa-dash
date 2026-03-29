@@ -24,6 +24,11 @@ function buildAgents() {
 
     // Historical stats (#39)
     const now = Date.now();
+
+    // 3-tier status (#136): active (GitLab 30min) / online (Connect online) / offline
+    const thirtyMinAgo = now - 30 * 60 * 1000;
+    const hasRecentGitLab = recentEvents.some(e => e.timestamp && e.timestamp > thirtyMinAgo);
+    const tierStatus = hasRecentGitLab ? 'active' : a.online ? 'online' : 'offline';
     const sevenDays = now - 7 * 24 * 60 * 60 * 1000;
     const thirtyDays = now - 30 * 24 * 60 * 60 * 1000;
     const closedLast7 = closedTasks.filter(t => t.updated_at > sevenDays).length;
@@ -60,6 +65,7 @@ function buildAgents() {
       tags: safeJSON(a.tags),
       online: !!a.online,
       work_status: workStatus,
+      tier_status: tierStatus,
       active_projects: activeProjects,
       top_collaborator: topCollaborator,
       capacity,
@@ -106,7 +112,12 @@ router.get('/', (req, res) => {
     stats: {
       total: agents.length,
       online,
-      offline: agents.length - online
+      offline: agents.length - online,
+      tier: {
+        active: agents.filter(a => a.tier_status === 'active').length,
+        online: agents.filter(a => a.tier_status === 'online').length,
+        offline: agents.filter(a => a.tier_status === 'offline').length,
+      }
     }
   });
 });

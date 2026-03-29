@@ -2023,7 +2023,8 @@ main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
   letter-spacing: 0.5px;
 }
 .live-stat-working .live-stat-num { color: var(--green); }
-.live-stat-active .live-stat-num { color: var(--accent); }
+.live-stat-active .live-stat-num { color: var(--green); }
+.live-stat-online .live-stat-num { color: var(--yellow, #d29922); }
 .live-stat-idle .live-stat-num { color: var(--yellow, #d29922); }
 .live-stat-offline .live-stat-num { color: var(--text-secondary); }
 

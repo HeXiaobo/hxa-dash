@@ -30,6 +30,10 @@ router.get('/', (req, res) => {
       else effectiveStatus = 'idle';
     }
 
+    // 3-tier status (#136): active (GitLab 30min) / online (Connect) / offline
+    const hasRecentGitLab = allEvents.some(e => e.timestamp && e.timestamp > thirtyMinAgo);
+    const tierStatus = hasRecentGitLab ? 'active' : a.online ? 'online' : 'offline';
+
     return {
       name,
       displayName: a.display_name || name,
@@ -37,6 +41,7 @@ router.get('/', (req, res) => {
       online: !!a.online,
       workStatus: a.work_status || 'unknown',
       effectiveStatus,
+      tierStatus,
       healthScore: a.health_score ?? null,
       currentTasks: openTasks.slice(0, 5).map(t => ({
         title: t.title,
@@ -66,7 +71,12 @@ router.get('/', (req, res) => {
     working: liveAgents.filter(a => a.effectiveStatus === 'working').length,
     active: liveAgents.filter(a => a.effectiveStatus === 'active').length,
     idle: liveAgents.filter(a => a.effectiveStatus === 'idle').length,
-    offline: liveAgents.filter(a => a.effectiveStatus === 'offline').length
+    offline: liveAgents.filter(a => a.effectiveStatus === 'offline').length,
+    tier: {
+      active: liveAgents.filter(a => a.tierStatus === 'active').length,
+      online: liveAgents.filter(a => a.tierStatus === 'online').length,
+      offline: liveAgents.filter(a => a.tierStatus === 'offline').length,
+    }
   };
 
   res.json({ agents: liveAgents, summary, timestamp: now });
