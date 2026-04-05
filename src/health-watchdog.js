@@ -13,8 +13,9 @@ const HEALTH_STALE_MS = 10 * 60 * 1000;      // 10 min — health report conside
 const OUTPUT_STALL_MS = 30 * 60 * 1000;      // 30 min — no git activity threshold
 const ALERT_COOLDOWN_MS = 30 * 60 * 1000;    // 30 min — don't re-alert for same agent
 
-// Core team filter — only alert for these agents (Kevin directive 2026-04-02)
-const CORE_TEAM = new Set(['Boot', 'Jessie', 'Lucy', 'Vila', 'Lova', 'Lisa', 'Domi']);
+// Core team filter — only alert for agents listed in entities.json
+// Loaded at init() from config; if empty, alerts for all agents
+let CORE_TEAM = new Set();
 
 // Track last alert time per agent to avoid spam
 const lastAlerted = new Map();
@@ -22,10 +23,14 @@ const lastAlerted = new Map();
 let wsModule = null;
 let notifyConfig = null;
 
-function init(ws, config) {
+function init(ws, config, entities) {
   if (ws) wsModule = ws;
   if (config && config.notifications) {
     notifyConfig = config.notifications;
+  }
+  // Build core team set from entities config
+  if (entities && Array.isArray(entities)) {
+    CORE_TEAM = new Set(entities.map(e => e.id));
   }
 }
 

@@ -291,7 +291,7 @@ async function startPolling() {
   autoAssignEngine.start();
 
   // Start health watchdog (#129: agent health monitoring + alerting)
-  healthWatchdog.init(ws, config);
+  healthWatchdog.init(ws, config, entity.getAll());
   healthWatchdog.start();
 
   // Load health diagnostics endpoints from config
