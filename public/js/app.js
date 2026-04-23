@@ -46,7 +46,7 @@ const NAV_GROUPS = {
   overview: { subpages: ['overview'], default: 'overview' },
   team:     { subpages: ['team', 'collab', 'live'], default: 'team' },
   tasks:    { subpages: ['tasks', 'pipeline', 'mr-board'], default: 'tasks' },
-  analysis: { subpages: ['report', 'timeline', 'tokens', 'estimates'], default: 'report' },
+  analysis: { subpages: ['report', 'timeline', 'limits', 'tokens', 'estimates'], default: 'report' },
   system:   { subpages: ['health', 'projects'], default: 'health' },
   myview:   { subpages: ['myview', 'about'], default: 'myview' },
 };
@@ -219,6 +219,7 @@ const App = {
     Metrics.init();
     MyView.init();
     TokenDashboard.init();
+    LimitsDashboard.init();
     LiveDashboard.init();
     Pipeline.init();
     MRBoard.init();
@@ -393,6 +394,7 @@ const App = {
 
     // Lazy-load pages
     if (page === 'tokens' && !TokenDashboard._data) TokenDashboard.fetch();
+    if (page === 'limits' && !LimitsDashboard._data) LimitsDashboard.fetch();
     if (page === 'live') LiveDashboard.fetch();
     if (page === 'pipeline') Pipeline.fetch();
     if (page === 'mr-board') MRBoard.fetch();
@@ -470,6 +472,7 @@ const App = {
       case 'tasks': this.renderTasks(); break;
       case 'timeline': this.renderTimeline(); break;
       case 'live': LiveDashboard.render(); break;
+      case 'limits': LimitsDashboard.render(); break;
       case 'pipeline': Pipeline.render(); break;
       case 'myview': this.renderMyView(); break;
     }
@@ -743,6 +746,8 @@ const App = {
           AgentFilter.setAgents(ScopeManager.filter(msg.data));
           this.renderOverview();
           this.renderTeam();
+          if (this.currentPage === 'live') LiveDashboard.fetch();
+          if (this.currentPage === 'limits') LimitsDashboard.fetch();
         }
         break;
 
@@ -769,7 +774,7 @@ const App = {
 
       case 'pm2:update':
         // Real-time PM2 status update (#123) — refresh health page if visible
-        if (this.currentPage === 'system') {
+        if (this.currentPage === 'health') {
           HealthDiagnostics.fetch();
         }
         break;

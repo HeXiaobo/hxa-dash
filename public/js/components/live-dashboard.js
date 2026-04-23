@@ -38,23 +38,23 @@ const LiveDashboard = {
     if (this._fingerprints._summary === fp) return;
     this._fingerprints._summary = fp;
 
-    const tier = summary.tier || {};
+    const runtime = summary.runtime || {};
     el.innerHTML = `
-      <div class="live-stat live-stat-active" title="GitLab 30min 内有活动">
-        <span class="live-stat-num">${tier.active || 0}</span>
-        <span class="live-stat-label">🟢 活跃</span>
+      <div class="live-stat live-stat-active" title="正在处理任务或有明确工作信号">
+        <span class="live-stat-num">${summary.working || 0}</span>
+        <span class="live-stat-label">🟢 工作中</span>
       </div>
-      <div class="live-stat live-stat-online" title="在线但无近期 GitLab 活动">
-        <span class="live-stat-num">${tier.online || 0}</span>
-        <span class="live-stat-label">🟡 在线</span>
+      <div class="live-stat live-stat-online" title="运行正常，但当前没有明显工作信号">
+        <span class="live-stat-num">${summary.standby || 0}</span>
+        <span class="live-stat-label">🟡 待命</span>
       </div>
       <div class="live-stat live-stat-offline" title="离线">
-        <span class="live-stat-num">${tier.offline || 0}</span>
+        <span class="live-stat-num">${summary.offline || 0}</span>
         <span class="live-stat-label">⚫ 离线</span>
       </div>
       <div class="live-stat">
-        <span class="live-stat-num">${summary.total}</span>
-        <span class="live-stat-label">Total</span>
+        <span class="live-stat-num">${runtime.degraded || 0}</span>
+        <span class="live-stat-label">⚠️ 异常</span>
       </div>
     `;
   },
@@ -95,18 +95,20 @@ const LiveDashboard = {
 
   _agentRowHTML(agent) {
     const statusClass = `live-status-${agent.effectiveStatus}`;
-    // 3-tier status (#136) takes precedence for display label
-    const tierStatus = agent.tierStatus || (agent.online ? 'online' : 'offline');
-    const tierLabels = { active: '🟢 活跃', online: '🟡 在线', offline: '⚫ 离线' };
-    const statusLabel = tierLabels[tierStatus] || tierLabels.offline;
+    const workLabels = { working: '🟢 工作中', standby: '🟡 待命', offline: '⚫ 离线' };
+    const runtimeLabels = { running: '运行正常', degraded: '运行异常', offline: '未运行' };
+    const statusLabel = workLabels[agent.effectiveStatus] || workLabels.offline;
+    const runtimeText = agent.runtime
+      ? `${agent.runtime.label || agent.runtime.type || 'Unknown'}${agent.runtime.version ? ` ${agent.runtime.version}` : ''}`
+      : 'Unknown';
 
     const tasksHTML = agent.currentTasks.length
       ? agent.currentTasks.map(t => {
-          const badge = t.type === 'merge_request' ? '<span class="live-badge-mr">MR</span>' : '<span class="live-badge-issue">Issue</span>';
+          const badge = (t.type === 'merge_request' || t.type === 'mr') ? '<span class="live-badge-mr">MR</span>' : '<span class="live-badge-issue">Task</span>';
           const link = t.url ? `<a href="${esc(t.url)}" target="_blank" class="live-task-link">${badge} ${esc(truncate(t.title, 50))}</a>` : `${badge} ${esc(truncate(t.title, 50))}`;
           return `<div class="live-task-item">${link} <span class="live-task-project">${esc(t.project)}</span></div>`;
         }).join('')
-      : '<span class="live-no-tasks">No open tasks</span>';
+      : '<span class="live-no-tasks">当前无挂起任务</span>';
 
     const eventsHTML = agent.recentEvents.length
       ? agent.recentEvents.slice(0, 4).map(e => {
@@ -117,23 +119,28 @@ const LiveDashboard = {
     const activityBar = this._activityBar(agent.activityIntensity);
     const lastActive = agent.lastActiveMs !== null ? timeAgo(Date.now() - agent.lastActiveMs) : '';
     const healthBadge = agent.healthScore !== null ? `<span class="live-health">${agent.healthScore}</span>` : '';
+    const quotaBadge = agent.quota?.supported
+      ? `<span class="live-agent-role">5h ${agent.quota.primary?.used_percent ?? '—'}% · 7d ${agent.quota.secondary?.used_percent ?? '—'}%</span>`
+      : '';
 
     return `<div class="live-agent-row ${statusClass}" data-agent="${esc(agent.name)}">
       <div class="live-agent-header">
         <span class="live-agent-name">${esc(agent.displayName)}</span>
-        <span class="live-agent-role">${esc(agent.role)}</span>
+        <span class="live-agent-role">${esc(agent.role || runtimeText)}</span>
         ${healthBadge}
         <span class="live-agent-status">${statusLabel}</span>
       </div>
+      <div class="live-agent-role">${esc(runtimeText)} · ${esc(runtimeLabels[agent.runtimeStatus] || '未提供')}</div>
+      ${quotaBadge}
       <div class="live-agent-body">
         <div class="live-agent-tasks">
-          <div class="live-section-label">Current Work</div>
+          <div class="live-section-label">当前任务</div>
           ${tasksHTML}
         </div>
         <div class="live-agent-activity">
-          <div class="live-section-label">Recent Activity ${activityBar}</div>
+          <div class="live-section-label">最近信号 ${activityBar}</div>
           ${eventsHTML}
-          ${lastActive ? `<div class="live-last-active">Last active: ${lastActive}</div>` : ''}
+          ${lastActive ? `<div class="live-last-active">最后活动: ${lastActive}</div>` : ''}
         </div>
       </div>
     </div>`;

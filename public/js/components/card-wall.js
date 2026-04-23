@@ -101,8 +101,8 @@ const CardWall = {
     }
 
     // Stats (HxA Friendly #58: unified Human+Agent language)
-    const active = agents.filter(a => a.online).length;
-    if (statsEl) statsEl.textContent = `${active} 活跃 / ${agents.length} 成员`;
+    const active = agents.filter(a => a.runtime_status !== 'offline').length;
+    if (statsEl) statsEl.textContent = `${active} 运行中 / ${agents.length} 成员`;
   },
 
   cardHTML(agent) {
@@ -118,12 +118,15 @@ const CardWall = {
       ? '<span class="kind-badge kind-human" title="Human">🧑</span>'
       : '<span class="kind-badge kind-agent" title="Agent">🤖</span>';
 
-    // 4-tier status badge (#135): busy / idle / inactive / offline
-    const workStatus = agent.work_status || 'idle';
-    const tierStatus = agent.tier_status || (agent.online ? 'online' : 'offline');
-    const statusLabels = { busy: '🔴 繁忙', idle: '🟢 空闲', inactive: '🟡 不活跃', offline: '⚫ 离线' };
-    const tierLabels = { active: '🟢 活跃', online: '🟡 在线', offline: '⚫ 离线' };
-    const statusLabel = statusLabels[workStatus] || tierLabels[tierStatus] || tierLabels.offline;
+    const workState = agent.work_state || agent.work_status || 'offline';
+    const runtimeStatus = agent.runtime_status || agent.tier_status || 'offline';
+    const runtime = agent.runtime || {};
+    const runtimeType = runtime.label || runtime.type || 'Unknown';
+    const runtimeVersion = runtime.version ? ` ${runtime.version}` : '';
+    const statusLabels = { working: '🟢 工作中', standby: '🟡 待命', offline: '⚫ 离线' };
+    const runtimeLabels = { running: '运行正常', degraded: '运行异常', offline: '未运行' };
+    const badgeClass = workState === 'working' ? 'busy' : workState === 'standby' ? 'idle' : 'offline';
+    const statusLabel = statusLabels[workState] || statusLabels.offline;
 
     const hs = agent.health_score != null ? agent.health_score : null;
     const hsClass = hs != null ? (hs > 70 ? 'health-green' : hs >= 40 ? 'health-yellow' : 'health-red') : '';
@@ -183,6 +186,18 @@ const CardWall = {
       ? `<div class="card-top-collab" title="最佳拍档 (权重 ${topCollab.weight})">🤝 ${esc(topCollab.name)}</div>`
       : '';
 
+    const runtimeHTML = `
+      <div class="card-hardware">
+        <span class="hw-badge ${runtimeStatus === 'running' ? 'hw-ok' : runtimeStatus === 'degraded' ? 'hw-warn' : 'hw-crit'}" title="Runtime">
+          ⚙️ ${esc(runtimeType)}${esc(runtimeVersion)}
+        </span>
+        <span class="hw-badge ${runtimeStatus === 'running' ? 'hw-ok' : runtimeStatus === 'degraded' ? 'hw-warn' : 'hw-crit'}" title="运行状态">
+          ${esc(runtimeLabels[runtimeStatus] || '未提供')}
+        </span>
+        ${agent.last_heartbeat_at ? `<span class="hw-badge hw-ok" title="最后心跳">🫀 ${esc(timeAgo(agent.last_heartbeat_at))}</span>` : ''}
+      </div>
+    `;
+
     // Hardware resource badges (#122)
     const hw = agent.hardware;
     const hwHTML = hw && !hw.stale ? (() => {
@@ -202,9 +217,9 @@ const CardWall = {
     const statsHTML = `
       <div class="card-stats">
         <span class="card-stat" title="进行中任务">📋 ${stats.open_tasks || 0}</span>
-        <span class="card-stat" title="已完成">✅ ${stats.closed_tasks || 0}</span>
-        <span class="card-stat" title="合并请求">🔀 ${stats.mr_count || 0}</span>
-        <span class="card-stat" title="Issue">📝 ${stats.issue_count || 0}</span>
+        <span class="card-stat" title="近 24h 沟通">💬 ${stats.messages_24h || 0}</span>
+        <span class="card-stat" title="近 24h 推进">🚀 ${stats.tasks_24h || 0}</span>
+        <span class="card-stat" title="近 7 天活跃天数">📆 ${stats.active_days_7d || 0}</span>
       </div>
     `;
 
@@ -220,6 +235,16 @@ const CardWall = {
 
     const sparklineHTML = (typeof MemberOutput !== 'undefined' && agent.sparkline_7d)
       ? MemberOutput.renderMiniSparkline(agent.sparkline_7d)
+      : '';
+
+    const quota = agent.quota || {};
+    const quotaHTML = quota.supported ? `
+      <div class="card-activity-metrics">
+        <span class="card-stat" title="5 小时限额">⏳ ${quota.primary?.used_percent ?? '—'}% / 5h</span>
+        <span class="card-stat" title="7 天限额">📅 ${quota.secondary?.used_percent ?? '—'}% / 7d</span>
+      </div>
+    ` : runtime.type === 'openclaw'
+      ? `<div class="card-activity-metrics"><span class="card-stat" title="OpenClaw 暂不支持限额">🧩 OpenClaw</span></div>`
       : '';
 
     const avgTime = stats.avg_completion_ms ? this.formatDuration(stats.avg_completion_ms) : '—';
@@ -268,6 +293,7 @@ const CardWall = {
         <div class="agent-role">${esc(agent.role || (agent.kind === 'human' ? '团队成员' : 'AI Agent'))}</div>
         ${agent.bio ? `<div class="agent-bio">${esc(truncate(agent.bio, 60))}</div>` : ''}
         ${lastActiveHTML}
+        ${runtimeHTML}
         ${blockingHTML}
         ${tagsHTML}
         ${capacityHTML}
@@ -275,6 +301,7 @@ const CardWall = {
         ${projectsHTML}
         ${collabHTML}
         ${statsHTML}
+        ${quotaHTML}
         ${activityMetricsHTML}
         ${historyHTML}
         ${tasksHTML}

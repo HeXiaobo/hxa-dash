@@ -54,31 +54,31 @@ const Metrics = {
       ? `<span class="metrics-filter-badge">${filteredAgents.length}/${agents.length} 已选</span>`
       : '';
 
-    // Summary cards (activity-based)
+    // Summary cards (runtime + work-state based)
     const cards = `
       <div class="metrics-cards">
         <div class="metrics-card">
-          <div class="metrics-card-value">${summary.busy_count}<span class="metrics-card-unit">/${summary.online_count}</span></div>
-          <div class="metrics-card-label">忙碌 / 在线 ${filterLabel}</div>
+          <div class="metrics-card-value">${summary.working_count}<span class="metrics-card-unit">/${summary.online_count}</span></div>
+          <div class="metrics-card-label">工作中 / 运行中 ${filterLabel}</div>
         </div>
         <div class="metrics-card">
           <div class="metrics-card-value">${summary.total_messages_24h}</div>
-          <div class="metrics-card-label">消息数 / 24h</div>
+          <div class="metrics-card-label">互动次数 / 24h</div>
         </div>
         <div class="metrics-card">
           <div class="metrics-card-value">${summary.total_tasks_24h}</div>
-          <div class="metrics-card-label">任务数 / 24h</div>
+          <div class="metrics-card-label">推进次数 / 24h</div>
         </div>
         <div class="metrics-card">
-          <div class="metrics-card-value">${summary.total_events_7d}</div>
-          <div class="metrics-card-label">总事件 / 7天</div>
+          <div class="metrics-card-value">${summary.total_active_days_7d || 0}</div>
+          <div class="metrics-card-label">活跃天数累计 / 7天</div>
         </div>
       </div>
     `;
 
-    // Agent table (filtered) — sorted: busy first, then by events_7d desc
+    // Agent table (filtered) — sorted: working first, then by events_7d desc
     const sorted = [...filteredAgents].sort((a, b) => {
-      const order = { busy: 0, idle: 1, inactive: 2, offline: 3 };
+      const order = { working: 0, standby: 1, offline: 2 };
       const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9);
       if (diff !== 0) return diff;
       return (b.events_7d || 0) - (a.events_7d || 0);
@@ -88,6 +88,7 @@ const Metrics = {
       <tr>
         <td class="metrics-agent-name">${esc(a.name)}</td>
         <td><span class="work-status-badge ${esc(a.status)}">${this._statusLabel(a.status)}</span></td>
+        <td>${esc(this._runtimeLabel(a.runtime_type, a.runtime_version, a.runtime_status))}</td>
         <td class="metrics-num">${a.today_messages}</td>
         <td class="metrics-num">${a.today_tasks}</td>
         <td class="metrics-num metrics-last-active">${this._formatLastActive(a.last_active)}</td>
@@ -101,12 +102,13 @@ const Metrics = {
             <tr>
               <th>Agent</th>
               <th>状态</th>
-              <th class="metrics-num-header">今日消息</th>
-              <th class="metrics-num-header">今日任务</th>
+              <th>Runtime</th>
+              <th class="metrics-num-header">今日互动</th>
+              <th class="metrics-num-header">今日推进</th>
               <th class="metrics-num-header">最后活跃</th>
             </tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="5" class="metrics-empty">暂无成员数据</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="6" class="metrics-empty">暂无成员数据</td></tr>'}</tbody>
         </table>
       </div>
     `;
@@ -120,19 +122,27 @@ const Metrics = {
 
   _computeFilteredSummary(filteredAgents) {
     const online = filteredAgents.filter(a => a.status !== 'offline');
-    const busy = filteredAgents.filter(a => a.status === 'busy');
+    const working = filteredAgents.filter(a => a.status === 'working');
     return {
       online_count: online.length,
-      busy_count: busy.length,
+      working_count: working.length,
+      standby_count: filteredAgents.filter(a => a.status === 'standby').length,
       total_messages_24h: filteredAgents.reduce((s, a) => s + a.today_messages, 0),
       total_tasks_24h: filteredAgents.reduce((s, a) => s + a.today_tasks, 0),
       total_events_7d: filteredAgents.reduce((s, a) => s + (a.events_7d || 0), 0),
+      total_active_days_7d: filteredAgents.reduce((s, a) => s + (a.active_days_7d || 0), 0),
       weekly_closed: this.data.team.weekly_closed || [],
     };
   },
 
   _statusLabel(s) {
-    return s === 'busy' ? '忙碌' : s === 'idle' ? '空闲' : s === 'inactive' ? '不活跃' : '离线';
+    return s === 'working' ? '工作中' : s === 'standby' ? '待命' : '离线';
+  },
+
+  _runtimeLabel(type, version, status) {
+    const labels = { claude_code: 'Claude Code', codex: 'Codex', openclaw: 'OpenClaw', unknown: 'Unknown' };
+    const statusLabels = { running: '正常', degraded: '异常', offline: '离线' };
+    return `${labels[type] || type || 'Unknown'}${version ? ` ${version}` : ''} · ${statusLabels[status] || '未提供'}`;
   },
 
   _formatLastActive(ts) {
@@ -194,23 +204,23 @@ const Metrics = {
       : `${openMinutes}m`;
 
     const velocityCards = `
-      <div class="metrics-section-title">Session 工作量</div>
+      <div class="metrics-section-title">任务负载预估</div>
       <div class="metrics-cards">
         <div class="metrics-card velocity-card">
           <div class="metrics-card-value">${team.sessions_per_day}<span class="metrics-card-unit">/天</span></div>
-          <div class="metrics-card-label">团队 Session 速率</div>
+          <div class="metrics-card-label">团队推进速率</div>
         </div>
         <div class="metrics-card velocity-card">
           <div class="metrics-card-value">${openSessions}</div>
-          <div class="metrics-card-label">待完成 Sessions</div>
+          <div class="metrics-card-label">待完成工作块</div>
         </div>
         <div class="metrics-card velocity-card">
           <div class="metrics-card-value">${openTimeStr}</div>
-          <div class="metrics-card-label">预估剩余时间</div>
+          <div class="metrics-card-label">预计剩余时间</div>
         </div>
         <div class="metrics-card velocity-card">
           <div class="metrics-card-value">${team.active_agents}</div>
-          <div class="metrics-card-label">活跃 Agents (7d)</div>
+          <div class="metrics-card-label">有记录成员 (7d)</div>
         </div>
       </div>
     `;
@@ -237,7 +247,7 @@ const Metrics = {
       <div class="metrics-table-wrap">
         <table class="metrics-table">
           <thead>
-            <tr><th>Agent</th><th>Sessions (7d)</th><th>Sessions/天</th><th>Events</th><th>来源</th></tr>
+            <tr><th>成员</th><th>工作块 (7d)</th><th>日均</th><th>事件数</th><th>口径</th></tr>
           </thead>
           <tbody>${agentRows}</tbody>
         </table>

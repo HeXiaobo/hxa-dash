@@ -9,6 +9,8 @@
 const { Router } = require('express');
 const db = require('../db');
 const collab = require('../analyzers/collab');
+const { buildAgents } = require('./team');
+const { computeMetrics } = require('./metrics');
 
 let ws = null;
 let config = null;
@@ -57,7 +59,10 @@ router.post('/report', (req, res) => {
   });
 
   // Broadcast team update
-  if (ws) ws.broadcast('team:update', db.getAllAgents());
+  if (ws) {
+    ws.broadcast('team:update', buildAgents());
+    ws.broadcast('metrics:update', computeMetrics());
+  }
 
   res.json({ ok: true, ts: now });
 });
@@ -98,7 +103,8 @@ router.post('/webhook/connect', (req, res) => {
 
   // Broadcast
   if (ws) {
-    ws.broadcast('team:update', db.getAllAgents());
+    ws.broadcast('team:update', buildAgents());
+    ws.broadcast('metrics:update', computeMetrics());
     ws.broadcast('timeline:new', db.getTimeline(20));
   }
 
@@ -448,7 +454,8 @@ router.post('/report/activity', (req, res) => {
 
   if (ws && inserted > 0) {
     ws.broadcast('timeline:new', db.getTimeline(50));
-    ws.broadcast('team:update', db.getAllAgents());
+    ws.broadcast('team:update', buildAgents());
+    ws.broadcast('metrics:update', computeMetrics());
   }
 
   res.json({ ok: true, inserted });

@@ -6,6 +6,165 @@ const router = Router();
 
 // Default max concurrent tasks per agent (can be overridden per-agent in entities.json later)
 const DEFAULT_MAX_CAPACITY = 5;
+const HEALTH_STALE_MS = 10 * 60 * 1000;
+const WORK_SIGNAL_WINDOW_MS = 60 * 60 * 1000;
+const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MESSAGE_ACTIONS = new Set(['sent_message', 'received_message', 'hxa_message']);
+const TASK_ACTIONS = new Set(['task_success', 'task_failed', 'task_timeout', 'working_on']);
+const IGNORED_WORK_ACTIONS = new Set(['heartbeat', 'came_online', 'went_offline']);
+
+function isWorkSignal(action) {
+  return !!action && !IGNORED_WORK_ACTIONS.has(action);
+}
+
+function normalizeTimestamp(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeRuntimeType(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'unknown';
+  if (normalized === 'claude' || normalized === 'claude-code') return 'claude_code';
+  if (normalized === 'codex-cli') return 'codex';
+  return normalized;
+}
+
+function runtimeLabel(type) {
+  switch (type) {
+    case 'claude_code': return 'Claude Code';
+    case 'codex': return 'Codex';
+    case 'openclaw': return 'OpenClaw';
+    default: return type || 'Unknown';
+  }
+}
+
+function normalizeRuntimeStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (['running', 'online', 'ok', 'healthy'].includes(normalized)) return 'running';
+  if (['warning', 'degraded', 'partial'].includes(normalized)) return 'degraded';
+  if (['offline', 'stopped', 'down', 'error', 'failed'].includes(normalized)) return 'offline';
+  return null;
+}
+
+function normalizeQuotaWindow(window, fallbackLabel = null) {
+  if (!window || typeof window !== 'object') return null;
+  const usedPercent = typeof window.used_percent === 'number'
+    ? window.used_percent
+    : typeof window.used_percentage === 'number'
+      ? window.used_percentage
+      : null;
+  const resetsAt = normalizeTimestamp(window.resets_at);
+  const windowMinutes = typeof window.window_minutes === 'number' ? window.window_minutes : null;
+  if (usedPercent == null && !resetsAt && !windowMinutes) return null;
+  return {
+    label: window.label || fallbackLabel || null,
+    window_minutes: windowMinutes,
+    used_percent: usedPercent == null ? null : Math.max(0, Math.min(100, Math.round(usedPercent * 10) / 10)),
+    resets_at: resetsAt,
+  };
+}
+
+function normalizeQuotaShape(quota, fallbackSource = 'agent_health') {
+  if (!quota || typeof quota !== 'object') return null;
+  const primary = normalizeQuotaWindow(quota.primary || quota['5h'], '5h');
+  const secondary = normalizeQuotaWindow(quota.secondary || quota['7d'], '7d');
+  const supported = typeof quota.supported === 'boolean'
+    ? quota.supported
+    : !!(primary || secondary);
+
+  return {
+    supported,
+    source: quota.source || fallbackSource,
+    reason: quota.reason || null,
+    sampled_at: normalizeTimestamp(quota.sampled_at),
+    primary,
+    secondary,
+    credits: quota.credits || null,
+  };
+}
+
+function selectQuotaForRuntime(health, runtimeType) {
+  if (!health?.quota || typeof health.quota !== 'object') {
+    return { supported: false, source: 'agent_health', reason: 'not_reported', primary: null, secondary: null, credits: null, sampled_at: null };
+  }
+
+  const quota = health.quota;
+  const candidates = [
+    runtimeType,
+    runtimeType === 'claude' ? 'claude_code' : null,
+    runtimeType === 'claude_code' ? 'claude' : null,
+  ].filter(Boolean);
+
+  for (const key of candidates) {
+    if (quota[key]) {
+      return normalizeQuotaShape(quota[key], key) || { supported: false, source: key, reason: 'invalid_payload', primary: null, secondary: null, credits: null, sampled_at: null };
+    }
+  }
+
+  if (quota.primary || quota.secondary || typeof quota.supported === 'boolean') {
+    return normalizeQuotaShape(quota, 'agent_health') || { supported: false, source: 'agent_health', reason: 'invalid_payload', primary: null, secondary: null, credits: null, sampled_at: null };
+  }
+
+  return { supported: false, source: 'agent_health', reason: 'not_reported', primary: null, secondary: null, credits: null, sampled_at: null };
+}
+
+function computeOverallSystemHealth(health) {
+  if (!health) return 'unknown';
+  const statuses = [health.disk?.status, health.memory?.status];
+  if (health.cpu?.pct != null) {
+    statuses.push(health.cpu.pct > 90 ? 'critical' : health.cpu.pct > 80 ? 'warning' : 'ok');
+  }
+  if (health.pm2) {
+    if (health.pm2.total > 0 && health.pm2.online === health.pm2.total) statuses.push('ok');
+    else if (health.pm2.online === 0) statuses.push('critical');
+    else statuses.push('warning');
+  }
+  if (statuses.includes('critical')) return 'critical';
+  if (statuses.includes('warning')) return 'warning';
+  return 'ok';
+}
+
+function buildRuntimeSummary(agent, health, now) {
+  const reportedAt = normalizeTimestamp(health?.reported_at);
+  const stale = !reportedAt || (now - reportedAt) > HEALTH_STALE_MS;
+  const type = normalizeRuntimeType(health?.runtime?.type);
+  const rawStatus = normalizeRuntimeStatus(health?.runtime?.status);
+  const systemHealth = computeOverallSystemHealth(health);
+
+  let status = 'offline';
+  if (!agent.online && stale) {
+    status = 'offline';
+  } else if (rawStatus === 'offline') {
+    status = 'offline';
+  } else if (stale) {
+    status = agent.online ? 'degraded' : 'offline';
+  } else if (rawStatus) {
+    status = rawStatus;
+  } else if (systemHealth === 'critical') {
+    status = agent.online ? 'degraded' : 'offline';
+  } else {
+    status = agent.online ? 'running' : 'offline';
+  }
+
+  return {
+    type,
+    label: runtimeLabel(type),
+    version: health?.runtime?.version || null,
+    status,
+    source: health?.runtime?.source || 'agent_health',
+    checked_at: normalizeTimestamp(health?.runtime?.checked_at) || reportedAt,
+    last_heartbeat_at: reportedAt,
+    hostname: health?.hostname || null,
+    stale,
+    system_health: systemHealth,
+  };
+}
 
 // Build enriched agent list — shared between REST and WS broadcasts
 function buildAgents() {
@@ -18,36 +177,23 @@ function buildAgents() {
     const closedTasks = allTasks.filter(t => t.state === 'closed' || t.state === 'merged');
     const recentEvents = db.getEventsForAgent(a.name, 5);
     const latestEvent = recentEvents[0] || null;
+    const allRecentEvents = db.getEventsForAgent(a.name, 200);
+    const health = db.getAgentHealth(a.name);
 
-    // Historical stats (#39)
     const now = Date.now();
+    const runtime = buildRuntimeSummary(a, health, now);
+    const quota = selectQuotaForRuntime(health, runtime.type);
+    const recentWorkEvents = allRecentEvents.filter(e => e.timestamp && e.timestamp > (now - WORK_SIGNAL_WINDOW_MS) && isWorkSignal(e.action));
+    const lastWorkSignal = recentWorkEvents[0] || allRecentEvents.find(e => isWorkSignal(e.action)) || null;
+    const latestEventTs = (lastWorkSignal && lastWorkSignal.timestamp) || (latestEvent && latestEvent.timestamp) || 0;
+    const hasRecentActivity = latestEventTs > (now - WORK_SIGNAL_WINDOW_MS);
+    const hasAnyDayActivity = latestEventTs > (now - ACTIVE_WINDOW_MS);
 
-    // Work status (#135): 4-tier based on git activity + online + tasks
-    //   busy: Connect online + git activity within 4h + has open tasks
-    //   idle: Connect online + no recent activity OR no open tasks
-    //   inactive: Connect online but >24h without git activity
-    //   offline: Connect not online
-    const fourHoursAgo = now - 4 * 3600000;
-    const twentyFourHoursAgo = now - 24 * 3600000;
-    const latestEventTs = (latestEvent && latestEvent.timestamp) || 0;
-    const hasRecentActivity = latestEventTs > fourHoursAgo;
-    const hasAnyDayActivity = latestEventTs > twentyFourHoursAgo;
-
-    let workStatus;
-    if (!a.online) {
-      workStatus = 'offline';
-    } else if (hasRecentActivity && openTasks.length > 0) {
-      workStatus = 'busy';
-    } else if (!hasAnyDayActivity) {
-      workStatus = 'inactive';
-    } else {
-      workStatus = 'idle';
+    let workState = 'offline';
+    if (runtime.status !== 'offline') {
+      workState = (hasRecentActivity || openTasks.length > 0 || a.current_task) ? 'working' : 'standby';
     }
 
-    // 3-tier status (#136): active (GitLab 30min) / online (Connect online) / offline
-    const thirtyMinAgo = now - 30 * 60 * 1000;
-    const hasRecentGitLab = recentEvents.some(e => e.timestamp && e.timestamp > thirtyMinAgo);
-    const tierStatus = hasRecentGitLab ? 'active' : a.online ? 'online' : 'offline';
     const sevenDays = now - 7 * 24 * 60 * 60 * 1000;
     const thirtyDays = now - 30 * 24 * 60 * 60 * 1000;
     const closedLast7 = closedTasks.filter(t => t.updated_at > sevenDays).length;
@@ -77,18 +223,27 @@ function buildAgents() {
     const blockingMRs = db.getBlockingMRsForAgent(a.name, now);
 
     // Last active time: most recent event timestamp (#98)
-    const lastActiveAt = latestEvent ? latestEvent.timestamp : (a.last_seen_at || null);
+    const lastActiveAt = lastWorkSignal ? lastWorkSignal.timestamp : (latestEvent ? latestEvent.timestamp : (a.last_seen_at || null));
 
     // Activity metrics (#135): events and closed tasks in last 7 days
     const events7d = db.getEventsInWindow(sevenDays, a.name);
     const closed7d = db.getTasksClosedInWindow(sevenDays, a.name);
+    const workSignals7d = events7d.filter(e => isWorkSignal(e.action));
+    const messages24h = db.getEventsInWindow(now - 24 * 60 * 60 * 1000, a.name).filter(e => MESSAGE_ACTIONS.has(e.action)).length;
+    const tasks24h = db.getEventsInWindow(now - 24 * 60 * 60 * 1000, a.name).filter(e => TASK_ACTIONS.has(e.action)).length;
+    const activeDays7d = new Set(workSignals7d.map(e => new Date(e.timestamp).toISOString().slice(0, 10))).size;
 
     return {
       ...a,
       tags: safeJSON(a.tags),
       online: !!a.online,
-      work_status: workStatus,
-      tier_status: tierStatus,
+      work_state: workState,
+      runtime_status: runtime.status,
+      work_status: workState,
+      tier_status: runtime.status,
+      runtime,
+      quota,
+      last_heartbeat_at: runtime.last_heartbeat_at,
       active_projects: activeProjects,
       top_collaborator: topCollaborator,
       capacity,
@@ -111,8 +266,14 @@ function buildAgents() {
         timestamp: latestEvent.timestamp,
         project: latestEvent.project
       } : null,
+      recent_work_signal: lastWorkSignal ? {
+        action: lastWorkSignal.action,
+        target_title: lastWorkSignal.target_title,
+        timestamp: lastWorkSignal.timestamp,
+        project: lastWorkSignal.project
+      } : null,
       sparkline_7d: db.getAgentSparkline7d(a.name),
-      hardware: buildHardwareSummary(a.name),
+      hardware: buildHardwareSummary(health, runtime),
       stats: {
         open_tasks: openTasks.length,
         closed_tasks: closedTasks.length,
@@ -121,7 +282,11 @@ function buildAgents() {
         recent_events: recentEvents.length,
         closed_last_7d: closedLast7,
         closed_last_30d: closedLast30,
-        avg_completion_ms: avgCompletionMs
+        avg_completion_ms: avgCompletionMs,
+        work_signals_7d: workSignals7d.length,
+        messages_24h: messages24h,
+        tasks_24h: tasks24h,
+        active_days_7d: activeDays7d,
       }
     };
   });
@@ -138,11 +303,16 @@ router.get('/', (req, res) => {
       total: agents.length,
       online,
       offline: agents.length - online,
-      tier: {
-        active: agents.filter(a => a.tier_status === 'active').length,
-        online: agents.filter(a => a.tier_status === 'online').length,
-        offline: agents.filter(a => a.tier_status === 'offline').length,
-      }
+      work_state: {
+        working: agents.filter(a => a.work_state === 'working').length,
+        standby: agents.filter(a => a.work_state === 'standby').length,
+        offline: agents.filter(a => a.work_state === 'offline').length,
+      },
+      runtime: {
+        running: agents.filter(a => a.runtime_status === 'running').length,
+        degraded: agents.filter(a => a.runtime_status === 'degraded').length,
+        offline: agents.filter(a => a.runtime_status === 'offline').length,
+      },
     }
   });
 });
@@ -159,7 +329,7 @@ router.get('/:name/output', (req, res) => {
 
 // GET /api/team/:name — single agent detail
 router.get('/:name', (req, res) => {
-  const agent = db.getAgent(req.params.name);
+  const agent = buildAgents().find(item => item.name === req.params.name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
   const tasks = db.getTasksForAgent(agent.name);
@@ -168,7 +338,7 @@ router.get('/:name', (req, res) => {
   const collabs = db.getCollabsForAgent(agent.name);
 
   res.json({
-    agent: { ...agent, tags: safeJSON(agent.tags), online: !!agent.online },
+    agent,
     current_tasks: tasks.filter(t => t.state === 'opened'),
     recent_done: tasks.filter(t => t.state === 'closed' || t.state === 'merged').slice(0, 10),
     events,
@@ -187,8 +357,7 @@ router.get('/:name', (req, res) => {
 });
 
 // Build compact hardware summary from agent-health data (#122)
-function buildHardwareSummary(agentName) {
-  const health = db.getAgentHealth(agentName);
+function buildHardwareSummary(health, runtime) {
   if (!health) return null;
 
   const stale = (Date.now() - health.reported_at) > 10 * 60 * 1000;
@@ -200,6 +369,11 @@ function buildHardwareSummary(agentName) {
     cpu_pct: health.cpu ? health.cpu.pct : null,
     pm2_online: health.pm2 ? health.pm2.online : null,
     pm2_total: health.pm2 ? health.pm2.total : null,
+    hostname: health.hostname || runtime?.hostname || null,
+    runtime_type: runtime?.type || 'unknown',
+    runtime_version: runtime?.version || null,
+    runtime_status: runtime?.status || 'offline',
+    system_health: runtime?.system_health || 'unknown',
     stale,
     reported_at: health.reported_at,
   };
@@ -242,6 +416,7 @@ function computeHealthScore(recentEvents, closedTasks, openTasks, now) {
 }
 
 function safeJSON(str) {
+  if (Array.isArray(str)) return str;
   try { return JSON.parse(str); } catch { return []; }
 }
 

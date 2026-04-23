@@ -45,13 +45,74 @@ function clampNum(val, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Math.round(val * 10) / 10));
 }
 
+function normalizeTimestamp(val) {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val === 'string') {
+    const parsed = Date.parse(val);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function sanitizeEnum(val, allowed, fallback = null) {
+  const normalized = sanitizeStr(val, 64)?.toLowerCase() || null;
+  return normalized && allowed.includes(normalized) ? normalized : fallback;
+}
+
+function sanitizeQuotaWindow(window, fallbackLabel = null) {
+  if (!window || typeof window !== 'object') return null;
+  const usedPercent = typeof window.used_percent === 'number'
+    ? clampNum(window.used_percent, 0, 100)
+    : typeof window.used_percentage === 'number'
+      ? clampNum(window.used_percentage, 0, 100)
+      : null;
+  const resetsAt = normalizeTimestamp(window.resets_at);
+  const windowMinutes = clampNum(window.window_minutes, 0, 60 * 24 * 365);
+  if (usedPercent == null && resetsAt == null && windowMinutes == null) return null;
+  return {
+    label: sanitizeStr(window.label, 16) || fallbackLabel,
+    used_percent: usedPercent,
+    resets_at: resetsAt,
+    window_minutes: windowMinutes,
+  };
+}
+
+function sanitizeQuotaShape(quota) {
+  if (!quota || typeof quota !== 'object') return null;
+  return {
+    supported: typeof quota.supported === 'boolean' ? quota.supported : !!(quota.primary || quota.secondary || quota['5h'] || quota['7d']),
+    source: sanitizeStr(quota.source, 64),
+    reason: sanitizeStr(quota.reason, 128),
+    sampled_at: normalizeTimestamp(quota.sampled_at),
+    primary: sanitizeQuotaWindow(quota.primary || quota['5h'], '5h'),
+    secondary: sanitizeQuotaWindow(quota.secondary || quota['7d'], '7d'),
+    credits: quota.credits && typeof quota.credits === 'object'
+      ? {
+          total: clampNum(quota.credits.total, 0, 999999999),
+          remaining: clampNum(quota.credits.remaining, 0, 999999999),
+        }
+      : null,
+  };
+}
+
+function sanitizeRuntime(runtime) {
+  if (!runtime || typeof runtime !== 'object') return null;
+  return {
+    type: sanitizeEnum(runtime.type, ['claude_code', 'codex', 'openclaw', 'unknown'], 'unknown'),
+    version: sanitizeStr(runtime.version, 64),
+    status: sanitizeEnum(runtime.status, ['running', 'degraded', 'offline'], 'offline'),
+    source: sanitizeStr(runtime.source, 64),
+    checked_at: normalizeTimestamp(runtime.checked_at) || Date.now(),
+  };
+}
+
 // POST /api/agent-health/:name — agent reports its system health (auth required)
 router.post('/:name', requireHealthAuth, (req, res) => {
   const { name } = req.params;
   const agent = db.getAgent(name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const { disk, memory, cpu, pm2, hostname } = req.body;
+  const { disk, memory, cpu, pm2, hostname, runtime, quota } = req.body;
 
   // Validate required fields
   if (!disk || !memory) {
@@ -90,6 +151,14 @@ router.post('/:name', requireHealthAuth, (req, res) => {
         cpu: clampNum(s.cpu, 0, 100),
       })),
     } : null,
+    runtime: sanitizeRuntime(runtime),
+    quota: quota && typeof quota === 'object'
+      ? Object.fromEntries(
+          Object.entries(quota)
+            .map(([key, value]) => [sanitizeStr(key, 64), sanitizeQuotaShape(value)])
+            .filter(([key, value]) => key && value)
+        )
+      : null,
   };
 
   db.upsertAgentHealth(name, health);
@@ -113,6 +182,8 @@ router.get('/', (req, res) => {
       if (health.pm2) {
         statuses.push(health.pm2.online === health.pm2.total && health.pm2.total > 0 ? 'ok' : health.pm2.online === 0 ? 'critical' : 'warning');
       }
+      if (health.runtime?.status === 'degraded') statuses.push('warning');
+      if (health.runtime?.status === 'offline' && agent.online) statuses.push('critical');
       overall = statuses.includes('critical') ? 'critical'
         : statuses.includes('warning') ? 'warning' : 'ok';
     }
@@ -122,6 +193,8 @@ router.get('/', (req, res) => {
       online: !!agent.online,
       overall,
       stale,
+      runtime: health?.runtime || null,
+      quota: health?.quota || null,
       health,
     };
   });

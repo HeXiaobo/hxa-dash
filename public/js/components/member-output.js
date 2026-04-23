@@ -1,4 +1,4 @@
-// Member Output Component — per-agent time-series output visualization (#127)
+// Member Output Component — per-agent rhythm visualization with optional technical context.
 const MemberOutput = {
   _cache: new Map(), // name -> { data, fetchedAt }
   CACHE_TTL: 60000,  // 1 min
@@ -19,31 +19,46 @@ const MemberOutput = {
   // Render output section HTML for the detail drawer
   renderSection(data) {
     if (!data || !data.buckets || data.buckets.length === 0) {
-      return '<div class="drawer-section"><h4>产出趋势</h4><div class="output-empty">暂无数据</div></div>';
+      return '<div class="drawer-section"><h4>成员节奏</h4><div class="output-empty">暂无数据</div></div>';
     }
 
-    const s = data.summary;
+    const s = data.summary || {};
+    const days = Number(data.days || 0);
+    const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+    const totalEvents = Number(s.total_events || 0);
+    const totalClosed = Number(s.issues_closed || 0);
+    const totalMerged = Number(s.mrs_merged || 0);
+    const totalCommits = Number(s.commits || 0);
+    const totalComments = Number(s.comments || 0);
+    const healthScore = s.health_score != null ? Number(s.health_score) : null;
     const changeHTML = s.change_pct != null
       ? `<span class="output-change ${s.change_pct >= 0 ? 'up' : 'down'}">${s.change_pct >= 0 ? '↑' : '↓'} ${Math.abs(s.change_pct)}%</span>`
       : '';
+    const contextHTML = this._renderContext(data);
+    const rhythmHTML = this._renderRhythmSummary(buckets, days, totalEvents);
 
     return `
       <div class="drawer-section output-section">
-        <h4>产出趋势 <span class="output-period">${data.days}天</span> ${changeHTML}</h4>
+        <h4>成员节奏 <span class="output-period">${days}天</span> ${changeHTML}</h4>
+        <div style="margin:6px 0 12px;color:var(--text-secondary);font-size:12px;line-height:1.5;">
+          这是一张事件口径的活动视图，适合看协作节奏、推进密度和状态变化，不等于绩效。
+        </div>
+        ${contextHTML}
+        ${rhythmHTML}
 
         <div class="output-summary-grid">
-          <div class="output-stat"><span class="output-stat-num">${s.total_events}</span><span class="output-stat-label">活动</span></div>
-          <div class="output-stat"><span class="output-stat-num">${s.issues_closed}</span><span class="output-stat-label">Issue</span></div>
-          <div class="output-stat"><span class="output-stat-num">${s.mrs_merged}</span><span class="output-stat-label">MR</span></div>
-          <div class="output-stat"><span class="output-stat-num">${s.commits}</span><span class="output-stat-label">Commit</span></div>
-          <div class="output-stat"><span class="output-stat-num">${s.comments}</span><span class="output-stat-label">评论</span></div>
-          <div class="output-stat"><span class="output-stat-num output-health">${s.health_score}</span><span class="output-stat-label">健康分</span></div>
+          <div class="output-stat"><span class="output-stat-num">${totalEvents}</span><span class="output-stat-label">活动</span></div>
+          <div class="output-stat"><span class="output-stat-num">${totalClosed}</span><span class="output-stat-label">闭环</span></div>
+          <div class="output-stat"><span class="output-stat-num">${totalMerged}</span><span class="output-stat-label">交付</span></div>
+          <div class="output-stat"><span class="output-stat-num">${totalCommits}</span><span class="output-stat-label">变更</span></div>
+          <div class="output-stat"><span class="output-stat-num">${totalComments}</span><span class="output-stat-label">沟通</span></div>
+          <div class="output-stat"><span class="output-stat-num output-health">${healthScore != null ? healthScore : '—'}</span><span class="output-stat-label">运行分</span></div>
         </div>
 
-        <div class="output-chart-label">每日活动量</div>
+        <div class="output-chart-label">每日节奏</div>
         ${this._renderActivityChart(data.buckets)}
 
-        <div class="output-chart-label">产出分类</div>
+        <div class="output-chart-label">事件构成</div>
         ${this._renderBreakdownChart(data.buckets)}
       </div>
     `;
@@ -59,17 +74,18 @@ const MemberOutput = {
   _renderBreakdownChart(buckets) {
     const w = 280, h = 60, pad = 2;
     const barW = Math.max(2, (w - pad * buckets.length) / buckets.length);
-    const maxVal = Math.max(...buckets.map(b => b.commits + b.issues_closed + b.mrs_merged + b.comments), 1);
+    const maxVal = Math.max(...buckets.map(b => Number(b.commits || 0) + Number(b.issues_closed || 0) + Number(b.mrs_merged || 0) + Number(b.comments || 0)), 1);
 
     const bars = buckets.map((b, i) => {
       const x = i * (barW + pad);
-      const total = b.commits + b.issues_closed + b.mrs_merged + b.comments;
+      const total = Number(b.commits || 0) + Number(b.issues_closed || 0) + Number(b.mrs_merged || 0) + Number(b.comments || 0);
       const scale = h / maxVal;
       let y = h;
       const segs = [];
       const draw = (val, color) => {
-        if (val <= 0) return;
-        const segH = val * scale;
+        const num = Number(val || 0);
+        if (num <= 0) return;
+        const segH = num * scale;
         y -= segH;
         segs.push(`<rect x="${x}" y="${y}" width="${barW}" height="${segH}" fill="${color}" rx="1"/>`);
       };
@@ -85,10 +101,77 @@ const MemberOutput = {
         ${bars}
       </svg>
       <div class="output-legend">
-        <span class="output-legend-item"><span class="output-dot" style="background:#3fb950"></span>Issue</span>
-        <span class="output-legend-item"><span class="output-dot" style="background:#58a6ff"></span>MR</span>
-        <span class="output-legend-item"><span class="output-dot" style="background:#bc8cff"></span>Commit</span>
-        <span class="output-legend-item"><span class="output-dot" style="background:#f0883e"></span>评论</span>
+        <span class="output-legend-item"><span class="output-dot" style="background:#3fb950"></span>闭环</span>
+        <span class="output-legend-item"><span class="output-dot" style="background:#58a6ff"></span>交付</span>
+        <span class="output-legend-item"><span class="output-dot" style="background:#bc8cff"></span>变更</span>
+        <span class="output-legend-item"><span class="output-dot" style="background:#f0883e"></span>沟通</span>
+      </div>
+    `;
+  },
+
+  _renderContext(data) {
+    const chips = [];
+    const summary = data.summary || {};
+    const runtime = data.runtime || summary.runtime || null;
+    const version = data.version || summary.version || null;
+    const quota = data.quota || summary.quota || null;
+
+    if (runtime) {
+      const runtimeLabel = runtime.label || runtime.status || runtime.type || '运行中';
+      chips.push(`<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:rgba(88,166,255,.12);color:#79c0ff;font-size:11px;line-height:1.4;">运行态：${esc(String(runtimeLabel))}</span>`);
+    } else if (data.work_state || summary.work_state) {
+      chips.push(`<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:rgba(63,185,80,.12);color:#7ee787;font-size:11px;line-height:1.4;">工作状态：${esc(String(data.work_state || summary.work_state))}</span>`);
+    }
+
+    if (version) {
+      chips.push(`<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:rgba(210,153,34,.12);color:#e3b341;font-size:11px;line-height:1.4;">版本：${esc(String(version))}</span>`);
+    }
+
+    if (quota && (quota.primary || quota.secondary)) {
+      const parts = [];
+      const primary = quota.primary;
+      const secondary = quota.secondary;
+      if (primary) parts.push(`5h ${this._quotaPart(primary)}`);
+      if (secondary) parts.push(`7d ${this._quotaPart(secondary)}`);
+      if (parts.length) chips.push(`<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:rgba(240,136,62,.12);color:#ffa657;font-size:11px;line-height:1.4;">限额：${parts.join(' · ')}</span>`);
+    }
+
+    if (!chips.length) return '';
+
+    return `
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+        ${chips.join('')}
+      </div>
+    `;
+  },
+
+  _quotaPart(part) {
+    if (!part) return '—';
+    const used = part.used_percent != null ? `${Number(part.used_percent).toFixed(1)}%` : '—';
+    const reset = part.resets_at ? `重置 ${this._formatReset(part.resets_at)}` : '';
+    return `${used}${reset ? `，${reset}` : ''}`;
+  },
+
+  _formatReset(value) {
+    const ts = typeof value === 'number' ? value : Date.parse(value);
+    if (!Number.isFinite(ts)) return '—';
+    return new Date(ts).toLocaleString('zh-CN', { hour12: false });
+  },
+
+  _renderRhythmSummary(buckets, days, totalEvents) {
+    if (!buckets.length) return '';
+    const values = buckets.map(b => Number(b.events || 0));
+    const max = Math.max(...values, 0);
+    const avg = days > 0 ? (totalEvents / days) : 0;
+    const peakIndex = values.indexOf(max);
+    const peakBucket = buckets[peakIndex] || {};
+    const peakDate = peakBucket.timestamp ? new Date(peakBucket.timestamp).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) : '—';
+
+    return `
+      <div class="output-summary-grid" style="margin-bottom:12px;">
+        <div class="output-stat"><span class="output-stat-num">${avg.toFixed(1)}</span><span class="output-stat-label">日均活动</span></div>
+        <div class="output-stat"><span class="output-stat-num">${max}</span><span class="output-stat-label">峰值日</span></div>
+        <div class="output-stat"><span class="output-stat-num">${peakDate}</span><span class="output-stat-label">最高活跃</span></div>
       </div>
     `;
   },

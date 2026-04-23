@@ -1,47 +1,30 @@
 const { Router } = require('express');
-const db = require('../db');
+const { buildAgents } = require('./team');
 
 const router = Router();
 
 // GET /api/live — real-time agent work dashboard (#95)
 router.get('/', (req, res) => {
-  const agents = db.getAllAgents();
+  const agents = buildAgents();
   const now = Date.now();
 
   const liveAgents = agents.map(a => {
     const name = a.name || a.id;
-    const allTasks = db.getTasksForAgent(name, { assigneeOnly: true });
-    const openTasks = allTasks.filter(t => t.state === 'opened');
-    const allEvents = db.getEventsForAgent(name, 50);
-
-    const oneHourAgo = now - 3600000;
-    const thirtyMinAgo = now - 1800000;
-    const recentEvents = allEvents.filter(e => e.timestamp && e.timestamp > oneHourAgo);
-    const activityIntensity = allEvents.filter(e => e.timestamp && e.timestamp > thirtyMinAgo).length;
-
-    const lastEvent = allEvents[0] || null;
-    const lastActiveMs = lastEvent?.timestamp ? (now - lastEvent.timestamp) : null;
-
-    // Derive effective status from online + work signals
-    let effectiveStatus = 'offline';
-    if (a.online) {
-      if (a.work_status === 'busy' || openTasks.length > 0) effectiveStatus = 'working';
-      else if (activityIntensity > 0) effectiveStatus = 'active';
-      else effectiveStatus = 'idle';
-    }
-
-    // 3-tier status (#136): active (GitLab 30min) / online (Connect) / offline
-    const hasRecentGitLab = allEvents.some(e => e.timestamp && e.timestamp > thirtyMinAgo);
-    const tierStatus = hasRecentGitLab ? 'active' : a.online ? 'online' : 'offline';
+    const openTasks = a.current_tasks || [];
+    const recentSignal = a.recent_work_signal || a.latest_event || null;
+    const recentEvents = [recentSignal].filter(Boolean);
+    const lastActiveMs = a.last_active_at ? (now - a.last_active_at) : null;
+    const activityIntensity = a.events_7d || 0;
 
     return {
       name,
       displayName: a.display_name || name,
       role: a.role || '',
       online: !!a.online,
-      workStatus: a.work_status || 'unknown',
-      effectiveStatus,
-      tierStatus,
+      workStatus: a.work_state || 'offline',
+      effectiveStatus: a.work_state || 'offline',
+      runtimeStatus: a.runtime_status || 'offline',
+      runtime: a.runtime || null,
       healthScore: a.health_score ?? null,
       currentTasks: openTasks.slice(0, 5).map(t => ({
         title: t.title,
@@ -58,25 +41,25 @@ router.get('/', (req, res) => {
       })),
       lastActiveMs,
       activityIntensity,
-      activeProjects: a.active_projects || []
+      activeProjects: a.active_projects || [],
+      quota: a.quota || null,
     };
   });
 
-  // Sort: working > active > idle > offline
-  const statusOrder = { working: 0, active: 1, idle: 2, offline: 3 };
+  // Sort: working > standby > offline
+  const statusOrder = { working: 0, standby: 1, offline: 2 };
   liveAgents.sort((a, b) => (statusOrder[a.effectiveStatus] ?? 9) - (statusOrder[b.effectiveStatus] ?? 9));
 
   const summary = {
     total: liveAgents.length,
     working: liveAgents.filter(a => a.effectiveStatus === 'working').length,
-    active: liveAgents.filter(a => a.effectiveStatus === 'active').length,
-    idle: liveAgents.filter(a => a.effectiveStatus === 'idle').length,
+    standby: liveAgents.filter(a => a.effectiveStatus === 'standby').length,
     offline: liveAgents.filter(a => a.effectiveStatus === 'offline').length,
-    tier: {
-      active: liveAgents.filter(a => a.tierStatus === 'active').length,
-      online: liveAgents.filter(a => a.tierStatus === 'online').length,
-      offline: liveAgents.filter(a => a.tierStatus === 'offline').length,
-    }
+    runtime: {
+      running: liveAgents.filter(a => a.runtimeStatus === 'running').length,
+      degraded: liveAgents.filter(a => a.runtimeStatus === 'degraded').length,
+      offline: liveAgents.filter(a => a.runtimeStatus === 'offline').length,
+    },
   };
 
   res.json({ agents: liveAgents, summary, timestamp: now });

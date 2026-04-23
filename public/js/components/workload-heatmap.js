@@ -8,7 +8,7 @@ const WorkloadHeatmap = {
     if (!container) return;
 
     // Filter to agents with any task activity
-    const active = agents.filter(a => a.online || a.stats?.open_tasks > 0);
+    const active = agents.filter(a => a.runtime_status !== 'offline' || a.stats?.open_tasks > 0);
     if (active.length === 0) {
       container.innerHTML = '<div class="empty-state">暂无工作负载数据</div>';
       return;
@@ -28,12 +28,12 @@ const WorkloadHeatmap = {
       const capacityPct = a.capacity ? Math.round((a.capacity.current / a.capacity.max) * 100) : 0;
       return {
         name: a.name,
-        online: a.online,
+        online: a.runtime_status !== 'offline',
         healthScore: a.health_score || 0,
         openTasks: totalOpen,
         blockingMRs,
         capacityPct,
-        workStatus: a.work_status
+        workStatus: a.work_state || a.work_status
       };
     });
 

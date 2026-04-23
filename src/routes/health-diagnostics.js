@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 const os = require('os');
 const http = require('http');
 const https = require('https');
-const db = require('../db');
+const { buildAgents } = require('./team');
 
 function getLocalSystem() {
   const totalMem = os.totalmem();
@@ -108,48 +108,36 @@ function loadEndpoints(config) {
   }
 }
 
+function summarizeQuota(quota) {
+  if (!quota || !quota.supported) {
+    return { supported: false, reason: quota?.reason || 'not_supported' };
+  }
+  return {
+    supported: true,
+    primary: quota.primary || null,
+    secondary: quota.secondary || null,
+    source: quota.source || null,
+  };
+}
+
 // Get agent health from db (activity + system metrics #115)
 function getAgentHealth() {
-  const agents = db.getAllAgents();
-  const allSystemHealth = db.getAllAgentHealth();
-  const now = Date.now();
-  const fiveMinAgo = now - 5 * 60 * 1000;
-  const thirtyMinAgo = now - 30 * 60 * 1000;
-  const STALE_MS = 10 * 60 * 1000;
-
-  return agents.map(agent => {
-    const events = db.getEventsForAgent(agent.name, 1);
-    const lastEvent = events[0] || null;
-    const lastActive = lastEvent?.timestamp || agent.last_seen_at || null;
-
-    let activityStatus = 'unknown';
-    if (agent.online) {
-      activityStatus = lastActive && lastActive > fiveMinAgo ? 'active' : 'idle';
-    } else {
-      activityStatus = lastActive && lastActive > thirtyMinAgo ? 'recently_seen' : 'offline';
-    }
-
-    // 3-tier status (#136): active (GitLab 30min) / online (Connect) / offline
-    const hasRecentGitLab = lastEvent && lastEvent.timestamp > thirtyMinAgo;
-    const tierStatus = hasRecentGitLab ? 'active' : agent.online ? 'online' : 'offline';
-
-    const tasks = db.getTasksForAgent(agent.name, { assigneeOnly: true });
-    const openTasks = tasks.filter(t => t.state === 'opened').length;
-
-    // System health (#115)
-    const sysHealth = allSystemHealth[agent.name] || null;
-    const sysStale = sysHealth ? (now - sysHealth.reported_at > STALE_MS) : true;
-
+  return buildAgents().map(agent => {
     return {
       name: agent.name,
       online: agent.online,
-      status: activityStatus,
-      tier_status: tierStatus,
+      status: agent.work_state,
+      runtime_status: agent.runtime_status,
+      runtime: agent.runtime || null,
       last_seen_at: agent.last_seen_at || null,
-      last_active: lastActive,
-      open_tasks: openTasks,
-      system_health: sysHealth && !sysStale ? sysHealth : null,
-      system_health_stale: sysStale,
+      last_active: agent.last_active_at || null,
+      last_heartbeat_at: agent.last_heartbeat_at || null,
+      open_tasks: agent.stats?.open_tasks || 0,
+      active_projects: agent.active_projects || [],
+      quota: summarizeQuota(agent.quota),
+      system_health: agent.hardware || null,
+      system_health_stale: agent.hardware?.stale ?? true,
+      health_score: agent.health_score ?? null,
     };
   });
 }
@@ -170,9 +158,15 @@ router.get('/', async (req, res) => {
 
     const systemStatuses = [localSystem.cpu.status, localSystem.memory.status, localSystem.disk.status, localSystem.pm2.status];
     const serviceStatuses = probeResults.map(r => r.status);
-    const agentOnline = agentHealth.filter(a => a.online).length;
+    const agentOnline = agentHealth.filter(a => a.runtime_status !== 'offline').length;
     const agentTotal = agentHealth.length;
     const agentStatus = agentTotal === 0 ? 'warning' : agentOnline === agentTotal ? 'ok' : agentOnline === 0 ? 'critical' : 'warning';
+    const runtimeDistribution = agentHealth.reduce((acc, agent) => {
+      const type = agent.runtime?.type || 'unknown';
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+    const degradedAgents = agentHealth.filter(a => a.runtime_status === 'degraded').length;
 
     const allStatuses = [...systemStatuses, ...serviceStatuses, agentStatus];
     const overallStatus = allStatuses.includes('critical') ? 'critical'
@@ -199,6 +193,8 @@ router.get('/', async (req, res) => {
         status: agentStatus,
         online: agentOnline,
         total: agentTotal,
+        degraded: degradedAgents,
+        runtime_distribution: runtimeDistribution,
         list: agentHealth,
       },
     });

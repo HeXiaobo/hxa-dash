@@ -4,25 +4,23 @@
 const { Router } = require('express');
 const db = require('../db');
 const collab = require('../analyzers/collab');
+const { buildAgents } = require('./team');
 
 const router = Router();
 
 function buildOverview() {
   const now = Date.now();
-  const agents = db.getAllAgents();
+  const rawAgents = db.getAllAgents();
+  const agents = buildAgents();
   const tasks = db.getAllTasks();
 
   // Team summary
-  const online = agents.filter(a => a.online);
+  const online = agents.filter(a => a.runtime_status !== 'offline');
   const openTasks = tasks.filter(t => t.state === 'opened');
   const assignedOpen = openTasks.filter(t => t.assignee);
   const unassigned = openTasks.filter(t => !t.assignee);
-  const busyAgents = online.filter(a =>
-    openTasks.some(t => t.assignee === a.name)
-  );
-  const idleAgents = online.filter(a =>
-    !openTasks.some(t => t.assignee === a.name)
-  );
+  const workingAgents = agents.filter(a => a.work_state === 'working');
+  const standbyAgents = agents.filter(a => a.work_state === 'standby');
 
   // Board counts
   const board = db.getTasksByState();
@@ -63,55 +61,24 @@ function buildOverview() {
   // Recent timeline
   const timeline = db.getTimeline(10);
 
-  // Agent details — status logic (#135):
-  //   busy: Connect online + git activity within 4h + has open tasks
-  //   idle: Connect online + no recent activity OR no open tasks
-  //   inactive: Connect online but >24h without git activity
-  //   offline: Connect not online
-  const agentStats = db.getAgentStats();
-  const agentStatsMap = new Map(agentStats.map(s => [s.name, s]));
-  const fourHoursAgo = now - 4 * 3600000;
-  const twentyFourHoursAgo = now - 24 * 3600000;
-  const sevenDaysAgo = now - 7 * 86400000;
-
-  const agentSummaries = agents.map(a => {
-    const myTasks = openTasks.filter(t => t.assignee === a.name);
-    const stats = agentStatsMap.get(a.name);
-    const lastActive = stats?.last_active || null;
-    const hasRecentActivity = lastActive && lastActive > fourHoursAgo;
-    const hasAnyDayActivity = lastActive && lastActive > twentyFourHoursAgo;
-
-    let status;
-    if (!a.online) {
-      status = 'offline';
-    } else if (hasRecentActivity && myTasks.length > 0) {
-      status = 'busy';
-    } else if (!hasAnyDayActivity) {
-      status = 'inactive';
-    } else {
-      status = 'idle';
-    }
-
-    // Activity metrics (#135)
-    const agentEvents = db.getEventsInWindow(sevenDaysAgo, a.name);
-    const closedInWindow = db.getTasksClosedInWindow(sevenDaysAgo, a.name);
-
-    return {
-      name: a.name,
-      online: a.online,
-      status,
-      open_tasks: myTasks.length,
-      last_active_at: lastActive,
-      events_7d: agentEvents.length,
-      closed_7d: closedInWindow.length,
-      current_work: myTasks.map(t => ({
-        title: t.title,
-        url: t.url,
-        project: t.project,
-        type: t.type,
-      })),
-    };
-  });
+  const agentSummaries = agents.map(a => ({
+    name: a.name,
+    online: a.online,
+    status: a.work_state,
+    runtime_status: a.runtime_status,
+    runtime: a.runtime,
+    open_tasks: a.stats?.open_tasks || 0,
+    last_active_at: a.last_active_at,
+    last_heartbeat_at: a.last_heartbeat_at,
+    events_7d: a.events_7d,
+    closed_7d: a.closed_7d,
+    current_work: (a.current_tasks || []).map(t => ({
+      title: t.title,
+      url: t.url,
+      project: t.project,
+      type: t.type,
+    })),
+  }));
 
   // Collab summary
   const graph = collab.getGraph();
@@ -119,11 +86,11 @@ function buildOverview() {
   return {
     timestamp: new Date().toISOString(),
     team: {
-      total: agents.length,
+      total: rawAgents.length,
       online: online.length,
-      busy: busyAgents.length,
-      idle: idleAgents.length,
-      offline: agents.length - online.length,
+      working: workingAgents.length,
+      standby: standbyAgents.length,
+      offline: agents.filter(a => a.runtime_status === 'offline').length,
     },
     board: boardCounts,
     blockers,
@@ -148,7 +115,7 @@ function toText(data) {
   // Team
   const t = data.team;
   lines.push(`## Team (${t.total} agents)`);
-  lines.push(`Online: ${t.online} | Busy: ${t.busy} | Idle: ${t.idle} | Offline: ${t.offline}`);
+  lines.push(`Online: ${t.online} | Working: ${t.working} | Standby: ${t.standby} | Offline: ${t.offline}`);
   lines.push('');
 
   // Board
@@ -181,13 +148,13 @@ function toText(data) {
   // Agents
   lines.push(`## Agents`);
   for (const a of data.agents) {
-    const icon = a.status === 'busy' ? '🟢' : a.status === 'idle' ? '⚪' : a.status === 'inactive' ? '🟡' : '⚫';
+    const icon = a.status === 'working' ? '🟢' : a.status === 'standby' ? '🟡' : '⚫';
     const work = a.current_work.length > 0
       ? a.current_work.map(w => `${w.title} (${w.project})`).join(', ')
       : 'no tasks';
     const lastActive = a.last_active_at ? new Date(a.last_active_at).toISOString().slice(0, 16) : 'never';
     const metrics = `events_7d: ${a.events_7d ?? 0}, closed_7d: ${a.closed_7d ?? 0}`;
-    lines.push(`${icon} ${a.name} [${a.status}]: ${work} | last: ${lastActive} | ${metrics}`);
+    lines.push(`${icon} ${a.name} [${a.status} / ${a.runtime_status}]: ${work} | last: ${lastActive} | ${metrics}`);
   }
   lines.push('');
 

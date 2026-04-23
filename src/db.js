@@ -4,7 +4,7 @@ const store = {
   tasks: new Map(),       // id -> task
   events: [],             // sorted by timestamp desc
   collab_edges: new Map(), // "source|target|type" -> edge
-  agent_health: new Map()  // name -> { disk, memory, cpu, pm2, reported_at }
+  agent_health: new Map()  // name -> { disk, memory, cpu, pm2, runtime, quota, reported_at }
 };
 
 // Agent operations
@@ -249,11 +249,12 @@ const getAllTasks = () => [...store.tasks.values()];
 
 const getTask = (id) => store.tasks.get(id) || null;
 
-// Workload report: per-agent productivity breakdown over a configurable time window
+// Team rhythm report: per-agent collaboration / delivery breakdown over a configurable time window
 const getWorkloadReport = (days = 30) => {
   const sinceMs = Date.now() - days * 86400000;
   const recentEvents = store.events.filter(e => e.timestamp >= sinceMs);
   const tasks = [...store.tasks.values()];
+  const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10);
 
   return [...store.agents.values()].map(agent => {
     const agentEvents = recentEvents.filter(e => e.agent === agent.name);
@@ -262,10 +263,27 @@ const getWorkloadReport = (days = 30) => {
       t.updated_at >= sinceMs &&
       (t.assignee === agent.name || t.author === agent.name)
     );
+    const touchedTasks = tasks.filter(t =>
+      t.updated_at >= sinceMs &&
+      (t.assignee === agent.name || t.author === agent.name || (t.reviewer && t.reviewer.split(',').includes(agent.name)))
+    );
+    const messageInteractions = agentEvents.filter(e =>
+      e.action === 'sent_message' || e.action === 'received_message' || e.action === 'hxa_message' || e.action === 'commented'
+    ).length;
+    const taskUpdates = agentEvents.filter(e =>
+      e.action === 'task_success' || e.action === 'task_failed' || e.action === 'task_timeout' || e.action === 'working_on'
+    ).length;
+    const activeDays = new Set(agentEvents.map(e => dayKey(e.timestamp))).size;
 
     return {
       name: agent.name,
       online: agent.online,
+      deliverables: closedTasks.length,
+      task_advances: taskUpdates + closedTasks.length,
+      message_interactions: messageInteractions,
+      collaboration_events: messageInteractions,
+      active_days: activeDays,
+      touched_items: touchedTasks.length,
       closed_issues: closedTasks.filter(t => t.type === 'issue').length,
       merged_mrs: closedTasks.filter(t => t.type === 'mr').length,
       commits: agentEvents.filter(e => e.action === 'pushed').length,

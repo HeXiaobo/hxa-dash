@@ -7,11 +7,11 @@ const TeamCapacity = {
     const container = document.getElementById(this.containerId);
     if (!container) return;
 
-    const online = agents.filter(a => a.online);
+    const online = agents.filter(a => a.runtime_status !== 'offline');
     const totalOpen = agents.reduce((sum, a) => sum + (a.stats?.open_tasks || 0), 0);
     const totalCapacity = agents.reduce((sum, a) => sum + (a.capacity?.max || 5), 0);
-    const busyAgents = online.filter(a => (a.stats?.open_tasks || 0) > 0);
-    const utilPct = online.length > 0 ? Math.round((busyAgents.length / online.length) * 100) : 0;
+    const workingAgents = online.filter(a => a.work_state === 'working');
+    const utilPct = online.length > 0 ? Math.round((workingAgents.length / online.length) * 100) : 0;
 
     // Completed this week (7d)
     const completedThisWeek = agents.reduce((sum, a) => sum + (a.stats?.closed_last_7d || 0), 0);
@@ -38,17 +38,17 @@ const TeamCapacity = {
         </div>
         <div class="tc-stat-box">
           <div class="tc-stat-num">${online.length}/${agents.length}</div>
-          <div class="tc-stat-label">在线 Agent</div>
+          <div class="tc-stat-label">运行中成员</div>
         </div>
         <div class="tc-stat-box">
           <div class="tc-stat-num ${utilPct > 80 ? 'tc-danger' : utilPct > 50 ? 'tc-warn' : ''}">${utilPct}%</div>
-          <div class="tc-stat-label">团队利用率</div>
+          <div class="tc-stat-label">工作中占比</div>
         </div>
       </div>
       <div class="tc-utilization-bar">
         <div class="tc-util-header">
           <span>总负载: ${totalOpen}/${totalCapacity}</span>
-          <span>${utilPct}% 利用率</span>
+          <span>${utilPct}% 工作中</span>
         </div>
         <div class="tc-util-track">
           <div class="tc-util-fill ${utilClass}" style="width:${totalCapacity > 0 ? Math.min(100, Math.round((totalOpen / totalCapacity) * 100)) : 0}%"></div>

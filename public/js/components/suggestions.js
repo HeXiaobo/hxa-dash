@@ -171,19 +171,19 @@ const Suggestions = {
 
     // Rule 3: Idle agents (online, no open tasks assigned)
     const idleAgents = agents.filter(a => {
-      if (!a.online) return false;
-      const ws = a.work_status || 'idle';
-      return ws === 'idle' && (a.stats?.open_tasks || 0) === 0;
+      if (a.runtime_status === 'offline') return false;
+      const ws = a.work_state || a.work_status || 'standby';
+      return ws === 'standby' && (a.stats?.open_tasks || 0) === 0;
     });
     if (idleAgents.length > 0) {
       const names = idleAgents.map(a => esc(a.name)).join('、');
       suggestions.push({
         priority: 'medium',
         icon: '💤',
-        html: `${names} 空闲中，可以分配新任务`,
-        reason: `${idleAgents.length} 个成员没有进行中的工作`,
-        score: 70
-      });
+          html: `${names} 当前待命，可以分配新任务`,
+          reason: `${idleAgents.length} 个成员没有进行中的工作`,
+          score: 70
+        });
     }
 
     // Rule 4: Overloaded agents (> 4 open tasks)
@@ -237,14 +237,14 @@ const Suggestions = {
     if (m && m.team) {
       const team = m.team;
 
-      // Rule 6: Many agents inactive while online
-      const inactiveCount = (m.agents || []).filter(a => a.status === 'inactive').length;
-      if (team.online_count > 0 && inactiveCount > team.online_count * 0.5) {
+      // Rule 6: Many runtime-online members are still in standby
+      const standbyCount = (m.agents || []).filter(a => a.status === 'standby').length;
+      if (team.online_count > 0 && standbyCount > team.online_count * 0.5) {
         suggestions.push({
           priority: 'medium',
           icon: '📊',
-          html: `${inactiveCount}/${team.online_count} 个在线 Agent 超过1小时无活动`,
-          reason: '检查是否有 Agent 空转或上报脚本异常',
+          html: `${standbyCount}/${team.online_count} 个运行中成员处于待命`,
+          reason: '检查是否有任务空档、调度缺口或状态上报异常',
           score: 75
         });
       }

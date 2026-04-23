@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { buildAgents } = require('./team');
 
 // ISO week string helper: returns "YYYY-Www"
 function isoWeek(ts) {
@@ -25,14 +26,14 @@ function computeMetrics() {
   const since7d  = now - ms7d;
   const since28d = now - ms28d;
 
-  const agents = db.getAllAgents();
+  const agents = buildAgents();
   const allEvents = db.getEventsInWindow(since7d);
 
-  // ── Per-agent breakdown (activity-based) ─────────────────────
+  // ── Per-agent breakdown (runtime + activity based) ─────────────────────
   const agentRows = agents.map(a => {
     const agentEvents = allEvents.filter(e => e.agent === a.name);
     const todayEvents = agentEvents.filter(e => e.timestamp >= since24h);
-    const latestEvt = agentEvents.length > 0 ? Math.max(...agentEvents.map(e => e.timestamp || 0)) : 0;
+    const latestEvt = a.last_active_at || (agentEvents.length > 0 ? Math.max(...agentEvents.map(e => e.timestamp || 0)) : 0);
 
     const todayMessages = todayEvents.filter(e =>
       e.action === 'sent_message' || e.action === 'received_message' || e.action === 'hxa_message'
@@ -41,31 +42,34 @@ function computeMetrics() {
       e.action === 'task_success' || e.action === 'task_failed' || e.action === 'task_timeout'
     ).length;
 
-    // Status: 15min → busy, 1h → idle, >1h → inactive, process down → offline
-    const hasRecent15m = latestEvt > (now - 15 * 60 * 1000);
-    const hasRecent1h  = latestEvt > (now - 3600 * 1000);
-    let status;
-    if (!a.online) status = 'offline';
-    else if (hasRecent15m) status = 'busy';
-    else if (hasRecent1h) status = 'idle';
-    else status = 'inactive';
-
     return {
       name: a.name,
-      status,
+      status: a.work_state || 'offline',
+      runtime_status: a.runtime_status || 'offline',
+      runtime_type: a.runtime?.type || 'unknown',
+      runtime_version: a.runtime?.version || null,
       today_messages: todayMessages,
       today_tasks: todayTasks,
       last_active: latestEvt || null,
       events_7d: agentEvents.length,
+      active_days_7d: a.stats?.active_days_7d || 0,
+      open_tasks: a.stats?.open_tasks || 0,
     };
   });
 
   // ── Team summary ─────────────────────────────────────────────
-  const onlineAgents = agentRows.filter(a => a.status !== 'offline');
-  const busyAgents = agentRows.filter(a => a.status === 'busy');
+  const onlineAgents = agentRows.filter(a => a.runtime_status !== 'offline');
+  const workingAgents = agentRows.filter(a => a.status === 'working');
+  const standbyAgents = agentRows.filter(a => a.status === 'standby');
   const totalMessages24h = agentRows.reduce((s, a) => s + a.today_messages, 0);
   const totalTasks24h = agentRows.reduce((s, a) => s + a.today_tasks, 0);
   const totalEvents7d = allEvents.length;
+  const activeDays7d = agentRows.reduce((s, a) => s + (a.active_days_7d || 0), 0);
+  const runtimeDistribution = agentRows.reduce((acc, row) => {
+    const type = row.runtime_type || 'unknown';
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {});
 
   // ── Weekly trend (events-based) ──────────────────────────────
   const weekMap = new Map();
@@ -89,10 +93,13 @@ function computeMetrics() {
   return {
     team: {
       online_count: onlineAgents.length,
-      busy_count: busyAgents.length,
+      working_count: workingAgents.length,
+      standby_count: standbyAgents.length,
       total_messages_24h: totalMessages24h,
       total_tasks_24h: totalTasks24h,
       total_events_7d: totalEvents7d,
+      total_active_days_7d: activeDays7d,
+      runtime_distribution: runtimeDistribution,
       weekly_closed: weeklyClosed,
     },
     agents: agentRows,

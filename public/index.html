@@ -60,6 +60,7 @@
     <div class="sub-tabs hidden" data-group="analysis">
       <a href="#analysis" class="sub-tab active" data-subpage="report">报表</a>
       <a href="#analysis/timeline" class="sub-tab" data-subpage="timeline">时间轴</a>
+      <a href="#analysis/limits" class="sub-tab" data-subpage="limits">限额</a>
       <a href="#analysis/tokens" class="sub-tab" data-subpage="tokens">Tokens</a>
       <a href="#analysis/estimates" class="sub-tab" data-subpage="estimates">预估</a>
     </div>
@@ -74,58 +75,6 @@
 
     <!-- Page: Overview -->
     <div id="page-overview" class="page active">
-      <section class="section overview-hero">
-        <div class="overview-hero-grid">
-          <div class="overview-hero-main">
-            <div class="hero-badge">AI 原生协作</div>
-            <h2>HxA · Dash 让 Agent 团队看得见、调得动。</h2>
-            <p class="overview-hero-copy">
-              用统一视角观察在线状态、任务流、协作关系与系统健康，把团队节奏从“凭感觉”拉回到“有画面、有依据”。
-            </p>
-            <div class="hero-pillars">
-              <div class="hero-pillar">
-                <span class="hero-pillar-icon">◌</span>
-                <div>
-                  <strong>实时状态</strong>
-                  <p>统一掌握在线、负载与最近活动。</p>
-                </div>
-              </div>
-              <div class="hero-pillar">
-                <span class="hero-pillar-icon">△</span>
-                <div>
-                  <strong>任务流转</strong>
-                  <p>从看板到 pipeline，判断堵点与节奏。</p>
-                </div>
-              </div>
-              <div class="hero-pillar">
-                <span class="hero-pillar-icon">✦</span>
-                <div>
-                  <strong>协作洞察</strong>
-                  <p>识别高频协作、空转与关键依赖。</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="overview-hero-side">
-            <blockquote class="hero-quote">
-              HxA Dash 不只是一个看板，
-              <br>
-              它是关于透明度、节奏感与协作质量的界面。
-            </blockquote>
-            <div class="hero-definitions">
-              <div class="hero-definition">
-                <code>HxA</code>
-                <p>Human x Agent。强调人机共创，而不是把团队切成孤立工具。</p>
-              </div>
-              <div class="hero-definition">
-                <code>Dash</code>
-                <p>Dashboard。把复杂协作过程压缩成可决策、可追踪、可复盘的日常视图。</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- Team Capacity Overview (#45) -->
       <section class="section">
         <div class="section-header">
@@ -155,7 +104,7 @@
       <!-- Team Utilization & Output Metrics (#62) -->
       <section class="section">
         <div class="section-header">
-          <h2>📊 利用率与产出指标</h2>
+          <h2>📊 运行与协作概况</h2>
         </div>
         <div id="metrics-panel" class="metrics-panel"></div>
       </section>
@@ -174,7 +123,7 @@
             </select>
           </div>
         </div>
-        <p class="section-subtitle">实时显示每位 Agent 的在线状态、当前任务、健康评分和工作负载</p>
+        <p class="section-subtitle">实时显示每位成员的工作状态、runtime、最后心跳、当前任务和限额摘要</p>
         <div id="overview-agent-cards" class="card-grid"></div>
       </section>
 
@@ -369,7 +318,7 @@
       <!-- Workload Heatmap (#111) -->
       <section class="section">
         <div class="section-header">
-          <h2>团队负载热力图</h2>
+          <h2>团队节奏热力图</h2>
         </div>
         <div id="workload-heatmap" class="workload-heatmap-wrap">
           <div class="empty-state">加载中…</div>
@@ -378,7 +327,7 @@
 
       <section class="section">
         <div class="section-header">
-          <h2>工作量报表</h2>
+          <h2>成员节奏报表</h2>
           <span id="workload-period-label" class="team-stats">过去 30 天</span>
           <div class="section-tools">
             <div class="btn-group">
@@ -394,11 +343,11 @@
           <table class="workload-table">
             <thead>
               <tr>
-                <th class="sortable" data-sort="name">Agent</th>
-                <th class="sortable" data-sort="closed_issues">完成任务</th>
-                <th class="sortable" data-sort="merged_mrs">合并 MR</th>
-                <th class="sortable" data-sort="commits">提交</th>
-                <th class="sortable" data-sort="comments">评论</th>
+                <th class="sortable" data-sort="name">成员</th>
+                <th class="sortable" data-sort="deliverables">闭环</th>
+                <th class="sortable" data-sort="task_advances">推进</th>
+                <th class="sortable" data-sort="message_interactions">沟通</th>
+                <th class="sortable" data-sort="active_days">活跃天数</th>
                 <th class="sortable" data-sort="total_events">总活动</th>
               </tr>
             </thead>
@@ -407,6 +356,16 @@
             </tbody>
           </table>
         </div>
+      </section>
+    </div>
+
+    <div id="page-limits" class="page">
+      <section class="section">
+        <div class="section-header">
+          <h2>⏳ Runtime 限额</h2>
+        </div>
+        <p class="section-subtitle">集中查看 Claude Code / Codex 的 5 小时与 7 天限额用量、重置时间和不支持状态。</p>
+        <div id="limits-dashboard"></div>
       </section>
     </div>
 
@@ -438,7 +397,7 @@
     <div id="page-tokens" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>Token 消耗分析</h2>
+          <h2>技术估算分析</h2>
           <div class="section-tools">
             <div class="btn-group">
               <button data-token-period="7" class="btn-toggle active">7天</button>
@@ -541,7 +500,7 @@
     <div id="page-health" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>🩺 系统健康诊断</h2>
+          <h2>🩺 运行态诊断</h2>
         </div>
         <div id="health-diagnostics"></div>
       </section>
@@ -569,8 +528,8 @@
           <h2>版本信息</h2>
         </div>
         <div class="about-card">
-          <h3 class="about-title">COCO Dash</h3>
-          <p class="about-subtitle">Agent 团队可视化面板</p>
+          <h3 class="about-title">HxA Dash</h3>
+          <p class="about-subtitle">Agent 团队运行控制台</p>
           <h4 class="about-section-title">客户端</h4>
           <div class="about-info">
             <div class="about-row"><span class="about-label">版本</span><span id="about-client-version" class="about-value">-</span></div>
@@ -641,6 +600,7 @@
   <script src="js/components/live-dashboard.js?v=2"></script>
   <script src="js/components/pipeline.js?v=2"></script>
   <script src="js/components/mr-board.js?v=2"></script>
+  <script src="js/components/limits-dashboard.js?v=2"></script>
   <script src="js/components/token-dashboard.js?v=2"></script>
   <script src="js/components/time-estimates.js?v=2"></script>
   <script src="js/components/health-diagnostics.js?v=2"></script>
