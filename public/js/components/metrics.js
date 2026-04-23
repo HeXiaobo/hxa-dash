@@ -50,44 +50,47 @@ const Metrics = {
     // Recompute summary stats for filtered agents (#67)
     const summary = filter ? this._computeFilteredSummary(filteredAgents) : team;
 
-    const cycleTime = summary.cycle_time_median_hours != null
-      ? `${summary.cycle_time_median_hours}h`
-      : '—';
-
     const filterLabel = filter
       ? `<span class="metrics-filter-badge">${filteredAgents.length}/${agents.length} 已选</span>`
       : '';
 
-    // Summary cards
+    // Summary cards (activity-based)
     const cards = `
       <div class="metrics-cards">
         <div class="metrics-card">
-          <div class="metrics-card-value">${summary.idle_pct}<span class="metrics-card-unit">%</span></div>
-          <div class="metrics-card-label">在线空闲率 ${filterLabel}</div>
+          <div class="metrics-card-value">${summary.busy_count}<span class="metrics-card-unit">/${summary.online_count}</span></div>
+          <div class="metrics-card-label">忙碌 / 在线 ${filterLabel}</div>
         </div>
         <div class="metrics-card">
-          <div class="metrics-card-value">${summary.issues_closed_7d}</div>
-          <div class="metrics-card-label">Issue 完成 / 7天</div>
+          <div class="metrics-card-value">${summary.total_messages_24h}</div>
+          <div class="metrics-card-label">消息数 / 24h</div>
         </div>
         <div class="metrics-card">
-          <div class="metrics-card-value">${summary.mrs_merged_7d}</div>
-          <div class="metrics-card-label">MR 合并 / 7天</div>
+          <div class="metrics-card-value">${summary.total_tasks_24h}</div>
+          <div class="metrics-card-label">任务数 / 24h</div>
         </div>
         <div class="metrics-card">
-          <div class="metrics-card-value">${cycleTime}</div>
-          <div class="metrics-card-label">周期时间中位数</div>
+          <div class="metrics-card-value">${summary.total_events_7d}</div>
+          <div class="metrics-card-label">总事件 / 7天</div>
         </div>
       </div>
     `;
 
-    // Agent table (filtered)
-    const rows = filteredAgents.map(a => `
+    // Agent table (filtered) — sorted: busy first, then by events_7d desc
+    const sorted = [...filteredAgents].sort((a, b) => {
+      const order = { busy: 0, idle: 1, inactive: 2, offline: 3 };
+      const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9);
+      if (diff !== 0) return diff;
+      return (b.events_7d || 0) - (a.events_7d || 0);
+    });
+
+    const rows = sorted.map(a => `
       <tr>
         <td class="metrics-agent-name">${esc(a.name)}</td>
         <td><span class="work-status-badge ${esc(a.status)}">${this._statusLabel(a.status)}</span></td>
-        <td class="metrics-num">${a.open_tasks}</td>
-        <td class="metrics-num">${a.closed_7d}</td>
-        <td class="metrics-num">${a.mrs_7d}</td>
+        <td class="metrics-num">${a.today_messages}</td>
+        <td class="metrics-num">${a.today_tasks}</td>
+        <td class="metrics-num metrics-last-active">${this._formatLastActive(a.last_active)}</td>
       </tr>
     `).join('');
 
@@ -98,9 +101,9 @@ const Metrics = {
             <tr>
               <th>Agent</th>
               <th>状态</th>
-              <th class="metrics-num-header">进行中</th>
-              <th class="metrics-num-header">完成 (7d)</th>
-              <th class="metrics-num-header">MR (7d)</th>
+              <th class="metrics-num-header">今日消息</th>
+              <th class="metrics-num-header">今日任务</th>
+              <th class="metrics-num-header">最后活跃</th>
             </tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="5" class="metrics-empty">暂无成员数据</td></tr>'}</tbody>
@@ -115,50 +118,52 @@ const Metrics = {
     this.container.innerHTML = cards + table + trend + velocity;
   },
 
-  // Recompute summary for a filtered subset of agents (#67)
   _computeFilteredSummary(filteredAgents) {
-    const names = new Set(filteredAgents.map(a => a.name));
     const online = filteredAgents.filter(a => a.status !== 'offline');
-    const idle = online.filter(a => a.status === 'idle');
-    const idlePct = online.length > 0
-      ? Math.round((idle.length / online.length) * 100)
-      : 0;
-    const issuesClosed7d = filteredAgents.reduce((s, a) => s + a.closed_7d, 0);
-    const mrsMerged7d = filteredAgents.reduce((s, a) => s + a.mrs_7d, 0);
-
+    const busy = filteredAgents.filter(a => a.status === 'busy');
     return {
-      idle_pct: idlePct,
-      issues_closed_7d: issuesClosed7d,
-      mrs_merged_7d: mrsMerged7d,
-      cycle_time_median_hours: this.data.team.cycle_time_median_hours,
+      online_count: online.length,
+      busy_count: busy.length,
+      total_messages_24h: filteredAgents.reduce((s, a) => s + a.today_messages, 0),
+      total_tasks_24h: filteredAgents.reduce((s, a) => s + a.today_tasks, 0),
+      total_events_7d: filteredAgents.reduce((s, a) => s + (a.events_7d || 0), 0),
       weekly_closed: this.data.team.weekly_closed || [],
     };
   },
 
   _statusLabel(s) {
-    return s === 'busy' ? '进行中' : s === 'idle' ? '空闲' : s === 'inactive' ? '不活跃' : '离线';
+    return s === 'busy' ? '忙碌' : s === 'idle' ? '空闲' : s === 'inactive' ? '不活跃' : '离线';
+  },
+
+  _formatLastActive(ts) {
+    if (!ts) return '—';
+    const diff = Date.now() - ts;
+    if (diff < 60 * 1000) return '刚刚';
+    if (diff < 3600 * 1000) return `${Math.floor(diff / 60000)}分钟前`;
+    if (diff < 24 * 3600 * 1000) return `${Math.floor(diff / 3600000)}小时前`;
+    if (diff < 7 * 24 * 3600 * 1000) return `${Math.floor(diff / 86400000)}天前`;
+    return '超过7天';
   },
 
   _renderTrend(weeks) {
     if (weeks.length === 0) return '';
 
-    const maxIssues = Math.max(...weeks.map(w => w.issues_closed), 1);
-    const maxMRs    = Math.max(...weeks.map(w => w.mrs_merged),   1);
-    const maxVal    = Math.max(maxIssues, maxMRs, 1);
+    const maxMsgs  = Math.max(...weeks.map(w => w.messages || 0), 1);
+    const maxTasks = Math.max(...weeks.map(w => w.tasks || 0), 1);
+    const maxVal   = Math.max(maxMsgs, maxTasks, 1);
 
     const bars = weeks.map(w => {
-      const iPct = Math.round((w.issues_closed / maxVal) * 100);
-      const mPct = Math.round((w.mrs_merged    / maxVal) * 100);
-      // Short label: "W10" from "2026-W10"
+      const mPct = Math.round(((w.messages || 0) / maxVal) * 100);
+      const tPct = Math.round(((w.tasks || 0) / maxVal) * 100);
       const label = w.week.replace(/^\d{4}-/, '');
       return `
         <div class="metrics-trend-col">
           <div class="metrics-trend-bars">
-            <div class="metrics-trend-bar bar-issue" style="height:${iPct}%" title="${w.issues_closed} issues"></div>
-            <div class="metrics-trend-bar bar-mr"    style="height:${mPct}%" title="${w.mrs_merged} MRs"></div>
+            <div class="metrics-trend-bar bar-issue" style="height:${mPct}%" title="${w.messages || 0} 消息"></div>
+            <div class="metrics-trend-bar bar-mr"    style="height:${tPct}%" title="${w.tasks || 0} 任务"></div>
           </div>
           <div class="metrics-trend-label">${esc(label)}</div>
-          <div class="metrics-trend-nums">${w.issues_closed}/${w.mrs_merged}</div>
+          <div class="metrics-trend-nums">${w.messages || 0}/${w.tasks || 0}</div>
         </div>
       `;
     }).join('');
@@ -168,8 +173,8 @@ const Metrics = {
         <div class="metrics-trend-title">
           按周趋势
           <span class="metrics-trend-legend">
-            <span class="metrics-legend-dot dot-issue"></span>Issue
-            <span class="metrics-legend-dot dot-mr"></span>MR
+            <span class="metrics-legend-dot dot-issue"></span>消息
+            <span class="metrics-legend-dot dot-mr"></span>任务
           </span>
         </div>
         <div class="metrics-trend-chart">${bars}</div>

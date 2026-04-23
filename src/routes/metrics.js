@@ -17,115 +17,82 @@ function isoWeek(ts) {
 // Compute metrics data (reusable by REST + WS broadcast)
 function computeMetrics() {
   const now = Date.now();
+  const ms24h = 24 * 3600 * 1000;
   const ms7d  = 7  * 24 * 3600 * 1000;
-  const ms30d = 30 * 24 * 3600 * 1000;
-  const ms28d = 28 * 24 * 3600 * 1000; // 4 weeks
+  const ms28d = 28 * 24 * 3600 * 1000;
 
+  const since24h = now - ms24h;
   const since7d  = now - ms7d;
-  const since30d = now - ms30d;
   const since28d = now - ms28d;
 
   const agents = db.getAllAgents();
-  const tasks  = db.getAllTasks();
+  const allEvents = db.getEventsInWindow(since7d);
 
-  // ── Utilization ──────────────────────────────────────────────
-  const onlineAgents = agents.filter(a => a.online);
-  const idleOnline   = onlineAgents.filter(a => {
-    const open = tasks.filter(t => t.state === 'opened' && t.assignee === a.name).length;
-    return open === 0;
-  });
-  const idlePct = onlineAgents.length > 0
-    ? Math.round((idleOnline.length / onlineAgents.length) * 100)
-    : 0;
-
-  // ── Output – team totals ──────────────────────────────────────
-  const closed7d = tasks.filter(t =>
-    (t.state === 'closed') && t.updated_at >= since7d && t.type === 'issue'
-  );
-  const merged7d = tasks.filter(t =>
-    (t.state === 'merged') && t.updated_at >= since7d && t.type === 'mr'
-  );
-
-  // Cycle time: issues closed in last 30d that have both created_at and updated_at
-  const issuesClosed30d = tasks.filter(t =>
-    t.state === 'closed' && t.type === 'issue' &&
-    t.updated_at >= since30d && t.created_at && t.updated_at > t.created_at
-  );
-  let cycleTimeMedianHours = null;
-  if (issuesClosed30d.length > 0) {
-    const times = issuesClosed30d
-      .map(t => (t.updated_at - t.created_at) / 3600000)
-      .sort((a, b) => a - b);
-    const mid = Math.floor(times.length / 2);
-    cycleTimeMedianHours = times.length % 2 === 0
-      ? Math.round((times[mid - 1] + times[mid]) / 2 * 10) / 10
-      : Math.round(times[mid] * 10) / 10;
-  }
-
-  // ── Throughput trend: last 4 weeks ───────────────────────────
-  const weekMap = new Map();
-
-  for (let w = 0; w < 4; w++) {
-    const weekTs = now - w * 7 * 24 * 3600 * 1000;
-    const weekKey = isoWeek(weekTs);
-    if (!weekMap.has(weekKey)) {
-      weekMap.set(weekKey, { week: weekKey, issues_closed: 0, mrs_merged: 0 });
-    }
-  }
-
-  const weeklyTasks = tasks.filter(t =>
-    (t.state === 'closed' || t.state === 'merged') && t.updated_at >= since28d
-  );
-  for (const t of weeklyTasks) {
-    const key = isoWeek(t.updated_at);
-    if (!weekMap.has(key)) weekMap.set(key, { week: key, issues_closed: 0, mrs_merged: 0 });
-    const b = weekMap.get(key);
-    if (t.state === 'closed'  && t.type === 'issue') b.issues_closed++;
-    if (t.state === 'merged'  && t.type === 'mr')    b.mrs_merged++;
-  }
-
-  const weeklyClosed = [...weekMap.values()].sort((a, b) => a.week.localeCompare(b.week));
-
-  // ── Per-agent breakdown ───────────────────────────────────────
+  // ── Per-agent breakdown (activity-based) ─────────────────────
   const agentRows = agents.map(a => {
-    const openTasks   = tasks.filter(t => t.state === 'opened' && t.assignee === a.name).length;
-    const closed7dAgt = tasks.filter(t =>
-      t.state === 'closed' && t.type === 'issue' &&
-      t.updated_at >= since7d &&
-      (t.assignee === a.name || t.author === a.name)
+    const agentEvents = allEvents.filter(e => e.agent === a.name);
+    const todayEvents = agentEvents.filter(e => e.timestamp >= since24h);
+    const latestEvt = agentEvents.length > 0 ? Math.max(...agentEvents.map(e => e.timestamp || 0)) : 0;
+
+    const todayMessages = todayEvents.filter(e =>
+      e.action === 'sent_message' || e.action === 'received_message' || e.action === 'hxa_message'
     ).length;
-    const mrs7dAgt = tasks.filter(t =>
-      t.state === 'merged' && t.type === 'mr' &&
-      t.updated_at >= since7d &&
-      (t.assignee === a.name || t.author === a.name)
+    const todayTasks = todayEvents.filter(e =>
+      e.action === 'task_success' || e.action === 'task_failed' || e.action === 'task_timeout'
     ).length;
 
-    // 4-tier status (#135)
-    const agentEvents = db.getEventsInWindow(since7d, a.name);
-    const latestEvt = agentEvents.length > 0 ? Math.max(...agentEvents.map(e => e.timestamp || 0)) : 0;
-    const hasRecent4h = latestEvt > (now - 4 * 3600000);
-    const hasRecent24h = latestEvt > (now - 24 * 3600000);
+    // Status: 15min → busy, 1h → idle, >1h → inactive, process down → offline
+    const hasRecent15m = latestEvt > (now - 15 * 60 * 1000);
+    const hasRecent1h  = latestEvt > (now - 3600 * 1000);
     let status;
     if (!a.online) status = 'offline';
-    else if (hasRecent4h && openTasks > 0) status = 'busy';
-    else if (!hasRecent24h) status = 'inactive';
-    else status = 'idle';
+    else if (hasRecent15m) status = 'busy';
+    else if (hasRecent1h) status = 'idle';
+    else status = 'inactive';
 
     return {
       name: a.name,
       status,
-      open_tasks: openTasks,
-      closed_7d: closed7dAgt,
-      mrs_7d: mrs7dAgt,
+      today_messages: todayMessages,
+      today_tasks: todayTasks,
+      last_active: latestEvt || null,
+      events_7d: agentEvents.length,
     };
   });
 
+  // ── Team summary ─────────────────────────────────────────────
+  const onlineAgents = agentRows.filter(a => a.status !== 'offline');
+  const busyAgents = agentRows.filter(a => a.status === 'busy');
+  const totalMessages24h = agentRows.reduce((s, a) => s + a.today_messages, 0);
+  const totalTasks24h = agentRows.reduce((s, a) => s + a.today_tasks, 0);
+  const totalEvents7d = allEvents.length;
+
+  // ── Weekly trend (events-based) ──────────────────────────────
+  const weekMap = new Map();
+  for (let w = 0; w < 4; w++) {
+    const weekTs = now - w * 7 * 24 * 3600 * 1000;
+    const weekKey = isoWeek(weekTs);
+    if (!weekMap.has(weekKey)) {
+      weekMap.set(weekKey, { week: weekKey, messages: 0, tasks: 0 });
+    }
+  }
+  const weeklyEvents = db.getEventsInWindow(since28d);
+  for (const e of weeklyEvents) {
+    const key = isoWeek(e.timestamp);
+    if (!weekMap.has(key)) weekMap.set(key, { week: key, messages: 0, tasks: 0 });
+    const b = weekMap.get(key);
+    if (e.action === 'sent_message' || e.action === 'received_message' || e.action === 'hxa_message') b.messages++;
+    if (e.action && e.action.startsWith('task_')) b.tasks++;
+  }
+  const weeklyClosed = [...weekMap.values()].sort((a, b) => a.week.localeCompare(b.week));
+
   return {
     team: {
-      idle_pct: idlePct,
-      issues_closed_7d: closed7d.length,
-      mrs_merged_7d: merged7d.length,
-      cycle_time_median_hours: cycleTimeMedianHours,
+      online_count: onlineAgents.length,
+      busy_count: busyAgents.length,
+      total_messages_24h: totalMessages24h,
+      total_tasks_24h: totalTasks24h,
+      total_events_7d: totalEvents7d,
       weekly_closed: weeklyClosed,
     },
     agents: agentRows,

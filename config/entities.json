@@ -1,38 +1,159 @@
 {
-  "_comment": "Agent entity definitions. Role/bio act as fallback when Connect API returns null. Customize with your team members.",
+  "_comment": "知外文化 & 3AI Bot Team — 20 AI assistants",
   "entities": [
     {
-      "id": "alice",
-      "display_name": "Alice",
-      "kind": "human",
-      "role": "Product Owner",
-      "bio": "Product lead and team coordinator",
-      "identities": { "connect": "Alice", "gitlab": "alice" },
-      "skills": ["product", "architecture", "strategy"]
+      "id": "mylos",
+      "display_name": "Mylos",
+      "role": "首席AI运营官",
+      "bio": "AI组织基建 + AI员工协同",
+      "identities": { "connect": "mylos", "gitlab": "mylos" }
     },
     {
-      "id": "agent-1",
-      "display_name": "Agent 1",
-      "role": "Backend Developer",
-      "bio": "Backend services and infrastructure",
-      "identities": { "connect": "agent-1", "gitlab": "agent-1" },
-      "skills": ["backend", "devops", "infra", "ci"]
+      "id": "ss",
+      "display_name": "SS",
+      "role": "产品交付/销售物料",
+      "bio": "双编制：3AI + 知外文化",
+      "identities": { "connect": "ss", "gitlab": "ss" }
     },
     {
-      "id": "agent-2",
-      "display_name": "Agent 2",
-      "role": "Frontend Developer",
-      "bio": "Frontend UI and UX development",
-      "identities": { "connect": "agent-2", "gitlab": "agent-2" },
-      "skills": ["frontend", "ui", "ux", "react"]
+      "id": "veda",
+      "display_name": "Veda",
+      "role": "内容运营",
+      "bio": "小红书运营、内容增长",
+      "identities": { "connect": "veda", "gitlab": "veda" }
     },
     {
-      "id": "agent-3",
-      "display_name": "Agent 3",
-      "role": "QA / Security",
-      "bio": "Testing, security, and quality assurance",
-      "identities": { "connect": "agent-3", "gitlab": "agent-3" },
-      "skills": ["testing", "security", "review"]
+      "id": "hongshu",
+      "display_name": "Hongshu",
+      "role": "内容团队AI助理",
+      "bio": "小红书数据、OpenClaw平台、3AI实习兼编制",
+      "identities": { "connect": "hongshu", "gitlab": "hongshu" }
+    },
+    {
+      "id": "wanyanshu",
+      "display_name": "万言书",
+      "role": "GEO业务AI助理",
+      "bio": "Dashboard数据sync owner，服务言书（知外CEO）",
+      "identities": { "connect": "wanyanshu", "gitlab": "wanyanshu" }
+    },
+    {
+      "id": "xiaoz",
+      "display_name": "小Z",
+      "role": "海外营销专家",
+      "bio": "Eva（汪丽婷）的AI助理",
+      "identities": { "connect": "xiaoz", "gitlab": "xiaoz" }
+    },
+    {
+      "id": "aqi",
+      "display_name": "阿七",
+      "role": "AI专家",
+      "bio": "知外文化编制",
+      "identities": { "connect": "aqi", "gitlab": "aqi" }
+    },
+    {
+      "id": "linlin",
+      "display_name": "小霖",
+      "role": "商务助理",
+      "bio": "霖霖（汪丽娜）的AI商务助理，知外文化编制",
+      "identities": { "connect": "linlin", "gitlab": "linlin" }
+    },
+    {
+      "id": "chengzi",
+      "display_name": "橙子",
+      "role": "商务助理",
+      "bio": "黄子洺的AI商务助理，知外文化编制",
+      "identities": { "connect": "chengzi", "gitlab": "chengzi" }
+    },
+    {
+      "id": "wanyanshu",
+      "display_name": "万言书",
+      "role": "GEO业务AI助理",
+      "bio": "Dashboard数据sync owner",
+      "identities": { "connect": "wanyanshu", "gitlab": "wanyanshu" }
+    },
+    {
+      "id": "siyue",
+      "display_name": "四月",
+      "role": "小红书项目部AE",
+      "bio": "知外文化编制，汇报对象：阿诺",
+      "identities": { "connect": "siyue", "gitlab": "siyue" }
+    },
+    {
+      "id": "yaya",
+      "display_name": "芽芽",
+      "role": "小红书项目部AE",
+      "bio": "知外文化编制，执行岗",
+      "identities": { "connect": "yaya", "gitlab": "yaya" }
+    },
+    {
+      "id": "xiaochuaner",
+      "display_name": "小小串儿",
+      "role": "商务助理",
+      "bio": "丽娜的AI助理，知外文化编制",
+      "identities": { "connect": "xiaochuaner", "gitlab": "xiaochuaner" }
+    },
+    {
+      "id": "xiaoyou",
+      "display_name": "小优",
+      "role": "人力资源AI员工",
+      "bio": "知外文化编制",
+      "identities": { "connect": "xiaoyou", "gitlab": "xiaoyou" }
+    },
+    {
+      "id": "xiaodao",
+      "display_name": "小岛",
+      "role": "知乎项目部助理",
+      "bio": "知外文化编制",
+      "identities": { "connect": "xiaodao", "gitlab": "xiaodao" }
+    },
+    {
+      "id": "kimi",
+      "display_name": "Kimi",
+      "role": "海外事业部AI助理",
+      "bio": "知外文化编制，项目执行",
+      "identities": { "connect": "kimi", "gitlab": "kimi" }
+    },
+    {
+      "id": "xiaonuo",
+      "display_name": "小诺",
+      "role": "小红书运营部优化师",
+      "bio": "知外文化编制，汇报对象：栗子、阿诺",
+      "identities": { "connect": "xiaonuo", "gitlab": "xiaonuo" }
+    },
+    {
+      "id": "zhugeliang",
+      "display_name": "诸葛亮",
+      "role": "小红书项目部AI军师",
+      "bio": "知外文化编制，管理层工作，汇报对象：苏娅",
+      "identities": { "connect": "zhugeliang", "gitlab": "zhugeliang" }
+    },
+    {
+      "id": "xinghang",
+      "display_name": "星航",
+      "role": "知乎项目部助理",
+      "bio": "知外文化编制，汇报对象：贺贺→Eva（原afu/阿福）",
+      "identities": { "connect": "xinghang", "gitlab": "xinghang" }
+    },
+    {
+      "id": "xiaozhang",
+      "display_name": "小张",
+      "role": "小红书商务专员",
+      "bio": "知外文化编制，汇报对象：赵艳（国内广告事业部负责人）",
+      "identities": { "connect": "xiaozhang", "gitlab": "xiaozhang" }
+    },
+    {
+      "id": "lingling",
+      "display_name": "灵灵",
+      "role": "财务专员",
+      "bio": "知外文化编制，汇报对象：曾嵘（财务部负责人）",
+      "identities": { "connect": "lingling", "gitlab": "lingling" }
+    },
+    {
+      "id": "xiaolv",
+      "display_name": "小律",
+      "role": "法务部助理",
+      "bio": "知外文化编制，汇报对象：林想想→曾嵘",
+      "identities": { "connect": "xiaolv", "gitlab": "xiaolv" }
     }
   ]
 }

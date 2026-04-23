@@ -413,4 +413,45 @@ router.get('/report/summary', (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// POST /api/report/activity — External bot activity reporting
+// Allows any bot to push its own activity events (messages, tasks, etc.)
+// Body: { agent, events: [{ action, target_type?, target_title, timestamp?, external_id? }] }
+// ---------------------------------------------------------------------------
+router.post('/report/activity', (req, res) => {
+  const { agent, events: activityEvents } = req.body || {};
+  if (!agent) return res.status(400).json({ error: 'agent required' });
+  if (!Array.isArray(activityEvents) || activityEvents.length === 0) {
+    return res.status(400).json({ error: 'events array required' });
+  }
+
+  const now = Date.now();
+  const entity = require('../entity');
+  const canonicalAgent = entity.resolve('connect', agent) || agent;
+  let inserted = 0;
+
+  for (const evt of activityEvents.slice(0, 50)) {
+    if (!evt.action) continue;
+    db.insertEvent({
+      timestamp: evt.timestamp || now,
+      agent: canonicalAgent,
+      action: evt.action,
+      target_type: evt.target_type || 'external',
+      target_title: evt.target_title || evt.action,
+      project: evt.project || null,
+      url: evt.url || null,
+      is_collab: evt.is_collab || 0,
+      external_id: evt.external_id || `ext:${agent}:${evt.action}:${now}`
+    });
+    inserted++;
+  }
+
+  if (ws && inserted > 0) {
+    ws.broadcast('timeline:new', db.getTimeline(50));
+    ws.broadcast('team:update', db.getAllAgents());
+  }
+
+  res.json({ ok: true, inserted });
+});
+
 module.exports = { router, init };

@@ -8,6 +8,7 @@ const db = require('./db');
 const ws = require('./ws');
 const connectFetcher = require('./fetchers/connect');
 const gitlabFetcher = require('./fetchers/gitlab');
+const activityFetcher = require('./fetchers/activity');
 const collab = require('./analyzers/collab');
 
 const teamRoutes = require('./routes/team');
@@ -92,7 +93,8 @@ if (Array.isArray(config.scopes) && config.scopes.length > 0) {
 const scopeFetchers = scopes.map(s => ({
   id: s.id,
   connect: connectFetcher.create(s.connect, s.id),
-  gitlab: gitlabFetcher.create(s.gitlab, s.id)
+  gitlab: gitlabFetcher.create(s.gitlab, s.id),
+  activity: activityFetcher.create(s.connect, s.id)
 }));
 
 // Init default module-level fetchers (backward compat for routes)
@@ -243,6 +245,7 @@ async function pollAll() {
     await Promise.all(scopeFetchers.map(async (sf) => {
       await sf.connect.fetchAgents();
       await sf.gitlab.fetchAll();
+      await sf.activity.fetchAll();
     }));
     const agents = db.getAllAgents();
 
@@ -315,6 +318,17 @@ async function startPolling() {
     // Refresh metrics after GitLab data changes (#66)
     ws.broadcast('metrics:update', computeMetrics());
   }, config.polling?.gitlab_interval_ms || 60000);
+
+  // Activity polling (60s) — non-code activity: HXA messages, scheduler tasks, C4 messages
+  setInterval(async () => {
+    try {
+      await Promise.all(scopeFetchers.map(sf => sf.activity.fetchAll()));
+      ws.broadcast('timeline:new', db.getTimeline(50));
+      ws.broadcast('team:update', buildAgents());
+    } catch (err) {
+      console.error('[ActivityPoll] Error:', err.message);
+    }
+  }, config.polling?.activity_interval_ms || 60000);
 
   // PM2 service health polling (30s) — broadcast service status for real-time alerts (#123)
   const { getPM2Services } = pm2Routes;

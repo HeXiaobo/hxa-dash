@@ -237,46 +237,38 @@ const Suggestions = {
     if (m && m.team) {
       const team = m.team;
 
-      // Rule 6: High idle rate (>= 70% idle) with unassigned or backlog issues
-      if (team.idle_pct >= 70 && unassigned.length > 0) {
+      // Rule 6: Many agents inactive while online
+      const inactiveCount = (m.agents || []).filter(a => a.status === 'inactive').length;
+      if (team.online_count > 0 && inactiveCount > team.online_count * 0.5) {
         suggestions.push({
           priority: 'medium',
           icon: '📊',
-          html: `团队 ${team.idle_pct}% 成员空闲，还有 ${unassigned.length} 个 issue 未分配`,
-          reason: '利用率偏低——建议立即分配积压任务',
+          html: `${inactiveCount}/${team.online_count} 个在线 Agent 超过1小时无活动`,
+          reason: '检查是否有 Agent 空转或上报脚本异常',
           score: 75
         });
       }
 
-      // Rule 7: Throughput drop (this week closed < last week by > 30%)
+      // Rule 7: Throughput drop (this week vs last week by > 30%)
       const weekly = team.weekly_closed || [];
       if (weekly.length >= 2) {
         const thisWeek = weekly[weekly.length - 1];
         const lastWeek = weekly[weekly.length - 2];
-        const lastTotal = (lastWeek.issues_closed || 0) + (lastWeek.mrs_merged || 0);
-        const thisTotal = (thisWeek.issues_closed || 0) + (thisWeek.mrs_merged || 0);
+        const lastTotal = (lastWeek.messages || 0) + (lastWeek.tasks || 0);
+        const thisTotal = (thisWeek.messages || 0) + (thisWeek.tasks || 0);
         if (lastTotal > 0 && thisTotal < lastTotal * 0.7) {
           const drop = Math.round((1 - thisTotal / lastTotal) * 100);
           suggestions.push({
             priority: 'high',
             icon: '📉',
-            html: `本周产出较上周下降 ${drop}%（${thisTotal} vs ${lastTotal} 个任务）`,
+            html: `本周活跃度较上周下降 ${drop}%（${thisTotal} vs ${lastTotal} 事件）`,
             reason: '检查是否有阻塞项或团队负载不均',
             score: 85
           });
         }
       }
 
-      // Rule 8: Long cycle time (median > 48h)
-      if (team.cycle_time_median_hours !== null && team.cycle_time_median_hours > 48) {
-        const days = (team.cycle_time_median_hours / 24).toFixed(1);
-        suggestions.push({
-          priority: 'medium',
-          icon: '🐢',
-          html: `issue 平均周期时间 ${days} 天（中位数），偏长`,
-          reason: '考虑拆解大 issue 或清除阻塞项，目标 < 2 天',
-          score: 60
-        });
+      // Rule 8: removed (cycle_time not applicable for activity-based metrics)
       }
     }
     // ─────────────────────────────────────────────────────────────
