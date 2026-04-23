@@ -186,7 +186,12 @@ const CardWall = {
       ? `<div class="card-top-collab" title="最佳拍档 (权重 ${topCollab.weight})">🤝 ${esc(topCollab.name)}</div>`
       : '';
 
-    const runtimeHTML = `
+    const isUnknownRuntime = runtimeType === 'Unknown' || runtimeType === 'unknown' || !runtimeType;
+    const runtimeHTML = isUnknownRuntime && runtimeStatus !== 'running' ? `
+      <div class="card-hardware">
+        <span class="hw-badge hw-stale" title="Runtime">待接入</span>
+      </div>
+    ` : `
       <div class="card-hardware">
         <span class="hw-badge ${runtimeStatus === 'running' ? 'hw-ok' : runtimeStatus === 'degraded' ? 'hw-warn' : 'hw-crit'}" title="Runtime">
           ⚙️ ${esc(runtimeType)}${esc(runtimeVersion)}
@@ -288,7 +293,7 @@ const CardWall = {
         ${offlineBanner}
         <div class="card-top">
           <div class="card-top-left">${healthHTML}${kindBadge}<span class="agent-name">${esc(agent.name)}</span></div>
-          <span class="work-status-badge ${workStatus}" title="${workStatus}">${statusLabel}</span>
+          <span class="work-status-badge ${badgeClass}" title="${workState}">${statusLabel}</span>
         </div>
         <div class="agent-role">${esc(agent.role || (agent.kind === 'human' ? '团队成员' : 'AI Agent'))}</div>
         ${agent.bio ? `<div class="agent-bio">${esc(truncate(agent.bio, 60))}</div>` : ''}

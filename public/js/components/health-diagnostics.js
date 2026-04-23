@@ -66,47 +66,54 @@ const HealthDiagnostics = {
       const workState = this._normalizeWorkState(agent.work_status);
       const runtimeMeta = this._runtimeMeta(agent.runtime, agent.runtime_type, agent.version);
       const resource = agent.resources;
-      const host = agent.host || '—';
-      const version = agent.version || '—';
       const heartbeat = this._timeLabel(agent.last_heartbeat_at || agent.reported_at || agent.last_seen_at);
       const activity = this._timeLabel(agent.last_active_at || agent.last_active);
       const quota = this._renderQuota(agent.quota, runtimeMeta.type);
       const quotaStatus = quota ? quota.status : 'unsupported';
-      const quotaLabel = quota ? quota.label : 'Unsupported';
-      const runtimeLabel = runtimeMeta.label || '—';
-      const runtimeVersion = runtimeMeta.version || version;
-      const runtimeBadgeClass = runtimeState.cls || 'health-stale';
+      const runtimeLabel = runtimeMeta.label || '';
+      const runtimeVersion = runtimeMeta.version || agent.version;
       const workBadgeClass = workState.cls || 'health-stale';
+      const hasHealthData = !!(agent.last_heartbeat_at || agent.resources?.disk || agent.resources?.memory);
+      const isUnknownRuntime = !runtimeLabel || runtimeLabel === 'Unknown' || runtimeLabel === 'unknown';
+
+      if (!hasHealthData) {
+        return `
+          <div class="health-agent-card health-agent-pending">
+            <div class="health-agent-header">
+              <span class="health-agent-icon">${workState.icon || '⚪'}</span>
+              <span class="health-agent-name">${esc(agent.name || '未命名')}</span>
+              <span class="${workBadgeClass}" style="margin-left:auto;font-size:11px;">${workState.label}</span>
+            </div>
+            <div class="health-agent-detail" style="margin-top:6px;">
+              <span class="health-stale">待接入 · 健康上报未部署</span>
+            </div>
+            <div class="health-info-grid" style="margin-top:8px;">
+              <div class="health-info-item">
+                <span class="health-info-label">最后活动</span>
+                <span class="health-info-value">${activity}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      const host = agent.host || '';
+      const runtimeBadgeClass = runtimeState.cls || 'health-stale';
+      const versionStr = runtimeVersion ? ` v${runtimeVersion}` : '';
 
       return `
         <div class="health-agent-card">
           <div class="health-agent-header">
             <span class="health-agent-icon">${runtimeState.icon || '⚪'}</span>
             <span class="health-agent-name">${esc(agent.name || '未命名')}</span>
+            <span class="${workBadgeClass}" style="margin-left:auto;font-size:11px;">${workState.label}</span>
           </div>
           <div class="health-agent-detail" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-            <span class="${workBadgeClass}">${workState.icon || '⚪'} ${workState.label}</span>
-            <span class="${runtimeBadgeClass}">${runtimeState.icon || '⚪'} ${runtimeState.label}</span>
-            <span class="health-card-badge">${esc(runtimeLabel)}</span>
-            <span class="health-card-badge">v${esc(runtimeVersion != null ? String(runtimeVersion) : '—')}</span>
+            ${!isUnknownRuntime ? `<span class="health-card-badge">${esc(runtimeLabel)}${esc(versionStr)}</span>` : ''}
+            <span class="${runtimeBadgeClass}">${runtimeState.label}</span>
+            ${host ? `<span class="health-card-badge" title="${esc(host)}">${esc(host.split('.')[0])}</span>` : ''}
           </div>
           <div class="health-info-grid" style="margin-top:8px;">
-            <div class="health-info-item">
-              <span class="health-info-label">Runtime</span>
-              <span class="health-info-value">${esc(runtimeLabel)}</span>
-            </div>
-            <div class="health-info-item">
-              <span class="health-info-label">Runtime Status</span>
-              <span class="health-info-value">${runtimeState.label}</span>
-            </div>
-            <div class="health-info-item">
-              <span class="health-info-label">Version</span>
-              <span class="health-info-value">v${esc(runtimeVersion != null ? String(runtimeVersion) : '—')}</span>
-            </div>
-            <div class="health-info-item">
-              <span class="health-info-label">主机</span>
-              <span class="health-info-value">${esc(host)}</span>
-            </div>
             <div class="health-info-item">
               <span class="health-info-label">最后心跳</span>
               <span class="health-info-value">${heartbeat}</span>
@@ -117,17 +124,11 @@ const HealthDiagnostics = {
             </div>
           </div>
           ${this._renderResourceChips(resource, agent.health_stale)}
-          ${quota ? `
+          ${quota && quotaStatus === 'supported' ? `
             <div class="health-agent-meta" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
-              ${quotaStatus === 'unsupported'
-                ? `<span class="health-stale">quota: 不支持${quotaLabel ? ` · ${esc(quotaLabel)}` : ''}</span>`
-                : quota.summary.map(item => `<span class="health-card-badge">${esc(item)}</span>`).join('')}
+              ${quota.summary.map(item => `<span class="health-card-badge">${esc(item)}</span>`).join('')}
             </div>
-          ` : `
-            <div class="health-agent-meta" style="margin-top:8px;">
-              <span class="health-stale">quota: 未提供</span>
-            </div>
-          `}
+          ` : ''}
         </div>
       `;
     }).join('');

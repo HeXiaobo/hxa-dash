@@ -141,7 +141,8 @@ const Metrics = {
 
   _runtimeLabel(type, version, status) {
     const labels = { claude_code: 'Claude Code', codex: 'Codex', openclaw: 'OpenClaw', unknown: 'Unknown' };
-    const statusLabels = { running: '正常', degraded: '异常', offline: '离线' };
+    const statusLabels = { running: '正常', degraded: '降级', offline: '离线' };
+    if ((!type || type === 'unknown') && status === 'degraded') return '待接入';
     return `${labels[type] || type || 'Unknown'}${version ? ` ${version}` : ''} · ${statusLabels[status] || '未提供'}`;
   },
 
