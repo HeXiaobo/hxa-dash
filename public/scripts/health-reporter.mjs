@@ -322,6 +322,35 @@ function probeRuntimeDetails(type) {
 
 function collectClaudeQuota() {
   const home = os.homedir();
+
+  // Zylos statusline.json — written by context-monitor after every turn, contains live rate_limits
+  const statuslinePaths = [
+    path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json'),
+  ];
+  for (const slPath of statuslinePaths) {
+    if (!fs.existsSync(slPath)) continue;
+    const parsed = safeJsonParse(fs.readFileSync(slPath, 'utf8'));
+    const rl = parsed?.rate_limits;
+    if (!rl) continue;
+    const mapped = {
+      primary: {
+        used_percent: rl.five_hour?.used_percentage ?? rl.five_hour?.used_percent ?? null,
+        resets_at: rl.five_hour?.resets_at ?? null,
+        label: '5h',
+      },
+      secondary: {
+        used_percent: rl.seven_day?.used_percentage ?? rl.seven_day?.used_percent ?? null,
+        resets_at: rl.seven_day?.resets_at ?? null,
+        label: '7d',
+      },
+    };
+    return buildQuotaPayload({
+      supported: true,
+      source: slPath,
+      snapshot: { rate_limits: mapped, timestamp: parsed.timestamp || null },
+    });
+  }
+
   const fileCandidates = [
     path.join(home, '.claude', 'usage.jsonl'),
     path.join(home, '.claude', 'history.jsonl'),
