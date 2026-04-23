@@ -111,7 +111,13 @@ const server = http.createServer(app);
 app.use(express.json({ limit: '1mb' }));
 
 // Serve static files
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  }
+}));
 
 // API routes
 app.use('/api/team', teamRoutes);

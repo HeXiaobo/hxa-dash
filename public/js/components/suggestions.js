@@ -269,7 +269,6 @@ const Suggestions = {
       }
 
       // Rule 8: removed (cycle_time not applicable for activity-based metrics)
-      }
     }
     // ─────────────────────────────────────────────────────────────
 
