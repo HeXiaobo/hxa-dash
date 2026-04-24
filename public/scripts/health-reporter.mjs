@@ -50,6 +50,13 @@ const runtimeVersionOverride = getArg('--runtime-version', process.env.HEALTH_RU
 const runtimeStatusOverride = normalizeRuntimeStatus(
   getArg('--runtime-status', process.env.HEALTH_RUNTIME_STATUS || null)
 );
+const RUNTIME_CONFIG_CANDIDATES = [
+  path.join(ZYLOS_DIR, 'runtime.json'),
+  path.join(ZYLOS_DIR, '.runtime.json'),
+  path.join(os.homedir(), '.config', 'hxa-dash', 'runtime.json'),
+  path.join(os.homedir(), '.config', 'hxa', 'runtime.json'),
+  path.join(os.homedir(), '.hxa-runtime.json'),
+];
 
 function detectBotName() {
   if (overrideName) return overrideName;
@@ -89,6 +96,91 @@ function commandAvailable(command) {
     maxBuffer: 1024 * 1024,
   });
   return !res.error && res.status === 0;
+}
+
+function listProcessCommands() {
+  const commands = new Set();
+
+  const pm2Probe = runCommand('pm2', ['jlist'], 6000);
+  if (pm2Probe.ok) {
+    const services = safeJsonParse(pm2Probe.stdout);
+    if (Array.isArray(services)) {
+      for (const svc of services) {
+        const script = svc?.pm2_env?.pm_exec_path || svc?.pm2_env?.script || '';
+        const name = svc?.name || '';
+        const args = Array.isArray(svc?.pm2_env?.args) ? svc.pm2_env.args.join(' ') : '';
+        const combined = `${name} ${script} ${args}`.trim().toLowerCase();
+        if (combined) commands.add(combined);
+      }
+    }
+  }
+
+  const psProbe = runCommand('ps', ['-axo', 'command='], 6000);
+  if (psProbe.ok) {
+    for (const line of psProbe.stdout.split(/\r?\n/)) {
+      const text = String(line || '').trim().toLowerCase();
+      if (text) commands.add(text);
+    }
+  }
+
+  return [...commands];
+}
+
+function matchRuntimeFromProcesses(commands) {
+  const matchers = [
+    { type: 'openclaw', patterns: ['openclaw'] },
+    { type: 'codex', patterns: ['codex', '.codex'] },
+    { type: 'claude_code', patterns: ['claude', '.claude'] },
+  ];
+
+  for (const { type, patterns } of matchers) {
+    if (commands.some(cmd => patterns.some(pattern => cmd.includes(pattern)))) {
+      return { type, source: 'process' };
+    }
+  }
+
+  return null;
+}
+
+function readRuntimeTypeFromConfig() {
+  for (const filePath of RUNTIME_CONFIG_CANDIDATES) {
+    if (!fs.existsSync(filePath)) continue;
+    const parsed = safeJsonParse(fs.readFileSync(filePath, 'utf8'));
+    const value = normalizeRuntimeType(
+      parsed?.runtime?.type ||
+      parsed?.runtime_type ||
+      parsed?.runtimeType ||
+      parsed?.type ||
+      parsed?.runtime ||
+      null
+    );
+    if (value && value !== 'unknown') {
+      return { type: value, source: 'config', path: filePath };
+    }
+  }
+  return null;
+}
+
+function detectRuntimeFromProfiles() {
+  const matches = [];
+  if (fs.existsSync(path.join(os.homedir(), '.openclaw'))) matches.push('openclaw');
+  if (fs.existsSync(path.join(os.homedir(), '.claude'))) matches.push('claude_code');
+  if (fs.existsSync(path.join(os.homedir(), '.codex'))) matches.push('codex');
+
+  if (matches.length === 1) return { type: matches[0], source: 'profile' };
+  if (matches.length > 1) return { type: 'unknown', source: 'profile_conflict' };
+  return null;
+}
+
+function detectRuntimeFromBinaries() {
+  const matches = [];
+  if (commandAvailable('openclaw')) matches.push('openclaw');
+  if (commandAvailable('claude')) matches.push('claude_code');
+  if (commandAvailable('codex')) matches.push('codex');
+
+  if (matches.length === 1) return { type: matches[0], source: 'binary' };
+  if (matches.length > 1) return { type: 'unknown', source: 'binary_conflict' };
+  return null;
 }
 
 function runCommand(command, args = [], timeoutMs = 4000) {
@@ -250,6 +342,12 @@ function probeRuntimeType() {
     return { type: runtimeOverride, source: 'override' };
   }
 
+  const processMatch = matchRuntimeFromProcesses(listProcessCommands());
+  if (processMatch) return processMatch;
+
+  const configMatch = readRuntimeTypeFromConfig();
+  if (configMatch) return configMatch;
+
   if (process.env.OPENCLAW_STATE_DIR || process.env.OPENCLAW_CONFIG_PATH || process.env.OPENCLAW_CONTAINER || process.env.OPENCLAW_PROFILE) {
     return { type: 'openclaw', source: 'env' };
   }
@@ -260,18 +358,24 @@ function probeRuntimeType() {
     return { type: 'codex', source: 'env' };
   }
 
-  if (fs.existsSync(path.join(os.homedir(), '.openclaw'))) return { type: 'openclaw', source: 'profile' };
-  if (fs.existsSync(path.join(os.homedir(), '.claude'))) return { type: 'claude_code', source: 'profile' };
-  if (fs.existsSync(path.join(os.homedir(), '.codex'))) return { type: 'codex', source: 'profile' };
+  const profileMatch = detectRuntimeFromProfiles();
+  if (profileMatch) return profileMatch;
 
-  if (commandAvailable('openclaw')) return { type: 'openclaw', source: 'binary' };
-  if (commandAvailable('claude')) return { type: 'claude_code', source: 'binary' };
-  if (commandAvailable('codex')) return { type: 'codex', source: 'binary' };
+  const binaryMatch = detectRuntimeFromBinaries();
+  if (binaryMatch) return binaryMatch;
 
   return { type: 'unknown', source: 'unknown' };
 }
 
-function probeRuntimeDetails(type) {
+function isStrongDetectionSource(source) {
+  return ['override', 'process', 'config', 'env'].includes(String(source || '').toLowerCase());
+}
+
+function probeRuntimeDetails(runtimeProbe) {
+  const type = runtimeProbe?.type || 'unknown';
+  const detectionSource = runtimeProbe?.source || 'unknown';
+  const strongDetection = isStrongDetectionSource(detectionSource);
+
   if (type === 'openclaw') {
     const versionProbe = runCommand('openclaw', ['--version'], 2500);
     const healthProbe = runCommand('openclaw', ['health', '--json', '--timeout', '3000'], 5000);
@@ -288,43 +392,41 @@ function probeRuntimeDetails(type) {
       version,
       status,
       source: 'openclaw status',
+      detection_source: detectionSource,
       checked_at: new Date().toISOString(),
     };
   }
 
   if (type === 'claude_code') {
     const versionProbe = runCommand('claude', ['--version'], 2500);
-    const authProbe = runCommand('claude', ['auth', 'status'], 4000);
-    const authJson = safeJsonParse(authProbe.stdout);
-    const loggedIn = authJson?.loggedIn === true;
     const version = runtimeVersionOverride || parseVersionText(versionProbe.stdout);
     const status = runtimeStatusOverride !== 'unknown'
       ? runtimeStatusOverride
-      : (version && loggedIn ? 'running' : version ? 'degraded' : 'offline');
+      : (version ? 'running' : (strongDetection ? 'degraded' : 'offline'));
 
     return {
       type,
       version,
       status,
-      source: 'claude auth status',
+      source: 'claude version',
+      detection_source: detectionSource,
       checked_at: new Date().toISOString(),
     };
   }
 
   if (type === 'codex') {
     const versionProbe = runCommand('codex', ['--version'], 2500);
-    const loginProbe = runCommand('codex', ['login', 'status'], 4000);
-    const loggedIn = /logged in/i.test(`${loginProbe.stdout}\n${loginProbe.stderr}`);
     const version = runtimeVersionOverride || parseVersionText(versionProbe.stdout);
     const status = runtimeStatusOverride !== 'unknown'
       ? runtimeStatusOverride
-      : (version && loggedIn ? 'running' : version ? 'degraded' : 'offline');
+      : (version ? 'running' : (strongDetection ? 'degraded' : 'offline'));
 
     return {
       type,
       version,
       status,
-      source: 'codex login status',
+      source: 'codex version',
+      detection_source: detectionSource,
       checked_at: new Date().toISOString(),
     };
   }
@@ -334,6 +436,7 @@ function probeRuntimeDetails(type) {
     version: runtimeVersionOverride || null,
     status: runtimeStatusOverride !== 'unknown' ? runtimeStatusOverride : 'unknown',
     source: 'unknown',
+    detection_source: detectionSource,
     checked_at: new Date().toISOString(),
   };
 }
@@ -563,7 +666,7 @@ async function main() {
   const cpu = getCpuInfo();
   const pm2 = getPm2Info();
   const runtimeType = probeRuntimeType();
-  const runtime = probeRuntimeDetails(runtimeType.type);
+  const runtime = probeRuntimeDetails(runtimeType);
   const quota = {
     claude_code: collectClaudeQuota(),
     codex: collectCodexQuota(),

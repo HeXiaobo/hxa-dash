@@ -54,7 +54,7 @@ const LiveDashboard = {
       </div>
       <div class="live-stat">
         <span class="live-stat-num">${runtime.degraded || 0}</span>
-        <span class="live-stat-label">⚠️ 异常</span>
+        <span class="live-stat-label">⚠️ 待校验</span>
       </div>
     `;
   },
@@ -96,7 +96,7 @@ const LiveDashboard = {
   _agentRowHTML(agent) {
     const statusClass = `live-status-${agent.effectiveStatus}`;
     const workLabels = { working: '🟢 工作中', standby: '🟡 待命', offline: '⚫ 离线' };
-    const runtimeLabels = { running: '运行正常', degraded: '运行异常', offline: '未运行' };
+    const runtimeLabels = { running: '运行正常', degraded: '待校验', offline: '未运行' };
     const statusLabel = workLabels[agent.effectiveStatus] || workLabels.offline;
     const runtimeText = agent.runtime
       ? `${agent.runtime.label || agent.runtime.type || 'Unknown'}${agent.runtime.version ? ` ${agent.runtime.version}` : ''}`

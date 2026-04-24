@@ -102,6 +102,7 @@ function sanitizeRuntime(runtime) {
     version: sanitizeStr(runtime.version, 64),
     status: sanitizeEnum(runtime.status, ['running', 'degraded', 'offline'], 'offline'),
     source: sanitizeStr(runtime.source, 64),
+    detection_source: sanitizeStr(runtime.detection_source, 32),
     checked_at: normalizeTimestamp(runtime.checked_at) || Date.now(),
   };
 }

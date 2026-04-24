@@ -124,7 +124,7 @@ const CardWall = {
     const runtimeType = runtime.label || runtime.type || 'Unknown';
     const runtimeVersion = runtime.version ? ` ${runtime.version}` : '';
     const statusLabels = { working: '🟢 工作中', standby: '🟡 待命', offline: '⚫ 离线' };
-    const runtimeLabels = { running: '运行正常', degraded: '运行异常', offline: '未运行' };
+    const runtimeLabels = { running: '运行正常', degraded: '待校验', offline: '未运行' };
     const badgeClass = workState === 'working' ? 'busy' : workState === 'standby' ? 'idle' : 'offline';
     const statusLabel = statusLabels[workState] || statusLabels.offline;
 

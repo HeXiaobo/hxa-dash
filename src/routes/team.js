@@ -130,26 +130,50 @@ function computeOverallSystemHealth(health) {
   return 'ok';
 }
 
+function runtimeEvidenceLevel(health, runtimeType) {
+  if (!health || typeof health !== 'object') return 'none';
+
+  const detectionSource = String(health?.runtime?.detection_source || '').toLowerCase();
+  if (['override', 'process', 'config', 'env'].includes(detectionSource)) return 'strong';
+
+  if (health?.runtime?.version) return 'strong';
+
+  const quotaSupported = health?.quota && typeof health.quota === 'object'
+    ? Object.values(health.quota).some(item => item && typeof item === 'object' && item.supported === true)
+    : false;
+  if (quotaSupported) return 'weak';
+
+  if (runtimeType && runtimeType !== 'unknown') return 'weak';
+  if (health?.runtime?.source && health.runtime.source !== 'unknown') return 'weak';
+
+  return 'none';
+}
+
 function buildRuntimeSummary(agent, health, now) {
   const reportedAt = normalizeTimestamp(health?.reported_at);
   const stale = !reportedAt || (now - reportedAt) > HEALTH_STALE_MS;
   const type = normalizeRuntimeType(health?.runtime?.type);
   const rawStatus = normalizeRuntimeStatus(health?.runtime?.status);
   const systemHealth = computeOverallSystemHealth(health);
+  const evidence = runtimeEvidenceLevel(health, type);
+  const hasStrongEvidence = evidence === 'strong';
+  const hasAnyEvidence = evidence !== 'none';
 
   let status = 'offline';
-  if (!agent.online && stale) {
+  if (stale) {
     status = 'offline';
   } else if (rawStatus === 'offline') {
-    status = 'offline';
-  } else if (stale) {
-    status = agent.online ? 'degraded' : 'offline';
+    status = hasStrongEvidence ? 'degraded' : 'offline';
   } else if (rawStatus) {
     status = rawStatus;
   } else if (systemHealth === 'critical') {
-    status = agent.online ? 'degraded' : 'offline';
+    status = hasStrongEvidence ? 'degraded' : 'offline';
+  } else if (hasStrongEvidence) {
+    status = 'running';
+  } else if (hasAnyEvidence) {
+    status = 'degraded';
   } else {
-    status = agent.online ? 'running' : 'offline';
+    status = 'offline';
   }
 
   return {
@@ -158,6 +182,7 @@ function buildRuntimeSummary(agent, health, now) {
     version: health?.runtime?.version || null,
     status,
     source: health?.runtime?.source || 'agent_health',
+    detection_source: health?.runtime?.detection_source || null,
     checked_at: normalizeTimestamp(health?.runtime?.checked_at) || reportedAt,
     last_heartbeat_at: reportedAt,
     hostname: health?.hostname || null,
@@ -422,3 +447,4 @@ function safeJSON(str) {
 
 module.exports = router;
 module.exports.buildAgents = buildAgents;
+module.exports.__private = { runtimeEvidenceLevel, buildRuntimeSummary };

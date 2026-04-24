@@ -564,7 +564,7 @@ const HealthDiagnostics = {
       return { key: 'running', label: '运行中', icon: '🟢', cls: 'health-ok' };
     }
     if (['degraded', 'warning', 'warn', 'partial'].includes(raw)) {
-      return { key: 'degraded', label: '降级', icon: '⚠️', cls: 'health-warn' };
+      return { key: 'degraded', label: '待校验', icon: '⚠️', cls: 'health-warn' };
     }
     if (['offline', 'down', 'error', 'errored', 'stopped'].includes(raw)) {
       return { key: 'offline', label: '离线', icon: '🔴', cls: 'health-crit' };
