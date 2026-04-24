@@ -17,6 +17,24 @@ import { execSync, spawnSync } from 'child_process';
 const ZYLOS_DIR = process.env.ZYLOS_DIR || path.join(os.homedir(), 'zylos');
 const DEFAULT_DASHBOARD = 'https://hxa.zhiw.ai';
 
+const EXTRA_PATH_DIRS = [
+  path.join(os.homedir(), '.local', 'bin'),
+  path.join(os.homedir(), '.npm-global', 'bin'),
+  '/usr/local/bin',
+  path.join(os.homedir(), '.nvm', 'versions', 'node'),
+].filter(d => fs.existsSync(d));
+
+if (EXTRA_PATH_DIRS.length) {
+  const nvmDir = EXTRA_PATH_DIRS.find(d => d.includes('.nvm'));
+  if (nvmDir) {
+    try {
+      const versions = fs.readdirSync(nvmDir).filter(v => v.startsWith('v')).sort().reverse();
+      if (versions.length) EXTRA_PATH_DIRS.push(path.join(nvmDir, versions[0], 'bin'));
+    } catch {}
+  }
+  process.env.PATH = [...EXTRA_PATH_DIRS, process.env.PATH].join(path.delimiter);
+}
+
 const args = process.argv.slice(2);
 function getArg(name, fallback) {
   const idx = args.indexOf(name);
