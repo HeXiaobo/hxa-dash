@@ -53,6 +53,13 @@ const TokenDashboard = {
     const totalCost = Number(s.total_cost_usd || 0);
     const avgDailyTokens = Number(s.avg_daily_tokens || 0);
     const avgDailyCost = Number(s.avg_daily_cost_usd || 0);
+    const observed = this._data.observed || {};
+    const observedSummary = observed.summary || {};
+    const observedTokens = Number(observedSummary.total_tokens || 0);
+    const observedCost = Number(observedSummary.total_cost_usd || 0);
+    const observedCostText = observedSummary.cost_agent_count > 0 ? `$${observedCost.toFixed(2)}` : '—';
+    const observedCache = Number(observedSummary.cache_tokens || 0);
+    const observedReasoning = Number(observedSummary.reasoning_tokens || 0);
 
     const fmt = (n) => {
       if (n == null || Number.isNaN(Number(n))) return '0';
@@ -62,25 +69,56 @@ const TokenDashboard = {
       return String(n);
     };
 
+    const observedHTML = observed.supported ? `
+      <div style="grid-column:1 / -1;padding:4px 2px 10px;color:var(--text-secondary);font-size:12px;line-height:1.5;">
+        本地观测来自各 agent 的 subscription runtime 快照，适合看会话归因，不代表真实账单。
+      </div>
+      <div class="token-stat">
+        <div class="token-stat-value">${fmt(observedTokens)}</div>
+        <div class="token-stat-label">观测总量</div>
+      </div>
+      <div class="token-stat">
+        <div class="token-stat-value">${observedCostText}</div>
+        <div class="token-stat-label">观测估算费用</div>
+      </div>
+      <div class="token-stat">
+        <div class="token-stat-value">${observed.agent_count || 0}</div>
+        <div class="token-stat-label">观测成员</div>
+      </div>
+      <div class="token-stat">
+        <div class="token-stat-value">${fmt(observedCache)}</div>
+        <div class="token-stat-label">缓存 token</div>
+      </div>
+      <div class="token-stat">
+        <div class="token-stat-value">${fmt(observedReasoning)}</div>
+        <div class="token-stat-label">推理 token</div>
+      </div>
+      <div class="token-stat">
+        <div class="token-stat-value">${fmt(Number(observedSummary.total_output || 0))}</div>
+        <div class="token-stat-label">输出 token</div>
+      </div>
+    ` : '';
+
     el.innerHTML = `
+      ${observedHTML}
       <div style="grid-column:1 / -1;padding:4px 2px 10px;color:var(--text-secondary);font-size:12px;line-height:1.5;">
         基于活动事件换算的技术估算，仅用于看趋势和容量，不代表真实账单。
       </div>
       <div class="token-stat">
         <div class="token-stat-value">${fmt(totalTokens)}</div>
-        <div class="token-stat-label">估算总量</div>
+        <div class="token-stat-label">活动估算总量</div>
       </div>
       <div class="token-stat">
         <div class="token-stat-value">$${totalCost.toFixed(2)}</div>
-        <div class="token-stat-label">估算费用</div>
+        <div class="token-stat-label">活动估算费用</div>
       </div>
       <div class="token-stat">
         <div class="token-stat-value">${fmt(avgDailyTokens)}</div>
-        <div class="token-stat-label">日均量</div>
+        <div class="token-stat-label">估算日均量</div>
       </div>
       <div class="token-stat">
         <div class="token-stat-value">$${avgDailyCost.toFixed(2)}</div>
-        <div class="token-stat-label">日均费用</div>
+        <div class="token-stat-label">估算日均费用</div>
       </div>
       <div class="token-stat">
         <div class="token-stat-value">${fmt(totalInput)}</div>

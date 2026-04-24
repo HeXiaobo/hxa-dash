@@ -114,6 +114,71 @@ function selectQuotaForRuntime(health, runtimeType) {
   return { supported: false, source: 'agent_health', reason: 'not_reported', primary: null, secondary: null, credits: null, sampled_at: null };
 }
 
+function normalizeUsageTokens(tokens) {
+  if (!tokens || typeof tokens !== 'object') return null;
+  const cleaned = {
+    input: typeof tokens.input === 'number' ? tokens.input : null,
+    output: typeof tokens.output === 'number' ? tokens.output : null,
+    cache_creation: typeof tokens.cache_creation === 'number' ? tokens.cache_creation : null,
+    cache_read: typeof tokens.cache_read === 'number' ? tokens.cache_read : null,
+    cached_input: typeof tokens.cached_input === 'number' ? tokens.cached_input : null,
+    reasoning: typeof tokens.reasoning === 'number' ? tokens.reasoning : null,
+    total: typeof tokens.total === 'number' ? tokens.total : null,
+  };
+  return Object.values(cleaned).some(v => v != null) ? cleaned : null;
+}
+
+function normalizeUsageShape(usage, fallbackSource = 'agent_health') {
+  if (!usage || typeof usage !== 'object') return null;
+  const sessionTokens = normalizeUsageTokens(usage.session_tokens);
+  const lastTurnTokens = normalizeUsageTokens(usage.last_turn_tokens);
+  const supported = typeof usage.supported === 'boolean'
+    ? usage.supported
+    : !!(sessionTokens || lastTurnTokens);
+
+  return {
+    supported,
+    source: usage.source || fallbackSource,
+    reason: usage.reason || null,
+    sampled_at: normalizeTimestamp(usage.sampled_at),
+    session_id: usage.session_id || null,
+    thread_id: usage.thread_id || null,
+    model: usage.model || null,
+    plan_type: usage.plan_type || null,
+    session_tokens: sessionTokens,
+    last_turn_tokens: lastTurnTokens,
+    session_cost_usd: typeof usage.session_cost_usd === 'number' ? usage.session_cost_usd : null,
+    estimated_cost: !!usage.estimated_cost,
+    turns: typeof usage.turns === 'number' ? usage.turns : null,
+    partial: !!usage.partial,
+  };
+}
+
+function selectUsageForRuntime(health, runtimeType) {
+  if (!health?.usage || typeof health.usage !== 'object') {
+    return { supported: false, source: 'agent_health', reason: 'not_reported', session_tokens: null, last_turn_tokens: null, sampled_at: null };
+  }
+
+  const usage = health.usage;
+  const candidates = [
+    runtimeType,
+    runtimeType === 'claude' ? 'claude_code' : null,
+    runtimeType === 'claude_code' ? 'claude' : null,
+  ].filter(Boolean);
+
+  for (const key of candidates) {
+    if (usage[key]) {
+      return normalizeUsageShape(usage[key], key) || { supported: false, source: key, reason: 'invalid_payload', session_tokens: null, last_turn_tokens: null, sampled_at: null };
+    }
+  }
+
+  if (usage.session_tokens || usage.last_turn_tokens || typeof usage.supported === 'boolean') {
+    return normalizeUsageShape(usage, 'agent_health') || { supported: false, source: 'agent_health', reason: 'invalid_payload', session_tokens: null, last_turn_tokens: null, sampled_at: null };
+  }
+
+  return { supported: false, source: 'agent_health', reason: 'not_reported', session_tokens: null, last_turn_tokens: null, sampled_at: null };
+}
+
 function computeOverallSystemHealth(health) {
   if (!health) return 'unknown';
   const statuses = [health.disk?.status, health.memory?.status];
@@ -143,10 +208,28 @@ function runtimeEvidenceLevel(health, runtimeType) {
     : false;
   if (quotaSupported) return 'weak';
 
+  const usageSupported = health?.usage && typeof health.usage === 'object'
+    ? Object.values(health.usage).some(item => item && typeof item === 'object' && item.supported === true)
+    : false;
+  if (usageSupported) return 'weak';
+
   if (runtimeType && runtimeType !== 'unknown') return 'weak';
   if (health?.runtime?.source && health.runtime.source !== 'unknown') return 'weak';
 
   return 'none';
+}
+
+function hasRuntimeConfirmation(health) {
+  if (!health || typeof health !== 'object') return false;
+  if (health?.runtime?.version) return true;
+  const supportedQuota = health?.quota && typeof health.quota === 'object'
+    ? Object.values(health.quota).some(item => item && typeof item === 'object' && item.supported === true)
+    : false;
+  if (supportedQuota) return true;
+  const supportedUsage = health?.usage && typeof health.usage === 'object'
+    ? Object.values(health.usage).some(item => item && typeof item === 'object' && item.supported === true)
+    : false;
+  return supportedUsage;
 }
 
 function buildRuntimeSummary(agent, health, now) {
@@ -158,12 +241,17 @@ function buildRuntimeSummary(agent, health, now) {
   const evidence = runtimeEvidenceLevel(health, type);
   const hasStrongEvidence = evidence === 'strong';
   const hasAnyEvidence = evidence !== 'none';
+  const confirmedRuntime = hasRuntimeConfirmation(health);
 
   let status = 'offline';
   if (stale) {
     status = 'offline';
   } else if (rawStatus === 'offline') {
-    status = hasStrongEvidence ? 'degraded' : 'offline';
+    status = confirmedRuntime && systemHealth !== 'critical'
+      ? 'running'
+      : hasStrongEvidence ? 'degraded' : 'offline';
+  } else if (rawStatus === 'degraded') {
+    status = confirmedRuntime && systemHealth !== 'critical' ? 'running' : 'degraded';
   } else if (rawStatus) {
     status = rawStatus;
   } else if (systemHealth === 'critical') {
@@ -208,6 +296,7 @@ function buildAgents() {
     const now = Date.now();
     const runtime = buildRuntimeSummary(a, health, now);
     const quota = selectQuotaForRuntime(health, runtime.type);
+    const usage = selectUsageForRuntime(health, runtime.type);
     const recentWorkEvents = allRecentEvents.filter(e => e.timestamp && e.timestamp > (now - WORK_SIGNAL_WINDOW_MS) && isWorkSignal(e.action));
     const lastWorkSignal = recentWorkEvents[0] || allRecentEvents.find(e => isWorkSignal(e.action)) || null;
     const latestEventTs = (lastWorkSignal && lastWorkSignal.timestamp) || (latestEvent && latestEvent.timestamp) || 0;
@@ -268,6 +357,7 @@ function buildAgents() {
       tier_status: runtime.status,
       runtime,
       quota,
+      usage,
       last_heartbeat_at: runtime.last_heartbeat_at,
       active_projects: activeProjects,
       top_collaborator: topCollaborator,

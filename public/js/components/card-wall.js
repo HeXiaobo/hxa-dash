@@ -2,14 +2,40 @@
 const CardWall = {
   init() {},
 
+  _formatTokenCount(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+    return String(Math.round(n));
+  },
+
   // Fingerprint for detecting meaningful changes (online state, work status, tasks, stats)
   _fingerprint(agent) {
     const tasks = (agent.current_tasks || []).map(t => t.title).join('|');
     const s = agent.stats || {};
     const bmrs = (agent.blocking_mrs || []).map(m => m.title + ':' + m.minutes_stale).join('|');
+    const runtime = agent.runtime || {};
+    const quota = agent.quota || {};
+    const usage = agent.usage || {};
+    const sessionTokens = usage.session_tokens || {};
+    const lastTurnTokens = usage.last_turn_tokens || {};
+    const quotaWindow = (window) => window
+      ? [
+          window.label || '',
+          window.window_minutes || '',
+          window.used_percent ?? '',
+          window.resets_at || ''
+        ].join(':')
+      : '';
+    const credits = quota.credits || {};
+    const hw = agent.hardware || {};
     return [
       agent.online ? 1 : 0,
+      agent.work_state || '',
       agent.work_status || '',
+      agent.runtime_status || '',
       agent.role || '',
       agent.bio || '',
       tasks,
@@ -26,7 +52,56 @@ const CardWall = {
       agent.closed_7d || 0,
       bmrs,
       (agent.sparkline_7d || []).join(','),
-      agent.hardware ? `${agent.hardware.disk_pct}|${agent.hardware.mem_pct}|${agent.hardware.cpu_pct}` : ''
+      runtime.type || '',
+      runtime.label || '',
+      runtime.version || '',
+      runtime.status || '',
+      runtime.source || '',
+      runtime.detection_source || '',
+      runtime.checked_at || '',
+      runtime.last_heartbeat_at || '',
+      runtime.stale ? 1 : 0,
+      runtime.system_health || '',
+      agent.last_heartbeat_at || '',
+      quota.supported === true ? 1 : quota.supported === false ? 0 : '',
+      quota.source || '',
+      quota.reason || '',
+      quota.sampled_at || '',
+      quotaWindow(quota.primary),
+      quotaWindow(quota.secondary),
+      credits.total ?? '',
+      credits.remaining ?? '',
+      usage.supported === true ? 1 : usage.supported === false ? 0 : '',
+      usage.source || '',
+      usage.reason || '',
+      usage.sampled_at || '',
+      usage.model || '',
+      usage.plan_type || '',
+      usage.session_cost_usd ?? '',
+      usage.estimated_cost ? 1 : 0,
+      sessionTokens.input ?? '',
+      sessionTokens.output ?? '',
+      sessionTokens.cache_creation ?? '',
+      sessionTokens.cache_read ?? '',
+      sessionTokens.cached_input ?? '',
+      sessionTokens.reasoning ?? '',
+      sessionTokens.total ?? '',
+      lastTurnTokens.input ?? '',
+      lastTurnTokens.output ?? '',
+      lastTurnTokens.total ?? '',
+      hw.disk_pct ?? '',
+      hw.disk_status || '',
+      hw.mem_pct ?? '',
+      hw.mem_status || '',
+      hw.cpu_pct ?? '',
+      hw.pm2_online ?? '',
+      hw.pm2_total ?? '',
+      hw.runtime_type || '',
+      hw.runtime_version || '',
+      hw.runtime_status || '',
+      hw.system_health || '',
+      hw.stale ? 1 : 0,
+      hw.reported_at || ''
     ].join('\x1f');
   },
 
@@ -124,7 +199,7 @@ const CardWall = {
     const runtimeType = runtime.label || runtime.type || 'Unknown';
     const runtimeVersion = runtime.version ? ` ${runtime.version}` : '';
     const statusLabels = { working: '🟢 工作中', standby: '🟡 待命', offline: '⚫ 离线' };
-    const runtimeLabels = { running: '运行正常', degraded: '待校验', offline: '未运行' };
+    const runtimeLabels = { running: '运行正常', degraded: '异常', offline: '未运行' };
     const badgeClass = workState === 'working' ? 'busy' : workState === 'standby' ? 'idle' : 'offline';
     const statusLabel = statusLabels[workState] || statusLabels.offline;
 
@@ -251,6 +326,17 @@ const CardWall = {
     ` : runtime.type === 'openclaw'
       ? `<div class="card-activity-metrics"><span class="card-stat" title="OpenClaw 暂不支持限额">🧩 OpenClaw</span></div>`
       : '';
+    const usage = agent.usage || {};
+    const usageTokens = usage.session_tokens || {};
+    const usageTotal = usageTokens.total ?? ((usageTokens.input || 0) + (usageTokens.output || 0));
+    const cacheTokens = (usageTokens.cache_creation || 0) + (usageTokens.cache_read || 0) + (usageTokens.cached_input || 0);
+    const usageHTML = usage.supported && usageTotal ? `
+      <div class="card-activity-metrics">
+        <span class="card-stat" title="本机会话 token，本地观测非账单口径">🧮 ${this._formatTokenCount(usageTotal)} tok</span>
+        ${cacheTokens ? `<span class="card-stat" title="缓存相关 token">🗄️ ${this._formatTokenCount(cacheTokens)}</span>` : ''}
+        ${usageTokens.reasoning ? `<span class="card-stat" title="推理输出 token">🧠 ${this._formatTokenCount(usageTokens.reasoning)}</span>` : ''}
+      </div>
+    ` : '';
 
     const avgTime = stats.avg_completion_ms ? this.formatDuration(stats.avg_completion_ms) : '—';
     const historyHTML = (stats.closed_last_7d != null || stats.closed_last_30d != null) ? `
@@ -307,6 +393,7 @@ const CardWall = {
         ${collabHTML}
         ${statsHTML}
         ${quotaHTML}
+        ${usageHTML}
         ${activityMetricsHTML}
         ${historyHTML}
         ${tasksHTML}

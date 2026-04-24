@@ -50,7 +50,7 @@ describe('team runtime evidence', () => {
     expect(summary.status).toBe('offline');
   });
 
-  it('upgrades strong offline evidence to degraded for fresh heartbeats', () => {
+  it('keeps unconfirmed strong offline evidence degraded for fresh heartbeats', () => {
     const now = Date.now();
     const health = {
       reported_at: now,
@@ -66,5 +66,27 @@ describe('team runtime evidence', () => {
 
     const summary = buildRuntimeSummary({ online: true }, health, now);
     expect(summary.status).toBe('degraded');
+  });
+
+  it('treats confirmed runtime evidence as running even when an older status was degraded', () => {
+    const now = Date.now();
+    const health = {
+      reported_at: now,
+      runtime: {
+        type: 'claude_code',
+        status: 'degraded',
+        version: '2.1.109',
+        source: 'claude version',
+        detection_source: 'process',
+      },
+      disk: { status: 'ok' },
+      memory: { status: 'ok' },
+      quota: {
+        claude_code: { supported: true, primary: { used_percent: 3 } },
+      },
+    };
+
+    const summary = buildRuntimeSummary({ online: true }, health, now);
+    expect(summary.status).toBe('running');
   });
 });

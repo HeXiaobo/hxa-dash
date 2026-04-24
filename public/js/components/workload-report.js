@@ -152,7 +152,7 @@ const WorkloadReport = {
       return { label: '离线', runtimeLabel: runtime === 'offline' ? '运行态离线' : '', dot: '#6e7681', bg: 'rgba(110,118,129,.14)', fg: '#c9d1d9' };
     }
     if (runtime === 'degraded' || runtime === 'warning') {
-      return { label: '待命', runtimeLabel: '待校验', dot: '#f0883e', bg: 'rgba(240,136,62,.14)', fg: '#ffa657' };
+      return { label: '待命', runtimeLabel: '异常', dot: '#f0883e', bg: 'rgba(240,136,62,.14)', fg: '#ffa657' };
     }
     if (work === 'working' || work === 'busy') {
       return { label: '工作中', runtimeLabel: runtime && runtime !== 'running' ? this._prettyRuntime(runtime) : '运行中', dot: '#3fb950', bg: 'rgba(63,185,80,.14)', fg: '#7ee787' };
@@ -169,8 +169,8 @@ const WorkloadReport = {
       running: '运行中',
       online: '运行中',
       active: '运行中',
-      degraded: '待校验',
-      warning: '待校验',
+      degraded: '异常',
+      warning: '异常',
       offline: '离线',
     };
     return map[runtime] || runtime;

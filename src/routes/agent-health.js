@@ -45,6 +45,11 @@ function clampNum(val, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Math.round(val * 10) / 10));
 }
 
+function clampInt(val, min = 0, max = 1e12) {
+  if (typeof val !== 'number' || isNaN(val)) return null;
+  return Math.max(min, Math.min(max, Math.round(val)));
+}
+
 function normalizeTimestamp(val) {
   if (typeof val === 'number' && Number.isFinite(val)) return val;
   if (typeof val === 'string') {
@@ -95,6 +100,42 @@ function sanitizeQuotaShape(quota) {
   };
 }
 
+function sanitizeUsageTokens(tokens) {
+  if (!tokens || typeof tokens !== 'object') return null;
+  const cleaned = {
+    input: clampInt(tokens.input ?? tokens.input_tokens),
+    output: clampInt(tokens.output ?? tokens.output_tokens),
+    cache_creation: clampInt(tokens.cache_creation ?? tokens.cache_creation_input_tokens),
+    cache_read: clampInt(tokens.cache_read ?? tokens.cache_read_input_tokens),
+    cached_input: clampInt(tokens.cached_input ?? tokens.cached_input_tokens),
+    reasoning: clampInt(tokens.reasoning ?? tokens.reasoning_output_tokens),
+    total: clampInt(tokens.total ?? tokens.total_tokens),
+  };
+  return Object.values(cleaned).some(v => v != null) ? cleaned : null;
+}
+
+function sanitizeUsageShape(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  return {
+    supported: typeof usage.supported === 'boolean'
+      ? usage.supported
+      : !!(usage.session_tokens || usage.last_turn_tokens),
+    source: sanitizeStr(usage.source, 64),
+    reason: sanitizeStr(usage.reason, 128),
+    sampled_at: normalizeTimestamp(usage.sampled_at),
+    session_id: sanitizeStr(usage.session_id, 128),
+    thread_id: sanitizeStr(usage.thread_id, 128),
+    model: sanitizeStr(usage.model, 128),
+    plan_type: sanitizeStr(usage.plan_type, 32),
+    session_tokens: sanitizeUsageTokens(usage.session_tokens),
+    last_turn_tokens: sanitizeUsageTokens(usage.last_turn_tokens),
+    session_cost_usd: clampNum(usage.session_cost_usd, 0, 999999999),
+    estimated_cost: typeof usage.estimated_cost === 'boolean' ? usage.estimated_cost : false,
+    turns: clampInt(usage.turns, 0, 1000000),
+    partial: typeof usage.partial === 'boolean' ? usage.partial : false,
+  };
+}
+
 function sanitizeRuntime(runtime) {
   if (!runtime || typeof runtime !== 'object') return null;
   return {
@@ -113,7 +154,7 @@ router.post('/:name', requireHealthAuth, (req, res) => {
   const agent = db.getAgent(name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const { disk, memory, cpu, pm2, hostname, runtime, quota } = req.body;
+  const { disk, memory, cpu, pm2, hostname, runtime, quota, usage } = req.body;
 
   // Validate required fields
   if (!disk || !memory) {
@@ -160,6 +201,13 @@ router.post('/:name', requireHealthAuth, (req, res) => {
             .filter(([key, value]) => key && value)
         )
       : null,
+    usage: usage && typeof usage === 'object'
+      ? Object.fromEntries(
+          Object.entries(usage)
+            .map(([key, value]) => [sanitizeStr(key, 64), sanitizeUsageShape(value)])
+            .filter(([key, value]) => key && value)
+        )
+      : null,
   };
 
   db.upsertAgentHealth(name, health);
@@ -196,6 +244,7 @@ router.get('/', (req, res) => {
       stale,
       runtime: health?.runtime || null,
       quota: health?.quota || null,
+      usage: health?.usage || null,
       health,
     };
   });

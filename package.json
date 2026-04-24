@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync:health-reporter": "cp scripts/health-reporter.mjs public/scripts/health-reporter.mjs",
+    "check:health-reporter": "cmp -s scripts/health-reporter.mjs public/scripts/health-reporter.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",

@@ -69,6 +69,7 @@ const HealthDiagnostics = {
       const heartbeat = this._timeLabel(agent.last_heartbeat_at || agent.reported_at || agent.last_seen_at);
       const activity = this._timeLabel(agent.last_active_at || agent.last_active);
       const quota = this._renderQuota(agent.quota, runtimeMeta.type);
+      const usage = this._renderUsage(agent.usage);
       const quotaStatus = quota ? quota.status : 'unsupported';
       const runtimeLabel = runtimeMeta.label || '';
       const runtimeVersion = runtimeMeta.version || agent.version;
@@ -129,6 +130,11 @@ const HealthDiagnostics = {
               ${quota.summary.map(item => `<span class="health-card-badge">${esc(item)}</span>`).join('')}
             </div>
           ` : ''}
+          ${usage ? `
+            <div class="health-agent-meta" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
+              ${usage.summary.map(item => `<span class="health-card-badge">${esc(item)}</span>`).join('')}
+            </div>
+          ` : ''}
         </div>
       `;
     }).join('');
@@ -153,6 +159,7 @@ const HealthDiagnostics = {
     if (summary.offline > 0) badges.push(`<span class="health-card-badge">离线 ${summary.offline}</span>`);
     if (summary.quotaSupported > 0) badges.push(`<span class="health-card-badge">quota 支持 ${summary.quotaSupported}</span>`);
     if (summary.quotaUnsupported > 0) badges.push(`<span class="health-card-badge">quota 不支持 ${summary.quotaUnsupported}</span>`);
+    if (summary.usageTracked > 0) badges.push(`<span class="health-card-badge">usage 观测 ${summary.usageTracked}</span>`);
 
     return `
       <div class="health-card">
@@ -354,6 +361,25 @@ const HealthDiagnostics = {
     };
   },
 
+  _renderUsage(usage) {
+    const u = this._asObject(usage);
+    if (!u || !u.supported) return null;
+    const tokens = this._asObject(u.session_tokens);
+    const items = [];
+    const total = tokens.total ?? ((tokens.input || 0) + (tokens.output || 0));
+    const cache = (tokens.cache_creation || 0) + (tokens.cache_read || 0) + (tokens.cached_input || 0);
+    if (total) items.push(`token ${this._formatCompactNumber(total)}`);
+    if (tokens.output != null) items.push(`输出 ${this._formatCompactNumber(tokens.output)}`);
+    if (cache) items.push(`缓存 ${this._formatCompactNumber(cache)}`);
+    if (tokens.reasoning) items.push(`推理 ${this._formatCompactNumber(tokens.reasoning)}`);
+    if (u.session_cost_usd != null) items.push(`估算 $${Number(u.session_cost_usd).toFixed(2)}`);
+    if (!items.length) return null;
+    return {
+      status: 'supported',
+      summary: items,
+    };
+  },
+
   _normalizeQuotaWindow(window, fallbackLabel) {
     const q = this._asObject(window);
     if (!q || Object.keys(q).length === 0) return null;
@@ -361,10 +387,8 @@ const HealthDiagnostics = {
     const label = q.label || q.name || q.window || fallbackLabel;
     const usedPercent = this._normalizePercentValue(q.used_percent ?? q.used ?? q.percent ?? q.ratio);
     const resetAt = q.resets_at || q.reset_at || q.next_reset_at || q.resetTime;
-    const remaining = this._normalizePercentValue(q.remaining_percent ?? q.remaining);
     const pieces = [];
     if (usedPercent != null) pieces.push(`${label} ${this._formatPercent(usedPercent)} 已用`);
-    if (remaining != null) pieces.push(`${this._formatPercent(remaining)} 剩余`);
     if (resetAt) pieces.push(`重置 ${this._formatTimeAgo(resetAt)}`);
     if (!pieces.length) return `${label}`;
     return pieces.join(' · ');
@@ -438,6 +462,7 @@ const HealthDiagnostics = {
       offline: 0,
       quotaSupported: 0,
       quotaUnsupported: 0,
+      usageTracked: 0,
     };
 
     agents.forEach(agent => {
@@ -453,6 +478,7 @@ const HealthDiagnostics = {
         if (quota.status === 'unsupported') summary.quotaUnsupported += 1;
         else summary.quotaSupported += 1;
       }
+      if (agent.usage?.supported) summary.usageTracked += 1;
     });
 
     return summary;
@@ -471,6 +497,7 @@ const HealthDiagnostics = {
     const runtimeObj = this._asObject(raw.runtime);
     const healthObj = this._asObject(raw.system_health || raw.health || raw.hardware || raw.resources);
     const quotaObj = this._asObject(raw.quota || raw.limits || runtimeObj.quota || runtimeObj.limits);
+    const usageObj = this._asObject(raw.usage || runtimeObj.usage);
     const runtimeType = runtimeObj.type || raw.runtime_type || raw.runtime_name || (typeof raw.runtime === 'string' ? raw.runtime : '') || raw.agent_runtime || raw.runtime_label;
     const version = runtimeObj.version || raw.runtime_version || raw.version || raw.build_version || raw.build || raw.release;
     const runtimeStatus = runtimeObj.status || raw.runtime_status || raw.runtimeState || raw.service_status || healthObj.runtime_status || raw.status;
@@ -492,6 +519,7 @@ const HealthDiagnostics = {
       health_stale: Boolean(raw.system_health_stale || raw.health_stale || healthObj.stale),
       resources: this._normalizeResources(healthObj, raw),
       quota: quotaObj,
+      usage: usageObj,
     };
   },
 
@@ -564,7 +592,7 @@ const HealthDiagnostics = {
       return { key: 'running', label: '运行中', icon: '🟢', cls: 'health-ok' };
     }
     if (['degraded', 'warning', 'warn', 'partial'].includes(raw)) {
-      return { key: 'degraded', label: '待校验', icon: '⚠️', cls: 'health-warn' };
+      return { key: 'degraded', label: '异常', icon: '⚠️', cls: 'health-warn' };
     }
     if (['offline', 'down', 'error', 'errored', 'stopped'].includes(raw)) {
       return { key: 'offline', label: '离线', icon: '🔴', cls: 'health-crit' };
@@ -651,6 +679,15 @@ const HealthDiagnostics = {
     const n = this._normalizePercentValue(value);
     if (!Number.isFinite(n)) return '—';
     return `${Math.round(n)}%`;
+  },
+
+  _formatCompactNumber(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+    return String(Math.round(n));
   },
 
   _normalizePercentValue(value) {
