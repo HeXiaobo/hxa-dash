@@ -11,6 +11,11 @@ const CardWall = {
     return String(Math.round(n));
   },
 
+  _quotaStat(window, label, title, icon) {
+    if (window?.used_percent == null) return '';
+    return `<span class="card-stat" title="${title}">${icon} ${window.used_percent}% / ${label}</span>`;
+  },
+
   // Fingerprint for detecting meaningful changes (online state, work status, tasks, stats)
   _fingerprint(agent) {
     const tasks = (agent.current_tasks || []).map(t => t.title).join('|');
@@ -318,10 +323,13 @@ const CardWall = {
       : '';
 
     const quota = agent.quota || {};
-    const quotaHTML = quota.supported ? `
+    const quotaStats = [
+      this._quotaStat(quota.primary, '5h', '5 小时限额', '⏳'),
+      this._quotaStat(quota.secondary, '7d', '7 天限额', '📅'),
+    ].filter(Boolean).join('');
+    const quotaHTML = quota.supported && quotaStats ? `
       <div class="card-activity-metrics">
-        <span class="card-stat" title="5 小时限额">⏳ ${quota.primary?.used_percent ?? '—'}% / 5h</span>
-        <span class="card-stat" title="7 天限额">📅 ${quota.secondary?.used_percent ?? '—'}% / 7d</span>
+        ${quotaStats}
       </div>
     ` : runtime.type === 'openclaw'
       ? `<div class="card-activity-metrics"><span class="card-stat" title="OpenClaw 暂不支持限额">🧩 OpenClaw</span></div>`

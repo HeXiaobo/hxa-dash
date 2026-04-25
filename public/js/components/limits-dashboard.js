@@ -13,6 +13,17 @@ const LimitsDashboard = {
     return String(Math.round(n));
   },
 
+  _formatQuotaText(quota) {
+    const parts = [
+      quota?.primary?.used_percent != null ? `${quota.primary.used_percent}% / 5h` : null,
+      quota?.secondary?.used_percent != null ? `${quota.secondary.used_percent}% / 7d` : null,
+    ].filter(Boolean);
+    if (parts.length) return parts.join(' · ');
+    if (quota?.reason === 'unsupported_for_now') return '暂不支持';
+    if (quota?.reason === 'no_used_quota_window') return '无用量窗口';
+    return '未提供';
+  },
+
   async fetch() {
     if (this._loading) return;
     this._loading = true;
@@ -73,9 +84,7 @@ const LimitsDashboard = {
       const secondary = quota.secondary || {};
       const runtimeText = `${runtime.label || runtime.type || 'Unknown'}${runtime.version ? ` ${runtime.version}` : ''}`;
       const workText = agent.work_state === 'working' ? '工作中' : agent.work_state === 'standby' ? '待命' : '离线';
-      const quotaText = quota.supported
-        ? `${primary.used_percent ?? '—'}% / 5h · ${secondary.used_percent ?? '—'}% / 7d`
-        : (quota.reason === 'unsupported_for_now' ? '暂不支持' : '未提供');
+      const quotaText = this._formatQuotaText(quota);
       const tokenText = usage.supported
         ? [
             usageTokens.total != null ? `${this._formatTokenCount(usageTokens.total)} tok` : null,

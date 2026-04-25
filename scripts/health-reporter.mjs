@@ -491,10 +491,12 @@ function buildQuotaPayload({ supported, source, reason = null, snapshot = null, 
   const primary = normalizeQuotaWindow(rateLimits?.primary);
   const secondary = normalizeQuotaWindow(rateLimits?.secondary);
   const credits = rateLimits?.credits && typeof rateLimits.credits === 'object' ? rateLimits.credits : null;
+  const hasUsedQuotaWindow = [primary, secondary].some(window => typeof window?.used_percent === 'number');
 
   return {
-    supported: true,
+    supported: hasUsedQuotaWindow,
     source,
+    reason: hasUsedQuotaWindow ? null : (reason || 'no_used_quota_window'),
     sampled_at: snapshot?.timestamp || null,
     primary,
     secondary,

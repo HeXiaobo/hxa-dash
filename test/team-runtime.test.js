@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 const teamRoute = require('../src/routes/team');
-const { runtimeEvidenceLevel, buildRuntimeSummary } = teamRoute.__private;
+const { runtimeEvidenceLevel, buildRuntimeSummary, selectQuotaForRuntime } = teamRoute.__private;
 
 describe('team runtime evidence', () => {
   it('treats process/config/env detections as strong evidence', () => {
@@ -88,5 +88,23 @@ describe('team runtime evidence', () => {
 
     const summary = buildRuntimeSummary({ online: true }, health, now);
     expect(summary.status).toBe('running');
+  });
+
+  it('does not expose quota as supported without used quota windows', () => {
+    const health = {
+      quota: {
+        codex: {
+          supported: true,
+          source: '/Users/example/.codex/sessions/latest.jsonl',
+          sampled_at: new Date().toISOString(),
+          primary: null,
+          secondary: null,
+        },
+      },
+    };
+
+    const quota = selectQuotaForRuntime(health, 'codex');
+    expect(quota.supported).toBe(false);
+    expect(quota.reason).toBe('no_used_quota_window');
   });
 });

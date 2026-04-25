@@ -84,13 +84,20 @@ function sanitizeQuotaWindow(window, fallbackLabel = null) {
 
 function sanitizeQuotaShape(quota) {
   if (!quota || typeof quota !== 'object') return null;
+  const primary = sanitizeQuotaWindow(quota.primary || quota['5h'], '5h');
+  const secondary = sanitizeQuotaWindow(quota.secondary || quota['7d'], '7d');
+  const hasUsedQuotaWindow = [primary, secondary].some(window => typeof window?.used_percent === 'number');
+  const requestedSupported = typeof quota.supported === 'boolean'
+    ? quota.supported
+    : !!(quota.primary || quota.secondary || quota['5h'] || quota['7d']);
+  const supported = requestedSupported && hasUsedQuotaWindow;
   return {
-    supported: typeof quota.supported === 'boolean' ? quota.supported : !!(quota.primary || quota.secondary || quota['5h'] || quota['7d']),
+    supported,
     source: sanitizeStr(quota.source, 64),
-    reason: sanitizeStr(quota.reason, 128),
+    reason: sanitizeStr(quota.reason || (requestedSupported && !hasUsedQuotaWindow ? 'no_used_quota_window' : null), 128),
     sampled_at: normalizeTimestamp(quota.sampled_at),
-    primary: sanitizeQuotaWindow(quota.primary || quota['5h'], '5h'),
-    secondary: sanitizeQuotaWindow(quota.secondary || quota['7d'], '7d'),
+    primary,
+    secondary,
     credits: quota.credits && typeof quota.credits === 'object'
       ? {
           total: clampNum(quota.credits.total, 0, 999999999),

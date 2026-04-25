@@ -74,14 +74,16 @@ function normalizeQuotaShape(quota, fallbackSource = 'agent_health') {
   if (!quota || typeof quota !== 'object') return null;
   const primary = normalizeQuotaWindow(quota.primary || quota['5h'], '5h');
   const secondary = normalizeQuotaWindow(quota.secondary || quota['7d'], '7d');
-  const supported = typeof quota.supported === 'boolean'
+  const requestedSupported = typeof quota.supported === 'boolean'
     ? quota.supported
     : !!(primary || secondary);
+  const hasUsedQuotaWindow = [primary, secondary].some(window => typeof window?.used_percent === 'number');
+  const supported = requestedSupported && hasUsedQuotaWindow;
 
   return {
     supported,
     source: quota.source || fallbackSource,
-    reason: quota.reason || null,
+    reason: quota.reason || (requestedSupported && !hasUsedQuotaWindow ? 'no_used_quota_window' : null),
     sampled_at: normalizeTimestamp(quota.sampled_at),
     primary,
     secondary,
@@ -537,4 +539,4 @@ function safeJSON(str) {
 
 module.exports = router;
 module.exports.buildAgents = buildAgents;
-module.exports.__private = { runtimeEvidenceLevel, buildRuntimeSummary };
+module.exports.__private = { runtimeEvidenceLevel, buildRuntimeSummary, selectQuotaForRuntime };

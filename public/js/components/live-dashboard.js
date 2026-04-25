@@ -119,9 +119,7 @@ const LiveDashboard = {
     const activityBar = this._activityBar(agent.activityIntensity);
     const lastActive = agent.lastActiveMs !== null ? timeAgo(Date.now() - agent.lastActiveMs) : '';
     const healthBadge = agent.healthScore !== null ? `<span class="live-health">${agent.healthScore}</span>` : '';
-    const quotaBadge = agent.quota?.supported
-      ? `<span class="live-agent-role">5h ${agent.quota.primary?.used_percent ?? '—'}% · 7d ${agent.quota.secondary?.used_percent ?? '—'}%</span>`
-      : '';
+    const quotaBadge = agent.quota?.supported ? this._quotaBadge(agent.quota) : '';
 
     return `<div class="live-agent-row ${statusClass}" data-agent="${esc(agent.name)}">
       <div class="live-agent-header">
@@ -157,12 +155,28 @@ const LiveDashboard = {
     return html;
   },
 
+  _quotaBadge(quota) {
+    const parts = [
+      quota?.primary?.used_percent != null ? `5h ${quota.primary.used_percent}%` : null,
+      quota?.secondary?.used_percent != null ? `7d ${quota.secondary.used_percent}%` : null,
+    ].filter(Boolean);
+    return parts.length ? `<span class="live-agent-role">${parts.join(' · ')}</span>` : '';
+  },
+
   _fingerprint(agent) {
+    const quota = agent.quota || {};
+    const quotaWindow = (window) => window
+      ? [window.used_percent ?? '', window.resets_at || '', window.window_minutes || ''].join(':')
+      : '';
     return JSON.stringify([
       agent.effectiveStatus,
       agent.healthScore,
       agent.activityIntensity,
       agent.lastActiveMs ? Math.floor(agent.lastActiveMs / 60000) : null,
+      quota.supported === true ? 1 : quota.supported === false ? 0 : '',
+      quota.reason || '',
+      quotaWindow(quota.primary),
+      quotaWindow(quota.secondary),
       agent.currentTasks.map(t => t.title),
       agent.recentEvents.map(e => e.action + e.targetTitle)
     ]);
