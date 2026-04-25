@@ -28,10 +28,10 @@ const TokenDashboard = {
   _fmt(n) {
     if (n == null || Number.isNaN(Number(n))) return '0';
     n = Number(n);
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-    return String(Math.round(n));
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B tok';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M tok';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K tok';
+    return Math.round(n) + ' tok';
   },
 
   _cacheTokens(agent) {

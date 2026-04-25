@@ -20,7 +20,7 @@ const LimitsDashboard = {
     ].filter(Boolean);
     if (parts.length) return parts.join(' · ');
     if (quota?.reason === 'unsupported_for_now') return '暂不支持';
-    if (quota?.reason === 'no_used_quota_window') return '无用量窗口';
+    if (quota?.reason === 'no_used_quota_window') return 'N/A (无窗口)';
     return '未提供';
   },
 
