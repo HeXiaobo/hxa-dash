@@ -120,6 +120,23 @@ function summarizeQuota(quota) {
   };
 }
 
+function summarizeUsage(usage) {
+  if (!usage || !usage.supported) {
+    return { supported: false, reason: usage?.reason || 'not_supported' };
+  }
+  return {
+    supported: true,
+    source: usage.source || null,
+    sampled_at: usage.sampled_at || null,
+    session_tokens: usage.session_tokens || null,
+    last_turn_tokens: usage.last_turn_tokens || null,
+    session_cost_usd: usage.session_cost_usd || null,
+    estimated_cost: !!usage.estimated_cost,
+    model: usage.model || null,
+    plan_type: usage.plan_type || null,
+  };
+}
+
 // Get agent health from db (activity + system metrics #115)
 function getAgentHealth() {
   return buildAgents().map(agent => {
@@ -135,6 +152,7 @@ function getAgentHealth() {
       open_tasks: agent.stats?.open_tasks || 0,
       active_projects: agent.active_projects || [],
       quota: summarizeQuota(agent.quota),
+      usage: summarizeUsage(agent.usage),
       system_health: agent.hardware || null,
       system_health_stale: agent.hardware?.stale ?? true,
       health_score: agent.health_score ?? null,

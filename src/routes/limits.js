@@ -20,11 +20,13 @@ router.get('/', (req, res) => {
     runtime_status: agent.runtime_status,
     runtime: agent.runtime,
     quota: agent.quota,
+    usage: agent.usage,
     last_active_at: agent.last_active_at,
     last_heartbeat_at: agent.last_heartbeat_at,
   }));
 
   const supported = agents.filter(agent => agent.quota?.supported);
+  const usageTracked = agents.filter(agent => agent.usage?.supported);
   const warningCount = supported.filter(agent => {
     const primary = agent.quota?.primary?.used_percent || 0;
     const secondary = agent.quota?.secondary?.used_percent || 0;
@@ -37,6 +39,7 @@ router.get('/', (req, res) => {
       total: agents.length,
       tracked: supported.length,
       unsupported: agents.length - supported.length,
+      usage_tracked: usageTracked.length,
       warning_count: warningCount,
       next_reset_at: nextResetAt(agents),
       runtime_distribution: agents.reduce((acc, agent) => {

@@ -397,7 +397,7 @@
     <div id="page-tokens" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>技术估算分析</h2>
+          <h2>Token 用量分析</h2>
           <div class="section-tools">
             <div class="btn-group">
               <button data-token-period="7" class="btn-toggle active">7天</button>
@@ -406,7 +406,7 @@
             </div>
           </div>
         </div>
-        <span class="token-estimate-badge" title="基于 GitLab 活动事件估算，每类操作按典型 Claude API 用量换算 token 数">📊 活动估算</span>
+        <span class="token-estimate-badge" title="优先展示各 agent 本机 runtime usage 快照；无观测数据时回退活动估算">🧮 本机观测</span>
         <div id="token-summary" class="token-summary"></div>
       </section>
 
@@ -601,7 +601,7 @@
   <script src="js/components/pipeline.js?v=3"></script>
   <script src="js/components/mr-board.js?v=3"></script>
   <script src="js/components/limits-dashboard.js?v=3"></script>
-  <script src="js/components/token-dashboard.js?v=3"></script>
+  <script src="js/components/token-dashboard.js?v=4"></script>
   <script src="js/components/time-estimates.js?v=3"></script>
   <script src="js/components/health-diagnostics.js?v=3"></script>
   <script src="js/components/projects.js?v=3"></script>

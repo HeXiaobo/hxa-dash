@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { buildAgents } = require('./team');
 
 // Cost per 1M tokens (USD) — Claude Sonnet pricing
 const COST_PER_M_INPUT  = 3.00;
@@ -32,6 +33,68 @@ const OUTPUT_RATIO = {
   default:       0.20,
 };
 
+function usageTotal(tokens) {
+  if (!tokens || typeof tokens !== 'object') return 0;
+  if (typeof tokens.total === 'number') return tokens.total;
+  return (tokens.input || 0) + (tokens.output || 0) + (tokens.cache_creation || 0) + (tokens.cache_read || 0);
+}
+
+function buildObservedUsage() {
+  const agents = buildAgents()
+    .filter(agent => agent.usage?.supported)
+    .map(agent => {
+      const tokens = agent.usage.session_tokens || {};
+      return {
+        name: agent.name,
+        runtime: agent.runtime,
+        source: agent.usage.source,
+        sampled_at: agent.usage.sampled_at,
+        model: agent.usage.model,
+        plan_type: agent.usage.plan_type,
+        input: tokens.input || 0,
+        output: tokens.output || 0,
+        cache_creation: tokens.cache_creation || 0,
+        cache_read: tokens.cache_read || 0,
+        cached_input: tokens.cached_input || 0,
+        reasoning: tokens.reasoning || 0,
+        total: usageTotal(tokens),
+        cost_usd: typeof agent.usage.session_cost_usd === 'number' ? agent.usage.session_cost_usd : null,
+        estimated_cost: !!agent.usage.estimated_cost,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  const summary = agents.reduce((acc, agent) => {
+    acc.total_input += agent.input;
+    acc.total_output += agent.output;
+    acc.cache_tokens += agent.cache_creation + agent.cache_read + agent.cached_input;
+    acc.reasoning_tokens += agent.reasoning;
+    acc.total_tokens += agent.total;
+    if (agent.cost_usd != null) acc.total_cost_usd += agent.cost_usd;
+    if (agent.cost_usd != null) acc.cost_agent_count += 1;
+    return acc;
+  }, {
+    total_input: 0,
+    total_output: 0,
+    cache_tokens: 0,
+    reasoning_tokens: 0,
+    total_tokens: 0,
+    total_cost_usd: 0,
+    cost_agent_count: 0,
+  });
+
+  return {
+    supported: agents.length > 0,
+    agent_count: agents.length,
+    summary: {
+      ...summary,
+      total_cost_usd: Math.round(summary.total_cost_usd * 100) / 100,
+    },
+    agents,
+    methodology: '来自各 agent 本机 runtime usage 快照，subscription 模式下为本地观测值，非账单口径',
+  };
+}
+
 // GET /api/tokens — token consumption estimates for a time window
 router.get('/', (req, res) => {
   const days = Math.min(parseInt(req.query.days) || 7, 30);
@@ -40,10 +103,12 @@ router.get('/', (req, res) => {
   const sinceMs = now - days * dayMs;
 
   const agents = db.getAllAgents();
+  const observed = buildObservedUsage();
   if (agents.length === 0) {
     return res.json({
       window_days: days,
       estimated: true,
+      observed,
       summary: { total_input: 0, total_output: 0, total_tokens: 0, total_cost_usd: 0, avg_daily_tokens: 0, avg_daily_cost_usd: 0 },
       daily: [],
       agents: [],
@@ -122,6 +187,7 @@ router.get('/', (req, res) => {
   res.json({
     window_days: days,
     estimated: true,
+    observed,
     methodology: '基于 GitLab 活动事件估算，每类操作按典型 Claude API 用量换算 token 数',
     event_count: allEvents.length,
     summary: {

@@ -54,7 +54,7 @@ const LiveDashboard = {
       </div>
       <div class="live-stat">
         <span class="live-stat-num">${runtime.degraded || 0}</span>
-        <span class="live-stat-label">⚠️ 待校验</span>
+        <span class="live-stat-label">⚠️ 异常</span>
       </div>
     `;
   },
@@ -96,7 +96,7 @@ const LiveDashboard = {
   _agentRowHTML(agent) {
     const statusClass = `live-status-${agent.effectiveStatus}`;
     const workLabels = { working: '🟢 工作中', standby: '🟡 待命', offline: '⚫ 离线' };
-    const runtimeLabels = { running: '运行正常', degraded: '待校验', offline: '未运行' };
+    const runtimeLabels = { running: '运行正常', degraded: '异常', offline: '未运行' };
     const statusLabel = workLabels[agent.effectiveStatus] || workLabels.offline;
     const runtimeText = agent.runtime
       ? `${agent.runtime.label || agent.runtime.type || 'Unknown'}${agent.runtime.version ? ` ${agent.runtime.version}` : ''}`
@@ -119,9 +119,7 @@ const LiveDashboard = {
     const activityBar = this._activityBar(agent.activityIntensity);
     const lastActive = agent.lastActiveMs !== null ? timeAgo(Date.now() - agent.lastActiveMs) : '';
     const healthBadge = agent.healthScore !== null ? `<span class="live-health">${agent.healthScore}</span>` : '';
-    const quotaBadge = agent.quota?.supported
-      ? `<span class="live-agent-role">5h ${agent.quota.primary?.used_percent ?? '—'}% · 7d ${agent.quota.secondary?.used_percent ?? '—'}%</span>`
-      : '';
+    const quotaBadge = agent.quota?.supported ? this._quotaBadge(agent.quota) : '';
 
     return `<div class="live-agent-row ${statusClass}" data-agent="${esc(agent.name)}">
       <div class="live-agent-header">
@@ -157,12 +155,28 @@ const LiveDashboard = {
     return html;
   },
 
+  _quotaBadge(quota) {
+    const parts = [
+      quota?.primary?.used_percent != null ? `5h ${quota.primary.used_percent}%` : null,
+      quota?.secondary?.used_percent != null ? `7d ${quota.secondary.used_percent}%` : null,
+    ].filter(Boolean);
+    return parts.length ? `<span class="live-agent-role">${parts.join(' · ')}</span>` : '';
+  },
+
   _fingerprint(agent) {
+    const quota = agent.quota || {};
+    const quotaWindow = (window) => window
+      ? [window.used_percent ?? '', window.resets_at || '', window.window_minutes || ''].join(':')
+      : '';
     return JSON.stringify([
       agent.effectiveStatus,
       agent.healthScore,
       agent.activityIntensity,
       agent.lastActiveMs ? Math.floor(agent.lastActiveMs / 60000) : null,
+      quota.supported === true ? 1 : quota.supported === false ? 0 : '',
+      quota.reason || '',
+      quotaWindow(quota.primary),
+      quotaWindow(quota.secondary),
       agent.currentTasks.map(t => t.title),
       agent.recentEvents.map(e => e.action + e.targetTitle)
     ]);

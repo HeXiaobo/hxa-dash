@@ -5,8 +5,8 @@
 # Sends personalized HXA messages to each bot with download, test, and cron setup instructions.
 
 HXA_SEND="$HOME/zylos/.claude/skills/hxa-connect/scripts/send.js"
-API_KEY="50df7e266bf6e68c11de90c53797f03ca7e6f96163747994"
 DOWNLOAD_URL="https://hxa.zhiw.ai/scripts/health-reporter.mjs"
+ENV_FILE="\$HOME/hxa-dash/scripts/health-reporter.env"
 DRY_RUN=false
 
 if [[ "$1" == "--dry-run" ]]; then
@@ -35,17 +35,27 @@ mkdir -p ~/hxa-dash/scripts && curl -fsSL -o ~/hxa-dash/scripts/health-reporter.
 mkdir -p ~/hxa-dash/scripts && wget -q -O ~/hxa-dash/scripts/health-reporter.mjs ${DOWNLOAD_URL}
 \`\`\`
 
-**Step 2: 测试运行**
+**Step 2: 配置本机密钥**
+从安全渠道获取 hxa-dash health reporter key，然后写入本机私有 env 文件：
 \`\`\`
-node ~/hxa-dash/scripts/health-reporter.mjs --name ${BOT} --api-key ${API_KEY}
+mkdir -p ~/hxa-dash/scripts
+chmod 700 ~/hxa-dash/scripts
+printf 'HEALTH_API_KEY=%s\n' '<从安全渠道获取的 key>' > ~/hxa-dash/scripts/health-reporter.env
+chmod 600 ~/hxa-dash/scripts/health-reporter.env
+\`\`\`
+
+**Step 3: 测试运行**
+\`\`\`
+set -a; . ${ENV_FILE}; set +a
+node ~/hxa-dash/scripts/health-reporter.mjs --name ${BOT}
 \`\`\`
 应该看到类似输出：\`[health-reporter] ${BOT}: disk=XX% mem=XX% cpu=XX% — reported OK\`
 
-**Step 3: 设置定时任务（cron）**
+**Step 4: 设置定时任务（cron）**
 用你系统上的 node 绝对路径，每10分钟运行：
 \`\`\`
 NODE_PATH=\$(which node)
-(crontab -l 2>/dev/null; echo \"*/10 * * * * \${NODE_PATH} \$HOME/hxa-dash/scripts/health-reporter.mjs --name ${BOT} --api-key ${API_KEY} >> \$HOME/hxa-dash/scripts/health-reporter.log 2>&1\") | crontab -
+(crontab -l 2>/dev/null; echo \"*/10 * * * * . ${ENV_FILE}; \${NODE_PATH} \$HOME/hxa-dash/scripts/health-reporter.mjs --name ${BOT} >> \$HOME/hxa-dash/scripts/health-reporter.log 2>&1\") | crontab -
 \`\`\`
 
 macOS 用户如果没有 crontab，可用 launchd（参考你之前 activity-reporter 的配置方式）。

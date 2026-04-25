@@ -57,6 +57,14 @@ const DetailDrawer = {
 
   _renderHardware(data) {
     const h = data.health;
+    const fmtTok = (value) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+      if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+      if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+      return String(Math.round(n));
+    };
     const gauge = (label, pct, status, detail) => {
       if (pct == null) return '';
       const cls = status === 'critical' ? 'hw-crit' : status === 'warning' ? 'hw-warn' : 'hw-ok';
@@ -74,6 +82,23 @@ const DetailDrawer = {
     const cpuDetail = h.cpu && h.cpu.load_avg ? `负载: ${h.cpu.load_avg.join(' / ')}` : '';
 
     const pm2HTML = h.pm2 ? `<div class="drawer-hw-pm2">⚙️ PM2: ${h.pm2.online}/${h.pm2.total} 在线</div>` : '';
+    const usageEntries = h.usage && typeof h.usage === 'object' ? Object.entries(h.usage) : [];
+    const usageHTML = usageEntries.map(([runtime, usage]) => {
+      if (!usage?.supported) return '';
+      const tokens = usage.session_tokens || {};
+      const total = tokens.total ?? ((tokens.input || 0) + (tokens.output || 0));
+      const cache = (tokens.cache_creation || 0) + (tokens.cache_read || 0) + (tokens.cached_input || 0);
+      const bits = [
+        total ? `token ${fmtTok(total)}` : null,
+        tokens.output != null ? `输出 ${fmtTok(tokens.output)}` : null,
+        cache ? `缓存 ${fmtTok(cache)}` : null,
+        tokens.reasoning ? `推理 ${fmtTok(tokens.reasoning)}` : null,
+        usage.session_cost_usd != null ? `估算 $${Number(usage.session_cost_usd).toFixed(2)}` : null,
+      ].filter(Boolean);
+      return bits.length
+        ? `<div class="drawer-hw-pm2">🧮 ${esc(runtime)}: ${esc(bits.join(' · '))}</div>`
+        : '';
+    }).join('');
     const reportedAgo = data.health.reported_at ? timeAgo(data.health.reported_at) : '';
 
     return `<div class="drawer-section">
@@ -82,6 +107,7 @@ const DetailDrawer = {
       ${gauge('🧠 内存', h.memory?.pct, h.memory?.status, memDetail)}
       ${gauge('⚡ CPU', h.cpu?.pct, h.cpu?.pct > 90 ? 'critical' : h.cpu?.pct > 80 ? 'warning' : 'ok', cpuDetail)}
       ${pm2HTML}
+      ${usageHTML}
     </div>`;
   },
 
