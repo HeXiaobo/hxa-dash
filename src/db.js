@@ -1,3 +1,21 @@
+// Persistent SQLite store for health data (survives pm2 restart)
+const path = require('path');
+const Database = require('better-sqlite3');
+const healthDbPath = path.join(__dirname, '..', 'health.db');
+const healthDb = new Database(healthDbPath);
+healthDb.pragma('journal_mode = WAL');
+healthDb.exec(`
+  CREATE TABLE IF NOT EXISTS agent_health (
+    name TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    reported_at INTEGER NOT NULL
+  )
+`);
+const _healthUpsertStmt = healthDb.prepare(
+  'INSERT OR REPLACE INTO agent_health (name, data, reported_at) VALUES (?, ?, ?)'
+);
+const _healthAllStmt = healthDb.prepare('SELECT name, data, reported_at FROM agent_health');
+
 // In-memory data store (cache layer — all real data comes from Connect + GitLab)
 const store = {
   agents: new Map(),      // name -> agent
@@ -6,6 +24,15 @@ const store = {
   collab_edges: new Map(), // "source|target|type" -> edge
   agent_health: new Map()  // name -> { disk, memory, cpu, pm2, runtime, quota, reported_at }
 };
+
+// Restore health data from SQLite on startup
+for (const row of _healthAllStmt.all()) {
+  try {
+    const parsed = JSON.parse(row.data);
+    parsed.reported_at = row.reported_at;
+    store.agent_health.set(row.name, parsed);
+  } catch (_) { /* skip corrupt rows */ }
+}
 
 // Agent operations
 const upsertAgent = (agent) => {
@@ -698,9 +725,12 @@ const getAgentSparkline7d = (agentName) => {
   return [...buckets.values()];
 };
 
-// Agent health operations (#115)
+// Agent health operations (#115) — write-through to SQLite for persistence
 const upsertAgentHealth = (name, health) => {
-  store.agent_health.set(name, { ...health, reported_at: Date.now() });
+  const now = Date.now();
+  const entry = { ...health, reported_at: now };
+  store.agent_health.set(name, entry);
+  try { _healthUpsertStmt.run(name, JSON.stringify(health), now); } catch (_) {}
 };
 
 const getAgentHealth = (name) => store.agent_health.get(name) || null;

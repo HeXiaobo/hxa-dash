@@ -3,3 +3,4 @@ data/
 config/sources.json
 build/
 .env
+health.db
