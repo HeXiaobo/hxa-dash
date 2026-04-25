@@ -88,9 +88,9 @@ const Metrics = {
       <tr>
         <td class="metrics-agent-name">${esc(a.name)}</td>
         <td><span class="work-status-badge ${esc(a.status)}">${this._statusLabel(a.status)}</span></td>
-        <td>${esc(this._runtimeLabel(a.runtime_type, a.runtime_version, a.runtime_status))}</td>
+        <td class="mobile-hide">${esc(this._runtimeLabel(a.runtime_type, a.runtime_version, a.runtime_status))}</td>
         <td class="metrics-num">${a.today_messages}</td>
-        <td class="metrics-num">${a.today_tasks}</td>
+        <td class="metrics-num mobile-hide">${a.today_tasks}</td>
         <td class="metrics-num metrics-last-active">${this._formatLastActive(a.last_active)}</td>
       </tr>
     `).join('');
@@ -102,9 +102,9 @@ const Metrics = {
             <tr>
               <th>Agent</th>
               <th>状态</th>
-              <th>Runtime</th>
+              <th class="mobile-hide">Runtime</th>
               <th class="metrics-num-header">今日互动</th>
-              <th class="metrics-num-header">今日推进</th>
+              <th class="metrics-num-header mobile-hide">今日推进</th>
               <th class="metrics-num-header">最后活跃</th>
             </tr>
           </thead>

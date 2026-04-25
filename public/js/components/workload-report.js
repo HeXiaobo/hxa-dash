@@ -104,8 +104,8 @@ const WorkloadReport = {
           </div>
         </td>
         <td>${bar(a.deliverables, maxVals.deliverables, '#3fb950')}</td>
-        <td>${bar(a.task_advances, maxVals.task_advances, '#58a6ff')}</td>
-        <td>${bar(a.message_interactions, maxVals.message_interactions, '#bc8cff')}</td>
+        <td class="mobile-hide">${bar(a.task_advances, maxVals.task_advances, '#58a6ff')}</td>
+        <td class="mobile-hide">${bar(a.message_interactions, maxVals.message_interactions, '#bc8cff')}</td>
         <td>${bar(a.active_days, maxVals.active_days, '#f0883e')}</td>
         <td class="workload-total">${a.total_events}</td>
       </tr>`;

@@ -219,11 +219,11 @@ const TokenDashboard = {
           <tr>
             <th>#</th>
             <th>成员</th>
-            <th>输入估算</th>
-            <th>输出估算</th>
+            <th class="mobile-hide">输入估算</th>
+            <th class="mobile-hide">输出估算</th>
             <th>合计</th>
             <th>估算费用</th>
-            <th>倾向</th>
+            <th class="mobile-hide">倾向</th>
             <th>占比</th>
           </tr>
         </thead>
@@ -242,11 +242,11 @@ const TokenDashboard = {
                 <span class="token-agent-dot" style="background:${this._COLORS[i % this._COLORS.length]}"></span>
                 <span>${esc(a.name)}</span>
               </td>
-              <td>${fmt(input)}</td>
-              <td>${fmt(output)}</td>
+              <td class="mobile-hide">${fmt(input)}</td>
+              <td class="mobile-hide">${fmt(output)}</td>
               <td><strong>${fmt(total)}</strong></td>
               <td>$${Number(a.cost_usd || 0).toFixed(2)}</td>
-              <td><span style="display:inline-flex;padding:2px 8px;border-radius:999px;background:rgba(88,166,255,.12);color:#79c0ff;font-size:11px;">${tendency}</span></td>
+              <td class="mobile-hide"><span style="display:inline-flex;padding:2px 8px;border-radius:999px;background:rgba(88,166,255,.12);color:#79c0ff;font-size:11px;">${tendency}</span></td>
               <td>
                 <div class="token-bar-cell">
                   <div class="token-bar" style="width:${barW}%;background:${this._COLORS[i % this._COLORS.length]}"></div>

@@ -67,8 +67,8 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
-  padding: 16px 24px;
+  gap: clamp(10px, 2vw, 20px);
+  padding: clamp(10px, 2vw, 16px) clamp(12px, 3vw, 24px);
   border-bottom: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(14px);
@@ -79,7 +79,7 @@ header {
 
 .header-left { display: flex; align-items: center; gap: 20px; }
 header h1 {
-  font-size: 28px;
+  font-size: clamp(20px, 4vw, 28px);
   font-weight: 800;
   white-space: nowrap;
   letter-spacing: -0.03em;
@@ -136,7 +136,7 @@ header h1 {
 .sub-tabs {
   display: flex;
   gap: 2px;
-  padding: 12px 24px 0;
+  padding: 12px clamp(10px, 3vw, 24px) 0;
   margin-bottom: 0;
 }
 .sub-tabs.hidden { display: none; }
@@ -218,7 +218,7 @@ header h1 {
 main {
   position: relative;
   z-index: 1;
-  padding: 28px 24px 72px;
+  padding: 28px clamp(10px, 3vw, 24px) 72px;
   max-width: 1440px;
   margin: 0 auto;
 }
@@ -227,11 +227,11 @@ main {
 .page.active { display: block; }
 
 .section {
-  margin-bottom: 20px;
+  margin-bottom: clamp(14px, 2.5vw, 20px);
   background: var(--bg-card);
   border: 2px solid var(--border);
-  border-radius: 18px;
-  padding: 22px;
+  border-radius: clamp(14px, 2.5vw, 18px);
+  padding: clamp(14px, 3vw, 22px);
   box-shadow: var(--shadow-soft);
 }
 
@@ -240,7 +240,7 @@ main {
   margin-bottom: 12px;
 }
 .section-header h2 {
-  font-size: 18px;
+  font-size: clamp(15px, 3vw, 18px);
   font-weight: 700;
   letter-spacing: -0.03em;
 }
@@ -291,7 +291,7 @@ main {
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 12px;
+  gap: clamp(8px, 1.5vw, 12px);
 }
 .card-grid-wide {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -300,8 +300,8 @@ main {
 .agent-card {
   background: #fff;
   border: 2px solid var(--border);
-  border-radius: 18px;
-  padding: 16px;
+  border-radius: clamp(14px, 2.5vw, 18px);
+  padding: clamp(12px, 2vw, 16px);
   cursor: pointer;
   transition: border-color .2s, transform .18s ease, box-shadow .18s ease;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.04);
@@ -343,7 +343,7 @@ main {
   margin-bottom: 8px;
 }
 
-.agent-name { font-size: 16px; font-weight: 600; }
+.agent-name { font-size: clamp(14px, 2.5vw, 16px); font-weight: 600; }
 
 .online-dot {
   width: 10px; height: 10px; border-radius: 50%; display: inline-block;
@@ -467,7 +467,7 @@ main {
 .stat-box {
   background: #fafafa; border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center;
 }
-.stat-box .stat-num { font-size: 22px; font-weight: 700; color: var(--accent); }
+.stat-box .stat-num { font-size: clamp(16px, 3vw, 22px); font-weight: 700; color: var(--accent); }
 .stat-box .stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
 
 .drawer-task-list, .drawer-event-list, .drawer-collab-list {
@@ -644,7 +644,7 @@ main {
 .check-role { font-size: 11px; color: var(--text-secondary); margin-left: auto; }
 
 /* Board */
-.bottom-row { display: flex; gap: 24px; }
+.bottom-row { display: flex; gap: clamp(14px, 3vw, 24px); }
 .flex-1 { flex: 1; min-width: 0; }
 
 .board { display: flex; gap: 12px; min-width: 0; overflow: hidden; }
@@ -782,7 +782,7 @@ main {
 }
 .btn-secondary:hover { background: var(--accent-yellow); border-color: var(--text); }
 
-/* Responsive */
+/* Responsive — Tablet (≤900px) */
 @media (max-width: 900px) {
   .bottom-row { flex-direction: column; }
   .board { flex-direction: column; }
@@ -791,10 +791,20 @@ main {
   .drawer-stat-grid { grid-template-columns: repeat(2, 1fr); }
   .collab-layout { flex-direction: column; height: auto; }
 
-  #main-nav { overflow-x: auto; }
   .filter-label-text { display: none; }
   .btn-filter-global { padding: 4px 8px; }
-  .nav-item { white-space: nowrap; font-size: 12px; padding: 5px 10px; }
+
+  /* Sub-tabs horizontal scroll */
+  .sub-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; padding-bottom: 8px; }
+  .sub-tab { white-space: nowrap; flex-shrink: 0; }
+
+  /* Header compact */
+  header { padding: 12px 16px; gap: 12px; }
+  .header-left { gap: 10px; }
+  .header-right { gap: 8px; }
+
+  /* Pipeline: 2-col on tablet */
+  .pipe-stages { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Health Score Dot (#45) */
@@ -905,7 +915,7 @@ main {
 .tc-stat-box {
   background: #fafafa; border: 1px solid var(--border); border-radius: 14px; padding: 14px; text-align: center;
 }
-.tc-stat-num { font-size: 24px; font-weight: 700; color: var(--accent); }
+.tc-stat-num { font-size: clamp(18px, 3.5vw, 24px); font-weight: 700; color: var(--accent); }
 .tc-stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
 .tc-stat-num.tc-warn { color: var(--orange); }
 .tc-stat-num.tc-danger { color: var(--red); }
@@ -1186,7 +1196,7 @@ main {
   text-align: center;
 }
 .metrics-card-value {
-  font-size: 28px;
+  font-size: clamp(20px, 4vw, 28px);
   font-weight: 700;
   color: var(--accent);
   line-height: 1.1;
@@ -1354,6 +1364,13 @@ main {
 }
 .nav-hamburger:hover { background: var(--bg-hover); }
 
+/* Hamburger visible at ≤900px (must come after base display:none) */
+@media (max-width: 900px) {
+  .nav-hamburger { display: inline-flex; align-items: center; justify-content: center; }
+  #main-nav { display: none; }
+  .nav-sep { width: 100%; height: 1px; margin: 4px 0; }
+}
+
 /* Mobile nav overlay */
 .nav-mobile-open #main-nav {
   display: flex !important;
@@ -1409,34 +1426,36 @@ main {
   .history-toggle,
   .drawer-close,
   .modal-close,
+  .sub-tab,
   select.select-filter {
     min-height: 44px;
     padding-top: 10px;
     padding-bottom: 10px;
   }
 
-  /* Hamburger visible, nav hidden by default */
-  .nav-hamburger { display: inline-flex; align-items: center; justify-content: center; }
-  #main-nav { display: none; }
-  .nav-sep { width: 100%; height: 1px; margin: 4px 0; }
-
-  /* Header layout */
-  header { padding: 10px 16px; }
-  .header-left { gap: 10px; }
-  .header-right { gap: 8px; }
-  .brand-mark { font-size: 24px; }
+  /* Header layout — tighter */
+  header { padding: 10px 12px; }
+  .header-left { gap: 8px; }
+  .header-right { gap: 6px; }
+  .brand-mark { font-size: 22px; }
   .last-update { display: none; }
+  .refresh-sep { display: none; }
+  .status-badge { font-size: 11px; padding: 4px 8px; }
 
-  /* Main content padding */
-  main { padding: 12px 12px; }
-  .section { padding: 18px; border-radius: 22px; }
+  /* Main content — tighter spacing */
+  main { padding: 10px 10px; }
+  .section { padding: 14px; border-radius: 16px; margin-bottom: 14px; }
+  .section-header { margin-bottom: 8px; }
+
+  /* Agent cards — compact */
+  .agent-card { padding: 12px; border-radius: 14px; }
 
   /* Drawer full-width */
-  .drawer-content { width: 100% !important; max-width: 100%; }
+  .drawer-content { width: 100% !important; max-width: 100%; padding: 16px; }
   .drawer-stat-grid { grid-template-columns: repeat(2, 1fr); }
 
   /* Board columns stack */
-  .bottom-row { flex-direction: column; }
+  .bottom-row { flex-direction: column; gap: 14px; }
   .board { flex-direction: column; }
 
   /* Collab layout stack */
@@ -1444,27 +1463,86 @@ main {
   .collab-sidebar { width: 100%; max-height: 200px; }
 
   /* Filter bar wraps */
-  .filter-bar { flex-wrap: wrap; gap: 8px; }
+  .filter-bar { flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
 
   /* Section header wraps */
   .section-header { flex-wrap: wrap; gap: 8px; }
   .section-tools { flex-wrap: wrap; }
 
   /* Team capacity grid: 2 cols on mobile */
-  .team-capacity-grid { grid-template-columns: repeat(2, 1fr); }
+  .team-capacity-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .tc-stat-box { padding: 10px; }
 
-  /* Metrics cards: 2 cols */
-  .metrics-cards { grid-template-columns: repeat(2, 1fr); }
+  /* Metrics cards: 2 cols, tighter */
+  .metrics-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .metrics-card { padding: 10px 12px; }
+
+  /* Token summary: 2 cols on mobile */
+  .token-summary { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .token-stat { padding: 10px 12px; }
+  .token-layout { flex-direction: column; gap: 14px; }
 
   /* Input/select full width in filter bar */
   .search-input { width: 100%; }
 
-  /* Workload table horizontal scroll */
-  .workload-table-wrap { -webkit-overflow-scrolling: touch; }
-  .metrics-table-wrap  { -webkit-overflow-scrolling: touch; }
+  /* Workload table scroll with hint shadow */
+  .workload-table-wrap,
+  .metrics-table-wrap,
+  .token-table-container {
+    -webkit-overflow-scrolling: touch;
+    background:
+      linear-gradient(to right, var(--bg-card) 30%, transparent),
+      linear-gradient(to left, var(--bg-card) 30%, transparent),
+      linear-gradient(to right, rgba(0,0,0,.08), transparent),
+      linear-gradient(to left, rgba(0,0,0,.08), transparent);
+    background-position: left, right, left, right;
+    background-size: 20px 100%, 20px 100%, 10px 100%, 10px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
 
   /* Collab graph height */
   .graph-container-large { height: 60vh; min-height: 300px; }
+
+  /* Pipeline: still 2-col (from 900px rule) */
+  .pipe-summary-bar { gap: 8px; }
+  .pipe-stat { padding: 8px 12px; min-width: 60px; }
+
+  /* Workload heatmap scroll with hint */
+  .workload-heatmap-wrap {
+    -webkit-overflow-scrolling: touch;
+    background:
+      linear-gradient(to right, var(--bg-card) 30%, transparent),
+      linear-gradient(to left, var(--bg-card) 30%, transparent),
+      linear-gradient(to right, rgba(0,0,0,.08), transparent),
+      linear-gradient(to left, rgba(0,0,0,.08), transparent);
+    background-position: left, right, left, right;
+    background-size: 20px 100%, 20px 100%, 10px 100%, 10px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+
+  /* Heatmap and trend charts — constrain for small screens */
+  .trends-heatmap-area {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Modal compact */
+  .modal-content { max-width: 95vw; }
+
+  /* MR Board compact */
+  .mrb-stat { padding: 8px 12px; min-width: 80px; }
+  .mrb-card { padding: 12px; }
+
+  /* About card full width */
+  .about-card { max-width: 100%; padding: 20px; }
+
+  /* Blocker section compact */
+  .blocker-definitions { padding: 4px 12px 6px; gap: 8px; }
+  .blocker-item { padding: 6px 10px; }
+
+  /* Output grid: 2 cols on mobile */
+  .output-summary-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ===== #50: Sort dropdown for agent cards ===== */
@@ -1722,7 +1800,7 @@ main {
   text-align: center;
 }
 .token-stat-value {
-  font-size: 22px;
+  font-size: clamp(16px, 3vw, 22px);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -1735,7 +1813,7 @@ main {
 
 .token-layout {
   display: flex;
-  gap: 24px;
+  gap: clamp(14px, 3vw, 24px);
   margin-top: 16px;
 }
 .flex-2 { flex: 2; min-width: 0; }
@@ -1806,7 +1884,6 @@ main {
 
 @media (max-width: 768px) {
   .token-layout { flex-direction: column; }
-  .token-summary { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* Health Diagnostics (#94) */
@@ -2047,6 +2124,8 @@ main {
   .health-info-grid { grid-template-columns: 1fr; }
   .health-gauges { flex-direction: column; align-items: center; }
   .health-agent-grid { grid-template-columns: 1fr 1fr; }
+  .health-banner { padding: 12px 14px; gap: 8px; }
+  .health-card { padding: 12px 14px; }
 }
 
 /* PM2 restart buttons & alert banner (#123) */
@@ -2248,7 +2327,8 @@ main {
   .live-agent-body { grid-template-columns: 1fr; }
   .live-summary-bar { gap: 8px; }
   .live-stat { padding: 8px 12px; min-width: 60px; }
-  .live-stat-num { font-size: 18px; }
+  .live-stat-num { font-size: clamp(16px, 3vw, 18px); }
+  .live-agent-card { padding: 12px; }
 }
 
 /* ===== Projects Page (#76) ===== */
@@ -2268,7 +2348,7 @@ main {
 }
 
 .summary-number {
-  font-size: 1.8em;
+  font-size: clamp(1.2em, 3vw, 1.8em);
   font-weight: 700;
   color: var(--text-primary, #f1f5f9);
 }
@@ -2473,7 +2553,7 @@ main {
   min-width: 70px;
 }
 .pipe-stat-num {
-  font-size: 22px;
+  font-size: clamp(16px, 3vw, 22px);
   font-weight: 700;
   line-height: 1;
 }
@@ -2626,8 +2706,23 @@ main {
 }
 
 @media (max-width: 768px) {
-  .pipe-stages { grid-template-columns: 1fr; }
   .pipe-canvas { display: none; }
+}
+
+/* Very small screens — pipeline 1-col */
+@media (max-width: 480px) {
+  .pipe-stages { grid-template-columns: 1fr; }
+  .team-capacity-grid { grid-template-columns: 1fr; }
+  .metrics-cards { grid-template-columns: 1fr; }
+  .token-summary { grid-template-columns: 1fr; }
+  .project-summary-cards { grid-template-columns: 1fr; }
+  .health-agent-grid { grid-template-columns: 1fr; }
+  .output-summary-grid { grid-template-columns: 1fr; }
+  .live-summary-bar { flex-direction: column; }
+  .mrb-summary { flex-direction: column; }
+  .mrb-stat { min-width: auto; }
+  header { flex-wrap: wrap; }
+  .header-right { width: 100%; justify-content: flex-end; }
 }
 
 /* ===== Time Estimates (#79) ===== */
@@ -2671,7 +2766,7 @@ main {
 /* MR Pipeline Board (#109 + #110) */
 .mrb-summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .mrb-stat { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 20px; text-align: center; min-width: 100px; }
-.mrb-stat-num { display: block; font-size: 24px; font-weight: 700; }
+.mrb-stat-num { display: block; font-size: clamp(18px, 3.5vw, 24px); font-weight: 700; }
 .mrb-stat-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .5px; }
 .mrb-stat-success .mrb-stat-num { color: var(--green); }
 .mrb-stat-running .mrb-stat-num { color: var(--accent); }
@@ -2874,3 +2969,14 @@ main {
 .drawer-hw-val { font-weight: 600; }
 .drawer-hw-detail { font-size: 10px; color: var(--text-secondary); }
 .drawer-hw-pm2 { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+/* ===== Mobile Utility: hide non-critical table columns ===== */
+@media (max-width: 768px) {
+  .mobile-hide { display: none !important; }
+}
+
+/* ===== Safe area insets for notched devices ===== */
+@supports (padding: env(safe-area-inset-bottom)) {
+  main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  header { padding-left: max(clamp(12px, 3vw, 24px), env(safe-area-inset-left)); padding-right: max(clamp(12px, 3vw, 24px), env(safe-area-inset-right)); }
+}
