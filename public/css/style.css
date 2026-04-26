@@ -562,6 +562,25 @@ main {
 .btn-toggle:hover { color: var(--text); border-color: var(--accent); }
 .btn-toggle.active { background: var(--accent-yellow); color: var(--text); border-color: var(--text); }
 
+.token-custom-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.token-custom-range[hidden] { display: none; }
+.token-date-input {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
 /* Heatmap Matrix (#29) */
 .matrix-container {
   background: #fff; border: 2px solid var(--border);

@@ -2,23 +2,61 @@
 // Kept as a secondary technical analysis surface; labels are softened for non-code teams.
 const TokenDashboard = {
   _data: null,
-  _days: 7,
+  _range: 'today',
+  _customStart: null,
+  _customEnd: null,
   _COLORS: ['#58a6ff', '#3fb950', '#bc8cff', '#f0883e', '#79c0ff', '#56d364', '#d2a8ff', '#f85149'],
 
   init() {
-    document.querySelectorAll('[data-token-period]').forEach(btn => {
+    const today = this._todayKey();
+    this._customStart = today;
+    this._customEnd = today;
+    const startInput = document.getElementById('token-start-date');
+    const endInput = document.getElementById('token-end-date');
+    if (startInput) startInput.value = today;
+    if (endInput) endInput.value = today;
+
+    document.querySelectorAll('[data-token-range]').forEach(btn => {
       btn.addEventListener('click', () => {
-        this._days = parseInt(btn.dataset.tokenPeriod);
-        document.querySelectorAll('[data-token-period]').forEach(b =>
+        this._range = btn.dataset.tokenRange || 'today';
+        document.querySelectorAll('[data-token-range]').forEach(b =>
           b.classList.toggle('active', b === btn)
         );
+        this._syncCustomRangeVisibility();
         this.fetch();
       });
     });
 
+    [startInput, endInput].forEach(input => {
+      if (!input) return;
+      input.addEventListener('change', () => {
+        this._customStart = startInput?.value || today;
+        this._customEnd = endInput?.value || this._customStart;
+        this._range = 'custom';
+        document.querySelectorAll('[data-token-range]').forEach(b =>
+          b.classList.toggle('active', b.dataset.tokenRange === 'custom')
+        );
+        this._syncCustomRangeVisibility();
+        this.fetch();
+      });
+    });
+
+    this._syncCustomRangeVisibility();
+
     window.addEventListener('resize', () => {
       if (this._data) this._render();
     });
+  },
+
+  _todayKey() {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 10);
+  },
+
+  _syncCustomRangeVisibility() {
+    const custom = document.getElementById('token-custom-range');
+    if (custom) custom.hidden = this._range !== 'custom';
   },
 
   _hasObserved() {
@@ -28,10 +66,10 @@ const TokenDashboard = {
   _fmt(n) {
     if (n == null || Number.isNaN(Number(n))) return '0';
     n = Number(n);
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B tok';
-    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M tok';
-    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K tok';
-    return Math.round(n) + ' tok';
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(Math.round(n));
   },
 
   _cacheTokens(agent) {
@@ -62,7 +100,7 @@ const TokenDashboard = {
     const chartSub = chartSection?.querySelector('.trends-sublabel');
     const chartLegend = chartSection?.querySelector('.token-chart-legend');
     if (chartTitle) chartTitle.textContent = '观测快照';
-    if (chartSub) chartSub.textContent = '各 agent 本机会话 Token（输入 + 输出 + 缓存 + 推理）';
+    if (chartSub) chartSub.textContent = '各 agent 本机会话用量（输入 + 输出 + 缓存 + 推理）';
     if (chartLegend) chartLegend.innerHTML = `
       <span class="trends-legend-item"><span class="trends-legend-dot" style="background:#58a6ff"></span>输入</span>
       <span class="trends-legend-item"><span class="trends-legend-dot" style="background:#79c0ff"></span>缓存</span>
@@ -82,7 +120,16 @@ const TokenDashboard = {
     if (container) container.innerHTML = '<div class="trends-loading">加载中…</div>';
 
     try {
-      const res = await window.fetch(`${BASE}/api/tokens?days=${this._days}`);
+      const params = new URLSearchParams();
+      if (this._range === 'custom') {
+        params.set('start', this._customStart || this._todayKey());
+        params.set('end', this._customEnd || this._customStart || this._todayKey());
+      } else if (this._range === 'today') {
+        params.set('days', '1');
+      } else {
+        params.set('days', String(parseInt(this._range, 10) || 1));
+      }
+      const res = await window.fetch(`${BASE}/api/tokens?${params.toString()}`);
       if (!res.ok) throw new Error('fetch failed');
       this._data = await res.json();
       this._render();
@@ -132,15 +179,15 @@ const TokenDashboard = {
         </div>
         <div class="token-stat">
           <div class="token-stat-value">${this._fmt(observedCache)}</div>
-          <div class="token-stat-label">缓存 token</div>
+          <div class="token-stat-label">缓存</div>
         </div>
         <div class="token-stat">
           <div class="token-stat-value">${this._fmt(observedReasoning)}</div>
-          <div class="token-stat-label">推理 token</div>
+          <div class="token-stat-label">推理</div>
         </div>
         <div class="token-stat">
           <div class="token-stat-value">${this._fmt(Number(observedSummary.total_output || 0))}</div>
-          <div class="token-stat-label">输出 token</div>
+          <div class="token-stat-label">输出</div>
         </div>
       `;
       return;
@@ -361,6 +408,6 @@ const TokenDashboard = {
     ctx.fillText(this._fmt(totalValue), cx, cy - 6);
     ctx.font = '10px -apple-system, sans-serif';
     ctx.fillStyle = '#8b949e';
-    ctx.fillText('观测 token', cx, cy + 10);
+    ctx.fillText('观测总量', cx, cy + 10);
   }
 };

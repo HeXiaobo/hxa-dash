@@ -400,9 +400,16 @@
           <h2>Token 用量分析</h2>
           <div class="section-tools">
             <div class="btn-group">
-              <button data-token-period="7" class="btn-toggle active">7天</button>
-              <button data-token-period="14" class="btn-toggle">14天</button>
-              <button data-token-period="30" class="btn-toggle">30天</button>
+              <button data-token-range="today" class="btn-toggle active">今天</button>
+              <button data-token-range="7" class="btn-toggle">7天</button>
+              <button data-token-range="14" class="btn-toggle">14天</button>
+              <button data-token-range="30" class="btn-toggle">30天</button>
+              <button data-token-range="custom" class="btn-toggle">自定义</button>
+            </div>
+            <div id="token-custom-range" class="token-custom-range" hidden>
+              <input id="token-start-date" class="token-date-input" type="date" aria-label="开始日期">
+              <span>至</span>
+              <input id="token-end-date" class="token-date-input" type="date" aria-label="结束日期">
             </div>
           </div>
         </div>
@@ -413,7 +420,7 @@
       <div class="token-layout">
         <section class="section flex-2">
           <div class="section-header"><h2>消耗趋势</h2></div>
-          <div class="trends-sublabel">每日 Token 用量（输入 + 输出）</div>
+          <div class="trends-sublabel">各 agent 本机会话用量（输入 + 输出 + 缓存 + 推理）</div>
           <div id="token-chart" class="trends-chart-area"></div>
           <div class="token-chart-legend">
             <span class="trends-legend-item"><span class="trends-legend-dot" style="background:#58a6ff"></span>输入</span>
@@ -601,7 +608,7 @@
   <script src="js/components/pipeline.js?v=3"></script>
   <script src="js/components/mr-board.js?v=3"></script>
   <script src="js/components/limits-dashboard.js?v=4"></script>
-  <script src="js/components/token-dashboard.js?v=5"></script>
+  <script src="js/components/token-dashboard.js?v=6"></script>
   <script src="js/components/time-estimates.js?v=3"></script>
   <script src="js/components/health-diagnostics.js?v=3"></script>
   <script src="js/components/projects.js?v=3"></script>

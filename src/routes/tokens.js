@@ -8,6 +8,8 @@ const { buildAgents } = require('./team');
 // Cost per 1M tokens (USD) — Claude Sonnet pricing
 const COST_PER_M_INPUT  = 3.00;
 const COST_PER_M_OUTPUT = 15.00;
+const DAY_MS = 86400000;
+const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 // Per-action token estimates (based on typical Claude API usage patterns)
 // These are rough estimates — actual usage depends on prompt/response complexity
@@ -39,9 +41,75 @@ function usageTotal(tokens) {
   return (tokens.input || 0) + (tokens.output || 0) + (tokens.cache_creation || 0) + (tokens.cache_read || 0);
 }
 
-function buildObservedUsage() {
+function dateKey(ms) {
+  return new Date(ms + TZ_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function startOfDateKey(key) {
+  return Date.parse(`${key}T00:00:00+08:00`);
+}
+
+function addDays(key, days) {
+  return dateKey(startOfDateKey(key) + days * DAY_MS);
+}
+
+function parseDateKey(value) {
+  const normalized = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+}
+
+function buildTimeWindow(query, now = Date.now()) {
+  const today = dateKey(now);
+  const requestedStart = parseDateKey(query.start);
+  const requestedEnd = parseDateKey(query.end);
+
+  if (requestedStart && requestedEnd) {
+    const startDate = requestedStart <= requestedEnd ? requestedStart : requestedEnd;
+    const endDate = requestedStart <= requestedEnd ? requestedEnd : requestedStart;
+    const startMs = startOfDateKey(startDate);
+    const endExclusiveMs = startOfDateKey(addDays(endDate, 1));
+    return {
+      mode: 'custom',
+      days: Math.max(1, Math.round((endExclusiveMs - startMs) / DAY_MS)),
+      start_date: startDate,
+      end_date: endDate,
+      start_ms: startMs,
+      end_ms: endExclusiveMs,
+      timezone: 'Asia/Shanghai',
+    };
+  }
+
+  const parsedDays = parseInt(query.days, 10);
+  const days = Number.isFinite(parsedDays) && parsedDays > 0
+    ? Math.min(parsedDays, 30)
+    : 1;
+  const startDate = addDays(today, -(days - 1));
+  const endDate = today;
+  return {
+    mode: days === 1 ? 'today' : 'rolling_days',
+    days,
+    start_date: startDate,
+    end_date: endDate,
+    start_ms: startOfDateKey(startDate),
+    end_ms: startOfDateKey(addDays(endDate, 1)),
+    timezone: 'Asia/Shanghai',
+  };
+}
+
+function usageSampledAt(agent) {
+  const sampledAt = agent.usage?.sampled_at;
+  if (typeof sampledAt === 'number' && Number.isFinite(sampledAt)) return sampledAt;
+  const heartbeatAt = agent.runtime?.last_heartbeat_at;
+  return typeof heartbeatAt === 'number' && Number.isFinite(heartbeatAt) ? heartbeatAt : null;
+}
+
+function buildObservedUsage(window) {
   const agents = buildAgents()
     .filter(agent => agent.usage?.supported)
+    .filter(agent => {
+      const sampledAt = usageSampledAt(agent);
+      return sampledAt != null && sampledAt >= window.start_ms && sampledAt < window.end_ms;
+    })
     .map(agent => {
       const tokens = agent.usage.session_tokens || {};
       return {
@@ -86,6 +154,7 @@ function buildObservedUsage() {
   return {
     supported: agents.length > 0,
     agent_count: agents.length,
+    window,
     summary: {
       ...summary,
       total_cost_usd: Math.round(summary.total_cost_usd * 100) / 100,
@@ -97,16 +166,17 @@ function buildObservedUsage() {
 
 // GET /api/tokens — token consumption estimates for a time window
 router.get('/', (req, res) => {
-  const days = Math.min(parseInt(req.query.days) || 7, 30);
+  const window = buildTimeWindow(req.query);
+  const days = window.days;
   const now = Date.now();
-  const dayMs = 86400000;
-  const sinceMs = now - days * dayMs;
+  const sinceMs = window.start_ms;
 
   const agents = db.getAllAgents();
-  const observed = buildObservedUsage();
+  const observed = buildObservedUsage(window);
   if (agents.length === 0) {
     return res.json({
       window_days: days,
+      window,
       estimated: true,
       observed,
       summary: { total_input: 0, total_output: 0, total_tokens: 0, total_cost_usd: 0, avg_daily_tokens: 0, avg_daily_cost_usd: 0 },
@@ -122,8 +192,7 @@ router.get('/', (req, res) => {
 
   // Initialize all days in window
   for (let d = days - 1; d >= 0; d--) {
-    const date = new Date(now - d * dayMs);
-    const key = date.toISOString().slice(0, 10);
+    const key = addDays(window.end_date, -d);
     dailyMap.set(key, { total_input: 0, total_output: 0, agents: {} });
   }
 
@@ -131,8 +200,8 @@ router.get('/', (req, res) => {
   const allEvents = db.getEventsInWindow(sinceMs);
 
   for (const event of allEvents) {
-    const date = new Date(event.timestamp);
-    const key = date.toISOString().slice(0, 10);
+    if (event.timestamp >= window.end_ms) continue;
+    const key = dateKey(event.timestamp);
     const agent = event.agent;
     if (!agent || !dailyMap.has(key)) continue;
 
@@ -186,6 +255,7 @@ router.get('/', (req, res) => {
 
   res.json({
     window_days: days,
+    window,
     estimated: true,
     observed,
     methodology: '基于 GitLab 活动事件估算，每类操作按典型 Claude API 用量换算 token 数',
