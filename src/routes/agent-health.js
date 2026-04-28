@@ -155,13 +155,33 @@ function sanitizeRuntime(runtime) {
   };
 }
 
+// GET /api/agent-health/roster — roster data for all agents (花名册采集)
+router.get('/roster', (req, res) => {
+  const allHealth = db.getAllAgentHealth();
+  const now = Date.now();
+  const TEST_AGENTS = new Set(['healthy-bot', 'stall-bot', 'crit-bot', 'agent-a', 'agent-b', 'test-agent']);
+  const roster = Object.entries(allHealth)
+    .filter(([name]) => !TEST_AGENTS.has(name))
+    .map(([name, health]) => ({
+      name,
+      reported_at: health.reported_at,
+      stale: (now - health.reported_at) > STALE_THRESHOLD_MS,
+      runtime_type: health.runtime?.type || null,
+      runtime_version: health.runtime?.version || null,
+      runtime_status: health.runtime?.status || null,
+      roster: health.roster || null,
+    }))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  res.json({ count: roster.length, timestamp: now, agents: roster });
+});
+
 // POST /api/agent-health/:name — agent reports its system health (auth required)
 router.post('/:name', requireHealthAuth, (req, res) => {
   const { name } = req.params;
   const agent = db.getAgent(name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const { disk, memory, cpu, pm2, hostname, runtime, quota, usage } = req.body;
+  const { disk, memory, cpu, pm2, hostname, runtime, quota, usage, roster } = req.body;
 
   // Validate required fields
   if (!disk || !memory) {
@@ -215,9 +235,11 @@ router.post('/:name', requireHealthAuth, (req, res) => {
             .filter(([key, value]) => key && value)
         )
       : null,
+    roster: roster && typeof roster === 'object' ? roster : null,
   };
 
   db.upsertAgentHealth(name, health);
+  if (Math.random() < 0.01) db.pruneHealthHistory(Date.now() - 30 * 86400000);
   res.json({ ok: true });
 });
 

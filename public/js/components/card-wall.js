@@ -333,7 +333,9 @@ const CardWall = {
       </div>
     ` : runtime.type === 'openclaw'
       ? `<div class="card-activity-metrics"><span class="card-stat" title="OpenClaw 暂不支持限额">🧩 OpenClaw</span></div>`
-      : '';
+      : runtime.type === 'codex'
+        ? `<div class="card-activity-metrics"><span class="card-stat" title="Codex 额度数据待更新（需活跃会话产生限额快照）">⏳ 额度待更新</span></div>`
+        : '';
     const usage = agent.usage || {};
     const usageTokens = usage.session_tokens || {};
     const usageTotal = usageTokens.total ?? ((usageTokens.input || 0) + (usageTokens.output || 0));

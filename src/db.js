@@ -11,8 +11,25 @@ healthDb.exec(`
     reported_at INTEGER NOT NULL
   )
 `);
+healthDb.exec(`
+  CREATE TABLE IF NOT EXISTS agent_health_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    reported_at INTEGER NOT NULL,
+    data TEXT NOT NULL
+  )
+`);
+healthDb.exec(`
+  CREATE INDEX IF NOT EXISTS idx_ahh_name_reported ON agent_health_history (name, reported_at)
+`);
+healthDb.exec(`
+  CREATE INDEX IF NOT EXISTS idx_ahh_reported ON agent_health_history (reported_at)
+`);
 const _healthUpsertStmt = healthDb.prepare(
   'INSERT OR REPLACE INTO agent_health (name, data, reported_at) VALUES (?, ?, ?)'
+);
+const _healthHistoryInsertStmt = healthDb.prepare(
+  'INSERT INTO agent_health_history (name, reported_at, data) VALUES (?, ?, ?)'
 );
 const _healthAllStmt = healthDb.prepare('SELECT name, data, reported_at FROM agent_health');
 
@@ -730,7 +747,11 @@ const upsertAgentHealth = (name, health) => {
   const now = Date.now();
   const entry = { ...health, reported_at: now };
   store.agent_health.set(name, entry);
-  try { _healthUpsertStmt.run(name, JSON.stringify(health), now); } catch (_) {}
+  const json = JSON.stringify(health);
+  try {
+    _healthUpsertStmt.run(name, json, now);
+    _healthHistoryInsertStmt.run(name, now, json);
+  } catch (_) {}
 };
 
 const getAgentHealth = (name) => store.agent_health.get(name) || null;
@@ -739,6 +760,57 @@ const getAllAgentHealth = () => {
   const result = {};
   for (const [name, health] of store.agent_health) {
     result[name] = health;
+  }
+  return result;
+};
+
+const _healthHistoryQueryStmt = healthDb.prepare(
+  'SELECT name, data, reported_at FROM agent_health_history WHERE reported_at >= ? ORDER BY reported_at DESC'
+);
+const _healthHistoryByNameStmt = healthDb.prepare(
+  'SELECT name, data, reported_at FROM agent_health_history WHERE name = ? AND reported_at >= ? ORDER BY reported_at DESC'
+);
+const _healthHistoryPruneStmt = healthDb.prepare(
+  'DELETE FROM agent_health_history WHERE reported_at < ?'
+);
+
+const getHealthHistory = (sinceMs) => {
+  return _healthHistoryQueryStmt.all(sinceMs).map(row => {
+    try { return { name: row.name, reported_at: row.reported_at, ...JSON.parse(row.data) }; }
+    catch (_) { return null; }
+  }).filter(Boolean);
+};
+
+const getHealthHistoryByName = (name, sinceMs) => {
+  return _healthHistoryByNameStmt.all(name, sinceMs).map(row => {
+    try { return { name: row.name, reported_at: row.reported_at, ...JSON.parse(row.data) }; }
+    catch (_) { return null; }
+  }).filter(Boolean);
+};
+
+const pruneHealthHistory = (olderThanMs) => {
+  return _healthHistoryPruneStmt.run(olderThanMs);
+};
+
+const _healthLatestPerAgentStmt = healthDb.prepare(`
+  SELECT h.name, h.data, h.reported_at
+  FROM agent_health_history h
+  INNER JOIN (
+    SELECT name, MAX(reported_at) as max_reported
+    FROM agent_health_history
+    WHERE reported_at >= ? AND reported_at < ?
+    GROUP BY name
+  ) latest ON h.name = latest.name AND h.reported_at = latest.max_reported
+`);
+
+const getLatestHealthPerAgent = (sinceMs, untilMs) => {
+  const result = {};
+  for (const row of _healthLatestPerAgentStmt.all(sinceMs, untilMs)) {
+    try {
+      const parsed = JSON.parse(row.data);
+      parsed.reported_at = row.reported_at;
+      result[row.name] = parsed;
+    } catch (_) {}
   }
   return result;
 };
@@ -757,6 +829,7 @@ module.exports = {
   getUnassignedIssues,
   getSessionVelocity, getSessionSummary, getCompletionStats,
   upsertAgentHealth, getAgentHealth, getAllAgentHealth,
+  getHealthHistory, getHealthHistoryByName, pruneHealthHistory, getLatestHealthPerAgent,
   getAgentDailyOutput, getAgentSparkline7d,
   ESTIMATE_SESSIONS, ESTIMATE_MINUTES,
 };

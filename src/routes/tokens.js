@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { buildAgents } = require('./team');
+const { buildAgents, __private: { selectUsageForRuntime } } = require('./team');
 
 // Cost per 1M tokens (USD) — Claude Sonnet pricing
 const COST_PER_M_INPUT  = 3.00;
@@ -103,35 +103,28 @@ function usageSampledAt(agent) {
   return typeof heartbeatAt === 'number' && Number.isFinite(heartbeatAt) ? heartbeatAt : null;
 }
 
-function buildObservedUsage(window) {
-  const agents = buildAgents()
-    .filter(agent => agent.usage?.supported)
-    .filter(agent => {
-      const sampledAt = usageSampledAt(agent);
-      return sampledAt != null && sampledAt >= window.start_ms && sampledAt < window.end_ms;
-    })
-    .map(agent => {
-      const tokens = agent.usage.session_tokens || {};
-      return {
-        name: agent.name,
-        runtime: agent.runtime,
-        source: agent.usage.source,
-        sampled_at: agent.usage.sampled_at,
-        model: agent.usage.model,
-        plan_type: agent.usage.plan_type,
-        input: tokens.input || 0,
-        output: tokens.output || 0,
-        cache_creation: tokens.cache_creation || 0,
-        cache_read: tokens.cache_read || 0,
-        cached_input: tokens.cached_input || 0,
-        reasoning: tokens.reasoning || 0,
-        total: usageTotal(tokens),
-        cost_usd: typeof agent.usage.session_cost_usd === 'number' ? agent.usage.session_cost_usd : null,
-        estimated_cost: !!agent.usage.estimated_cost,
-      };
-    })
-    .sort((a, b) => b.total - a.total);
+function formatAgentUsage(agent) {
+  const tokens = agent.usage.session_tokens || {};
+  return {
+    name: agent.name,
+    runtime: agent.runtime,
+    source: agent.usage.source,
+    sampled_at: agent.usage.sampled_at,
+    model: agent.usage.model,
+    plan_type: agent.usage.plan_type,
+    input: tokens.input || 0,
+    output: tokens.output || 0,
+    cache_creation: tokens.cache_creation || 0,
+    cache_read: tokens.cache_read || 0,
+    cached_input: tokens.cached_input || 0,
+    reasoning: tokens.reasoning || 0,
+    total: usageTotal(tokens),
+    cost_usd: typeof agent.usage.session_cost_usd === 'number' ? agent.usage.session_cost_usd : null,
+    estimated_cost: !!agent.usage.estimated_cost,
+  };
+}
 
+function summarizeAgents(agents) {
   const summary = agents.reduce((acc, agent) => {
     acc.total_input += agent.input;
     acc.total_output += agent.output;
@@ -150,17 +143,50 @@ function buildObservedUsage(window) {
     total_cost_usd: 0,
     cost_agent_count: 0,
   });
+  return { ...summary, total_cost_usd: Math.round(summary.total_cost_usd * 100) / 100 };
+}
+
+function buildObservedUsage(window) {
+  const historyHealth = db.getLatestHealthPerAgent(window.start_ms, window.end_ms);
+
+  let agents = Object.entries(historyHealth)
+    .map(([name, health]) => {
+      const runtimeType = health.runtime?.type || 'claude_code';
+      const usage = selectUsageForRuntime(health, runtimeType);
+      if (!usage?.supported) return null;
+      const sampledAt = usage.sampled_at;
+      if (sampledAt != null && (sampledAt < window.start_ms || sampledAt >= window.end_ms)) return null;
+      return {
+        name,
+        runtime: { type: runtimeType, version: health.runtime?.version, status: health.runtime?.status },
+        usage,
+      };
+    })
+    .filter(Boolean)
+    .map(formatAgentUsage)
+    .sort((a, b) => b.total - a.total);
+
+  let fromHistory = agents.length > 0;
+  if (!fromHistory) {
+    agents = buildAgents()
+      .filter(agent => agent.usage?.supported)
+      .filter(agent => {
+        const sampledAt = usageSampledAt(agent);
+        return sampledAt != null && sampledAt >= window.start_ms && sampledAt < window.end_ms;
+      })
+      .map(formatAgentUsage)
+      .sort((a, b) => b.total - a.total);
+  }
 
   return {
     supported: agents.length > 0,
     agent_count: agents.length,
     window,
-    summary: {
-      ...summary,
-      total_cost_usd: Math.round(summary.total_cost_usd * 100) / 100,
-    },
+    summary: summarizeAgents(agents),
     agents,
-    methodology: '来自各 agent 本机 runtime usage 快照，subscription 模式下为本地观测值，非账单口径',
+    methodology: fromHistory
+      ? '来自历史健康快照，按时间窗口筛选各 agent 最新一条记录'
+      : '来自各 agent 本机 runtime usage 快照，subscription 模式下为本地观测值，非账单口径',
   };
 }
 

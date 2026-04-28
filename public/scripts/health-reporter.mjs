@@ -696,7 +696,44 @@ function collectClaudeQuota() {
   });
 }
 
-function collectCodexQuota() {
+function fetchCodexQuotaViaAPI() {
+  const authFile = path.join(os.homedir(), '.codex', 'auth.json');
+  if (!fs.existsSync(authFile)) return Promise.resolve(null);
+  let auth;
+  try { auth = JSON.parse(fs.readFileSync(authFile, 'utf8')); } catch { return Promise.resolve(null); }
+  const accessToken = auth?.tokens?.access_token;
+  if (!accessToken) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'api.openai.com',
+      path: '/backend-api/codex/usage',
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 400) { resolve(null); return; }
+        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+async function collectCodexQuota() {
+  const apiResult = await fetchCodexQuotaViaAPI();
+  if (apiResult && (apiResult.primary || apiResult.secondary)) {
+    return buildQuotaPayload({
+      supported: true,
+      source: 'codex-api',
+      snapshot: { rate_limits: apiResult, timestamp: Date.now() },
+    });
+  }
+
   const home = os.homedir();
   const sessionRoot = path.join(home, '.codex', 'sessions');
   const latest = fs.existsSync(sessionRoot) ? collectLatestRateLimitSnapshot(sessionRoot) : null;
@@ -710,8 +747,8 @@ function collectCodexQuota() {
 
   return buildQuotaPayload({
     supported: false,
-    source: sessionRoot,
-    reason: 'no machine-readable Codex quota snapshot found',
+    source: apiResult ? 'codex-api' : sessionRoot,
+    reason: apiResult ? 'api returned no quota windows' : 'no machine-readable Codex quota snapshot found',
   });
 }
 
@@ -1118,6 +1155,37 @@ function postHealth(name, payload) {
   });
 }
 
+function collectRoster() {
+  const statuslinePath = path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json');
+  if (!fs.existsSync(statuslinePath)) return null;
+  let sl;
+  try { sl = JSON.parse(fs.readFileSync(statuslinePath, 'utf8')); } catch { return null; }
+  return {
+    session_id: sl.session_id || null,
+    model: sl.model?.id || sl.model?.display_name || null,
+    model_display: sl.model?.display_name || null,
+    version: sl.version || null,
+    runtime_type: sl.model?.id?.includes('codex') ? 'codex' : 'claude_code',
+    cost_usd: typeof sl.cost?.total_cost_usd === 'number' ? Math.round(sl.cost.total_cost_usd * 100) / 100 : null,
+    lines_added: sl.cost?.total_lines_added ?? null,
+    lines_removed: sl.cost?.total_lines_removed ?? null,
+    context_used_pct: sl.context_window?.used_percentage ?? null,
+    context_total_tokens: (sl.context_window?.total_input_tokens || 0) + (sl.context_window?.total_output_tokens || 0) || null,
+    rate_limits: {
+      five_hour: sl.rate_limits?.five_hour ? {
+        used_pct: sl.rate_limits.five_hour.used_percentage ?? null,
+        resets_at: sl.rate_limits.five_hour.resets_at ?? null,
+      } : null,
+      seven_day: sl.rate_limits?.seven_day ? {
+        used_pct: sl.rate_limits.seven_day.used_percentage ?? null,
+        resets_at: sl.rate_limits.seven_day.resets_at ?? null,
+      } : null,
+    },
+    plan_type: sl.plan_type || null,
+    sampled_at: Date.now(),
+  };
+}
+
 async function main() {
   const botName = detectBotName();
 
@@ -1134,7 +1202,7 @@ async function main() {
   const runtime = probeRuntimeDetails(runtimeType);
   const quota = {
     claude_code: collectClaudeQuota(),
-    codex: collectCodexQuota(),
+    codex: await collectCodexQuota(),
     openclaw: collectOpenClawQuota(),
   };
   const usage = {
@@ -1143,6 +1211,7 @@ async function main() {
     openclaw: collectOpenClawUsage(),
   };
 
+  const roster = collectRoster();
   const payload = {
     hostname: os.hostname(),
     disk,
@@ -1152,6 +1221,7 @@ async function main() {
     runtime,
     quota,
     usage,
+    ...(roster ? { roster } : {}),
   };
 
   const quotaSummary = [

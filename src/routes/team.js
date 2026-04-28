@@ -539,4 +539,4 @@ function safeJSON(str) {
 
 module.exports = router;
 module.exports.buildAgents = buildAgents;
-module.exports.__private = { runtimeEvidenceLevel, buildRuntimeSummary, selectQuotaForRuntime };
+module.exports.__private = { runtimeEvidenceLevel, buildRuntimeSummary, selectQuotaForRuntime, selectUsageForRuntime };

@@ -163,7 +163,8 @@ const TokenDashboard = {
 
       el.innerHTML = `
         <div style="grid-column:1 / -1;padding:4px 2px 10px;color:var(--text-secondary);font-size:12px;line-height:1.5;">
-          本地观测来自各 agent 的 subscription runtime 快照，适合看会话归因，不代表真实账单。
+          本地观测来自各 agent 的 subscription runtime 快照，适合看会话归因，不代表真实账单。<br>
+          <span style="color:var(--orange);font-size:11px;">⚠ 观测数据为当前会话快照，不按时间段区分。时间筛选仅影响历史事件统计。</span>
         </div>
         <div class="token-stat">
           <div class="token-stat-value">${this._fmt(observedTokens)}</div>
