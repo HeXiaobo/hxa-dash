@@ -92,7 +92,7 @@ const TokenDashboard = {
     const badge = document.querySelector('.token-estimate-badge');
     if (badge) {
       badge.textContent = '🧮 本机观测';
-      badge.title = '来自各 agent 本机 subscription runtime usage 历史快照增量，非账单口径';
+      badge.title = '来自各 agent 本机 subscription runtime 最后一轮历史快照去重汇总，非账单口径';
     }
 
     const chartSection = document.getElementById('token-chart')?.closest('.section');
@@ -100,7 +100,7 @@ const TokenDashboard = {
     const chartSub = chartSection?.querySelector('.trends-sublabel');
     const chartLegend = chartSection?.querySelector('.token-chart-legend');
     if (chartTitle) chartTitle.textContent = '观测增量';
-    if (chartSub) chartSub.textContent = '各 agent 本机时间段用量增量（输入 + 输出 + 缓存 + 推理）';
+    if (chartSub) chartSub.textContent = '各 agent 本机时间段最后一轮用量（输入 + 输出 + 缓存 + 推理）';
     if (chartLegend) chartLegend.innerHTML = `
       <span class="trends-legend-item"><span class="trends-legend-dot" style="background:#58a6ff"></span>输入</span>
       <span class="trends-legend-item"><span class="trends-legend-dot" style="background:#79c0ff"></span>缓存</span>
@@ -163,8 +163,8 @@ const TokenDashboard = {
 
       el.innerHTML = `
         <div style="grid-column:1 / -1;padding:4px 2px 10px;color:var(--text-secondary);font-size:12px;line-height:1.5;">
-          本地观测来自各 agent 的 subscription runtime 历史快照增量，适合看会话归因，不代表真实账单。<br>
-          <span style="color:var(--orange);font-size:11px;">⚠ 首个采样点之前的用量无法反推，刚上线或缺少基线时会偏保守。</span>
+          本地观测来自各 agent 的 subscription runtime 最后一轮快照去重汇总，适合看会话归因，不代表真实账单。<br>
+          <span style="color:var(--orange);font-size:11px;">⚠ 两次上报之间的多轮活动可能漏计；该口径优先避免 session 计数器重置造成的虚高。</span>
         </div>
         <div class="token-stat">
           <div class="token-stat-value">${this._fmt(observedTokens)}</div>

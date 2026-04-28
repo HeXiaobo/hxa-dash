@@ -48,25 +48,6 @@ function tokenNumber(tokens, key) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function positiveDelta(current, previous) {
-  if (current == null) return null;
-  if (previous == null) return current;
-  return current >= previous ? current - previous : 0;
-}
-
-function diffUsageTokens(current, previous) {
-  if (!current || !previous) return null;
-  const delta = {};
-  let hasValue = false;
-  for (const key of TOKEN_FIELDS) {
-    const value = positiveDelta(tokenNumber(current, key), tokenNumber(previous, key));
-    if (value == null) continue;
-    delta[key] = value;
-    if (value > 0) hasValue = true;
-  }
-  return hasValue ? delta : null;
-}
-
 function addUsageTokens(total, next) {
   for (const key of TOKEN_FIELDS) {
     const value = tokenNumber(next, key);
@@ -76,6 +57,14 @@ function addUsageTokens(total, next) {
 
 function addCost(total, next) {
   return next == null ? total : (total || 0) + next;
+}
+
+function estimateUsageCost(tokens) {
+  if (!tokens) return null;
+  const inputSide = (tokens.input || 0) + (tokens.cache_creation || 0) + (tokens.cache_read || 0) + (tokens.cached_input || 0);
+  const outputSide = (tokens.output || 0) + (tokens.reasoning || 0);
+  const cost = (inputSide / 1e6 * COST_PER_M_INPUT) + (outputSide / 1e6 * COST_PER_M_OUTPUT);
+  return Math.round(cost * 100) / 100;
 }
 
 function dateKey(ms) {
@@ -154,7 +143,7 @@ function usageGroupKey(runtimeType, usage) {
 function healthUsageSample(name, health) {
   const runtimeType = health.runtime?.type || 'claude_code';
   const usage = selectUsageForRuntime(health, runtimeType);
-  if (!usage?.supported || !usage.session_tokens) return null;
+  if (!usage?.supported || (!usage.session_tokens && !usage.last_turn_tokens)) return null;
   const reportedAt = typeof health.reported_at === 'number' ? health.reported_at : usageSampledAt({ usage, runtime: health.runtime });
   if (reportedAt == null) return null;
   return {
@@ -210,6 +199,7 @@ function formatDeltaAgent(acc) {
     cost_usd: acc.cost_usd,
     estimated_cost: acc.estimated_cost,
     partial_baseline: acc.partial_baseline,
+    turn_count: acc.turn_count || 0,
   };
 }
 
@@ -262,56 +252,48 @@ function buildObservedUsage(window) {
     summary: summarizeAgents(agents),
     agents,
     methodology: fromHistory
-      ? '来自历史健康快照，按时间窗口计算各 agent 的累计用量增量'
+      ? '来自历史健康快照，按时间窗口汇总去重后的最后一轮用量'
       : '来自各 agent 本机 runtime usage 快照，subscription 模式下为本地观测值，非账单口径',
   };
 }
 
 function buildObservedUsageFromHistory(historyRows, window) {
-  const groups = new Map();
   let sampleCount = 0;
+  const seenTurns = new Set();
+  const agentsByName = new Map();
+
   for (const row of historyRows) {
     if (row.reported_at == null || row.reported_at >= window.end_ms) continue;
     const sample = healthUsageSample(row.name, row);
     if (!sample) continue;
     sampleCount += 1;
-    if (!groups.has(sample.key)) groups.set(sample.key, []);
-    groups.get(sample.key).push(sample);
-  }
 
-  const agentsByName = new Map();
-  for (const samples of groups.values()) {
-    samples.sort((a, b) => a.reported_at - b.reported_at);
-    const inWindow = samples.filter(sample => sample.reported_at >= window.start_ms);
-    if (!inWindow.length) continue;
+    const tokens = sample.usage.last_turn_tokens;
+    if (!tokens) continue;
+    const turnAt = typeof sample.usage.sampled_at === 'number' && Number.isFinite(sample.usage.sampled_at)
+      ? sample.usage.sampled_at
+      : sample.reported_at;
+    if (turnAt < window.start_ms || turnAt >= window.end_ms) continue;
 
-    const baseline = samples
-      .filter(sample => sample.reported_at < window.start_ms)
-      .at(-1);
-    const first = inWindow[0];
-    const latest = inWindow.at(-1);
-    const previous = baseline || first;
-    if (!previous || !latest || previous === latest) continue;
+    const tokenSignature = TOKEN_FIELDS.map(key => tokenNumber(tokens, key) ?? '').join(',');
+    const turnKey = `${sample.key}|${turnAt}|${tokenSignature}`;
+    if (seenTurns.has(turnKey)) continue;
+    seenTurns.add(turnKey);
 
-    const tokenDelta = diffUsageTokens(latest.tokens, previous.tokens);
-    const costDelta = positiveDelta(latest.cost_usd, previous.cost_usd);
-    const hasCostDelta = costDelta != null && costDelta > 0;
-    if (!tokenDelta && !hasCostDelta) continue;
-
-    const existing = agentsByName.get(latest.name) || {
-      name: latest.name,
-      latest,
+    const existing = agentsByName.get(sample.name) || {
+      name: sample.name,
+      latest: sample,
       tokens: {},
       cost_usd: null,
-      estimated_cost: false,
+      estimated_cost: true,
       partial_baseline: false,
+      turn_count: 0,
     };
-    if (latest.reported_at >= existing.latest.reported_at) existing.latest = latest;
-    addUsageTokens(existing.tokens, tokenDelta);
-    existing.cost_usd = addCost(existing.cost_usd, hasCostDelta ? costDelta : null);
-    existing.estimated_cost = existing.estimated_cost || !!latest.usage.estimated_cost;
-    existing.partial_baseline = existing.partial_baseline || !baseline;
-    agentsByName.set(latest.name, existing);
+    if (sample.reported_at >= existing.latest.reported_at) existing.latest = sample;
+    addUsageTokens(existing.tokens, tokens);
+    existing.cost_usd = addCost(existing.cost_usd, estimateUsageCost(tokens));
+    existing.turn_count += 1;
+    agentsByName.set(sample.name, existing);
   }
 
   const agents = [...agentsByName.values()]
