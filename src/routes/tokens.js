@@ -10,6 +10,8 @@ const COST_PER_M_INPUT  = 3.00;
 const COST_PER_M_OUTPUT = 15.00;
 const DAY_MS = 86400000;
 const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
+const HISTORY_LOOKBACK_MS = 30 * DAY_MS;
+const TOKEN_FIELDS = ['input', 'output', 'cache_creation', 'cache_read', 'cached_input', 'reasoning', 'total'];
 
 // Per-action token estimates (based on typical Claude API usage patterns)
 // These are rough estimates — actual usage depends on prompt/response complexity
@@ -39,6 +41,41 @@ function usageTotal(tokens) {
   if (!tokens || typeof tokens !== 'object') return 0;
   if (typeof tokens.total === 'number') return tokens.total;
   return (tokens.input || 0) + (tokens.output || 0) + (tokens.cache_creation || 0) + (tokens.cache_read || 0);
+}
+
+function tokenNumber(tokens, key) {
+  const value = tokens?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function positiveDelta(current, previous) {
+  if (current == null) return null;
+  if (previous == null) return current;
+  return current >= previous ? current - previous : 0;
+}
+
+function diffUsageTokens(current, previous) {
+  if (!current || !previous) return null;
+  const delta = {};
+  let hasValue = false;
+  for (const key of TOKEN_FIELDS) {
+    const value = positiveDelta(tokenNumber(current, key), tokenNumber(previous, key));
+    if (value == null) continue;
+    delta[key] = value;
+    if (value > 0) hasValue = true;
+  }
+  return hasValue ? delta : null;
+}
+
+function addUsageTokens(total, next) {
+  for (const key of TOKEN_FIELDS) {
+    const value = tokenNumber(next, key);
+    if (value != null) total[key] = (total[key] || 0) + value;
+  }
+}
+
+function addCost(total, next) {
+  return next == null ? total : (total || 0) + next;
 }
 
 function dateKey(ms) {
@@ -103,6 +140,34 @@ function usageSampledAt(agent) {
   return typeof heartbeatAt === 'number' && Number.isFinite(heartbeatAt) ? heartbeatAt : null;
 }
 
+function usageGroupKey(runtimeType, usage) {
+  return [
+    runtimeType || 'unknown',
+    usage.source || 'unknown',
+    usage.session_id || 'no-session',
+    usage.thread_id || 'no-thread',
+    usage.model || 'no-model',
+    usage.plan_type || 'no-plan',
+  ].join('|');
+}
+
+function healthUsageSample(name, health) {
+  const runtimeType = health.runtime?.type || 'claude_code';
+  const usage = selectUsageForRuntime(health, runtimeType);
+  if (!usage?.supported || !usage.session_tokens) return null;
+  const reportedAt = typeof health.reported_at === 'number' ? health.reported_at : usageSampledAt({ usage, runtime: health.runtime });
+  if (reportedAt == null) return null;
+  return {
+    key: `${name}|${usageGroupKey(runtimeType, usage)}`,
+    name,
+    reported_at: reportedAt,
+    runtime: { type: runtimeType, version: health.runtime?.version, status: health.runtime?.status },
+    usage,
+    tokens: usage.session_tokens,
+    cost_usd: typeof usage.session_cost_usd === 'number' ? usage.session_cost_usd : null,
+  };
+}
+
 function formatAgentUsage(agent) {
   const tokens = agent.usage.session_tokens || {};
   return {
@@ -121,6 +186,30 @@ function formatAgentUsage(agent) {
     total: usageTotal(tokens),
     cost_usd: typeof agent.usage.session_cost_usd === 'number' ? agent.usage.session_cost_usd : null,
     estimated_cost: !!agent.usage.estimated_cost,
+  };
+}
+
+function formatDeltaAgent(acc) {
+  const tokens = acc.tokens || {};
+  const usage = acc.latest.usage;
+  return {
+    name: acc.name,
+    runtime: acc.latest.runtime,
+    source: usage.source,
+    sampled_at: usage.sampled_at,
+    reported_at: acc.latest.reported_at,
+    model: usage.model,
+    plan_type: usage.plan_type,
+    input: tokens.input || 0,
+    output: tokens.output || 0,
+    cache_creation: tokens.cache_creation || 0,
+    cache_read: tokens.cache_read || 0,
+    cached_input: tokens.cached_input || 0,
+    reasoning: tokens.reasoning || 0,
+    total: usageTotal(tokens),
+    cost_usd: acc.cost_usd,
+    estimated_cost: acc.estimated_cost,
+    partial_baseline: acc.partial_baseline,
   };
 }
 
@@ -147,26 +236,14 @@ function summarizeAgents(agents) {
 }
 
 function buildObservedUsage(window) {
-  const historyHealth = db.getLatestHealthPerAgent(window.start_ms, window.end_ms);
+  const historyStart = Math.max(0, window.start_ms - HISTORY_LOOKBACK_MS);
+  const historyRows = typeof db.getHealthHistoryBetween === 'function'
+    ? db.getHealthHistoryBetween(historyStart, window.end_ms)
+    : [];
 
-  let agents = Object.entries(historyHealth)
-    .map(([name, health]) => {
-      const runtimeType = health.runtime?.type || 'claude_code';
-      const usage = selectUsageForRuntime(health, runtimeType);
-      if (!usage?.supported) return null;
-      const sampledAt = usage.sampled_at;
-      if (sampledAt != null && (sampledAt < window.start_ms || sampledAt >= window.end_ms)) return null;
-      return {
-        name,
-        runtime: { type: runtimeType, version: health.runtime?.version, status: health.runtime?.status },
-        usage,
-      };
-    })
-    .filter(Boolean)
-    .map(formatAgentUsage)
-    .sort((a, b) => b.total - a.total);
-
-  let fromHistory = agents.length > 0;
+  const historyUsage = buildObservedUsageFromHistory(historyRows, window);
+  let agents = historyUsage.agents;
+  let fromHistory = historyUsage.sample_count > 0;
   if (!fromHistory) {
     agents = buildAgents()
       .filter(agent => agent.usage?.supported)
@@ -185,9 +262,69 @@ function buildObservedUsage(window) {
     summary: summarizeAgents(agents),
     agents,
     methodology: fromHistory
-      ? '来自历史健康快照，按时间窗口筛选各 agent 最新一条记录'
+      ? '来自历史健康快照，按时间窗口计算各 agent 的累计用量增量'
       : '来自各 agent 本机 runtime usage 快照，subscription 模式下为本地观测值，非账单口径',
   };
+}
+
+function buildObservedUsageFromHistory(historyRows, window) {
+  const groups = new Map();
+  let sampleCount = 0;
+  for (const row of historyRows) {
+    if (row.reported_at == null || row.reported_at >= window.end_ms) continue;
+    const sample = healthUsageSample(row.name, row);
+    if (!sample) continue;
+    sampleCount += 1;
+    if (!groups.has(sample.key)) groups.set(sample.key, []);
+    groups.get(sample.key).push(sample);
+  }
+
+  const agentsByName = new Map();
+  for (const samples of groups.values()) {
+    samples.sort((a, b) => a.reported_at - b.reported_at);
+    let previous = null;
+    let hasBaseline = false;
+
+    for (const sample of samples) {
+      if (sample.reported_at < window.start_ms) {
+        previous = sample;
+        hasBaseline = true;
+        continue;
+      }
+      if (!previous) {
+        previous = sample;
+        continue;
+      }
+
+      const tokenDelta = diffUsageTokens(sample.tokens, previous.tokens);
+      const costDelta = positiveDelta(sample.cost_usd, previous.cost_usd);
+      const hasCostDelta = costDelta != null && costDelta > 0;
+      previous = sample;
+      if (!tokenDelta && !hasCostDelta) continue;
+
+      const existing = agentsByName.get(sample.name) || {
+        name: sample.name,
+        latest: sample,
+        tokens: {},
+        cost_usd: null,
+        estimated_cost: false,
+        partial_baseline: false,
+      };
+      if (sample.reported_at >= existing.latest.reported_at) existing.latest = sample;
+      addUsageTokens(existing.tokens, tokenDelta);
+      existing.cost_usd = addCost(existing.cost_usd, hasCostDelta ? costDelta : null);
+      existing.estimated_cost = existing.estimated_cost || !!sample.usage.estimated_cost;
+      existing.partial_baseline = existing.partial_baseline || !hasBaseline;
+      agentsByName.set(sample.name, existing);
+    }
+  }
+
+  const agents = [...agentsByName.values()]
+    .map(formatDeltaAgent)
+    .filter(agent => agent.total > 0 || agent.cost_usd != null)
+    .sort((a, b) => b.total - a.total);
+
+  return { agents, sample_count: sampleCount };
 }
 
 // GET /api/tokens — token consumption estimates for a time window
@@ -304,3 +441,4 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
+module.exports.__private = { buildTimeWindow, buildObservedUsageFromHistory };

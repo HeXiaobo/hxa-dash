@@ -770,6 +770,9 @@ const _healthHistoryQueryStmt = healthDb.prepare(
 const _healthHistoryByNameStmt = healthDb.prepare(
   'SELECT name, data, reported_at FROM agent_health_history WHERE name = ? AND reported_at >= ? ORDER BY reported_at DESC'
 );
+const _healthHistoryBetweenStmt = healthDb.prepare(
+  'SELECT name, data, reported_at FROM agent_health_history WHERE reported_at >= ? AND reported_at < ? ORDER BY name ASC, reported_at ASC'
+);
 const _healthHistoryPruneStmt = healthDb.prepare(
   'DELETE FROM agent_health_history WHERE reported_at < ?'
 );
@@ -783,6 +786,13 @@ const getHealthHistory = (sinceMs) => {
 
 const getHealthHistoryByName = (name, sinceMs) => {
   return _healthHistoryByNameStmt.all(name, sinceMs).map(row => {
+    try { return { name: row.name, reported_at: row.reported_at, ...JSON.parse(row.data) }; }
+    catch (_) { return null; }
+  }).filter(Boolean);
+};
+
+const getHealthHistoryBetween = (sinceMs, untilMs) => {
+  return _healthHistoryBetweenStmt.all(sinceMs, untilMs).map(row => {
     try { return { name: row.name, reported_at: row.reported_at, ...JSON.parse(row.data) }; }
     catch (_) { return null; }
   }).filter(Boolean);
@@ -829,7 +839,7 @@ module.exports = {
   getUnassignedIssues,
   getSessionVelocity, getSessionSummary, getCompletionStats,
   upsertAgentHealth, getAgentHealth, getAllAgentHealth,
-  getHealthHistory, getHealthHistoryByName, pruneHealthHistory, getLatestHealthPerAgent,
+  getHealthHistory, getHealthHistoryByName, getHealthHistoryBetween, pruneHealthHistory, getLatestHealthPerAgent,
   getAgentDailyOutput, getAgentSparkline7d,
   ESTIMATE_SESSIONS, ESTIMATE_MINUTES,
 };
