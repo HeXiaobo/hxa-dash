@@ -282,41 +282,36 @@ function buildObservedUsageFromHistory(historyRows, window) {
   const agentsByName = new Map();
   for (const samples of groups.values()) {
     samples.sort((a, b) => a.reported_at - b.reported_at);
-    let previous = null;
-    let hasBaseline = false;
+    const inWindow = samples.filter(sample => sample.reported_at >= window.start_ms);
+    if (!inWindow.length) continue;
 
-    for (const sample of samples) {
-      if (sample.reported_at < window.start_ms) {
-        previous = sample;
-        hasBaseline = true;
-        continue;
-      }
-      if (!previous) {
-        previous = sample;
-        continue;
-      }
+    const baseline = samples
+      .filter(sample => sample.reported_at < window.start_ms)
+      .at(-1);
+    const first = inWindow[0];
+    const latest = inWindow.at(-1);
+    const previous = baseline || first;
+    if (!previous || !latest || previous === latest) continue;
 
-      const tokenDelta = diffUsageTokens(sample.tokens, previous.tokens);
-      const costDelta = positiveDelta(sample.cost_usd, previous.cost_usd);
-      const hasCostDelta = costDelta != null && costDelta > 0;
-      previous = sample;
-      if (!tokenDelta && !hasCostDelta) continue;
+    const tokenDelta = diffUsageTokens(latest.tokens, previous.tokens);
+    const costDelta = positiveDelta(latest.cost_usd, previous.cost_usd);
+    const hasCostDelta = costDelta != null && costDelta > 0;
+    if (!tokenDelta && !hasCostDelta) continue;
 
-      const existing = agentsByName.get(sample.name) || {
-        name: sample.name,
-        latest: sample,
-        tokens: {},
-        cost_usd: null,
-        estimated_cost: false,
-        partial_baseline: false,
-      };
-      if (sample.reported_at >= existing.latest.reported_at) existing.latest = sample;
-      addUsageTokens(existing.tokens, tokenDelta);
-      existing.cost_usd = addCost(existing.cost_usd, hasCostDelta ? costDelta : null);
-      existing.estimated_cost = existing.estimated_cost || !!sample.usage.estimated_cost;
-      existing.partial_baseline = existing.partial_baseline || !hasBaseline;
-      agentsByName.set(sample.name, existing);
-    }
+    const existing = agentsByName.get(latest.name) || {
+      name: latest.name,
+      latest,
+      tokens: {},
+      cost_usd: null,
+      estimated_cost: false,
+      partial_baseline: false,
+    };
+    if (latest.reported_at >= existing.latest.reported_at) existing.latest = latest;
+    addUsageTokens(existing.tokens, tokenDelta);
+    existing.cost_usd = addCost(existing.cost_usd, hasCostDelta ? costDelta : null);
+    existing.estimated_cost = existing.estimated_cost || !!latest.usage.estimated_cost;
+    existing.partial_baseline = existing.partial_baseline || !baseline;
+    agentsByName.set(latest.name, existing);
   }
 
   const agents = [...agentsByName.values()]

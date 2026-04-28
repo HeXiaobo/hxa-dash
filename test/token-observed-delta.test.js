@@ -86,4 +86,22 @@ describe('observed token deltas', () => {
       partial_baseline: true,
     });
   });
+
+  it('does not repeatedly add fluctuations inside one counter series', () => {
+    const result = buildObservedUsageFromHistory([
+      healthRow({ name: 'agent-c', reportedAt: 900, session: null, input: 80, output: 20, total: 100 }),
+      healthRow({ name: 'agent-c', reportedAt: 2000, session: null, input: 160, output: 40, total: 200 }),
+      healthRow({ name: 'agent-c', reportedAt: 3000, session: null, input: 96, output: 24, total: 120 }),
+      healthRow({ name: 'agent-c', reportedAt: 4500, session: null, input: 176, output: 44, total: 220 }),
+    ], window);
+
+    expect(result.agents).toHaveLength(1);
+    expect(result.agents[0]).toMatchObject({
+      name: 'agent-c',
+      input: 96,
+      output: 24,
+      total: 120,
+      partial_baseline: false,
+    });
+  });
 });
