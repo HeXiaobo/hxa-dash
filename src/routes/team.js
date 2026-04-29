@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const db = require('../db');
 const collab = require('../analyzers/collab');
+const { buildBackupSummary } = require('./backups').__private;
 
 const router = Router();
 
@@ -299,6 +300,7 @@ function buildAgents() {
     const runtime = buildRuntimeSummary(a, health, now);
     const quota = selectQuotaForRuntime(health, runtime.type);
     const usage = selectUsageForRuntime(health, runtime.type);
+    const backup = buildBackupSummary(health?.backup || null);
     const recentWorkEvents = allRecentEvents.filter(e => e.timestamp && e.timestamp > (now - WORK_SIGNAL_WINDOW_MS) && isWorkSignal(e.action));
     const lastWorkSignal = recentWorkEvents[0] || allRecentEvents.find(e => isWorkSignal(e.action)) || null;
     const latestEventTs = (lastWorkSignal && lastWorkSignal.timestamp) || (latestEvent && latestEvent.timestamp) || 0;
@@ -360,6 +362,7 @@ function buildAgents() {
       runtime,
       quota,
       usage,
+      backup,
       last_heartbeat_at: runtime.last_heartbeat_at,
       active_projects: activeProjects,
       top_collaborator: topCollaborator,

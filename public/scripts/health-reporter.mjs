@@ -1064,6 +1064,256 @@ function collectOpenClawUsage() {
   });
 }
 
+function parseBackupScanDirs() {
+  const configured = process.env.HXA_BACKUP_SCAN_DIRS || process.env.GITHUB_BACKUP_SCAN_DIRS || '';
+  if (configured.trim()) {
+    return configured
+      .split(/[,\n]/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+  return [
+    process.cwd(),
+    os.homedir(),
+    path.join(os.homedir(), 'workspace'),
+    path.join(os.homedir(), 'workspaces'),
+    path.join(os.homedir(), 'repos'),
+    path.join(os.homedir(), '.codex', 'worktrees'),
+    path.join(os.homedir(), 'hxa-dash'),
+  ];
+}
+
+const BACKUP_SCAN_DIRS = parseBackupScanDirs();
+const BACKUP_MAX_REPOS = Math.max(1, Math.min(100, Number.parseInt(process.env.HXA_BACKUP_MAX_REPOS || '40', 10) || 40));
+
+const BACKUP_SKIP_DIRS = new Set([
+  '.git',
+  'node_modules',
+  '.cache',
+  '.npm',
+  '.pnpm-store',
+  'Library',
+  'Applications',
+  'Movies',
+  'Music',
+  'Pictures',
+]);
+
+function uniqueExistingDirs(dirs) {
+  const seen = new Set();
+  return dirs
+    .map(dir => path.resolve(dir))
+    .filter(dir => {
+      if (seen.has(dir) || !fs.existsSync(dir)) return false;
+      seen.add(dir);
+      try { return fs.statSync(dir).isDirectory(); } catch { return false; }
+    });
+}
+
+function scanGitRepos(rootDir, maxDepth) {
+  const repos = new Set();
+  const stack = [{ dir: rootDir, depth: 0 }];
+
+  while (stack.length) {
+    const { dir, depth } = stack.pop();
+    if (!dir) continue;
+    const base = path.basename(dir);
+    if (BACKUP_SKIP_DIRS.has(base)) continue;
+
+    const gitPath = path.join(dir, '.git');
+    if (fs.existsSync(gitPath)) {
+      repos.add(dir);
+      continue;
+    }
+    if (depth >= maxDepth) continue;
+
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || BACKUP_SKIP_DIRS.has(entry.name)) continue;
+      stack.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
+    }
+  }
+
+  return repos;
+}
+
+function findGitRepos() {
+  const repos = new Set();
+  for (const root of uniqueExistingDirs(BACKUP_SCAN_DIRS)) {
+    const maxDepth = root === os.homedir() ? 2 : 5;
+    for (const repo of scanGitRepos(root, maxDepth)) repos.add(repo);
+  }
+  return [...repos].sort().slice(0, BACKUP_MAX_REPOS);
+}
+
+function gitCommand(repoPath, args, timeoutMs = 4000) {
+  const res = spawnSync('git', ['-C', repoPath, ...args], {
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    maxBuffer: 1024 * 1024,
+  });
+  return {
+    ok: !res.error && res.status === 0,
+    stdout: typeof res.stdout === 'string' ? res.stdout.trim() : '',
+    stderr: typeof res.stderr === 'string' ? res.stderr.trim() : '',
+    error: res.error ? res.error.message : null,
+  };
+}
+
+function sanitizeRemoteUrl(remoteUrl) {
+  const raw = String(remoteUrl || '').trim();
+  if (!raw) return null;
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.username || parsed.password) {
+      parsed.username = '';
+      parsed.password = '';
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {}
+
+  return raw
+    .replace(/(https?:\/\/)[^/@\s]+@/i, '$1')
+    .replace(/(x-access-token:|oauth2:|token=)[^@\s/]+/ig, '$1***');
+}
+
+function isGithubRemote(remoteUrl) {
+  return /(^|[/:@])github\.com[/:]/i.test(String(remoteUrl || ''));
+}
+
+function parseRemoteUrls(stdout) {
+  const urls = [];
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 2) urls.push(parts[1]);
+  }
+  return [...new Set(urls)];
+}
+
+function collectGitRepoBackup(repoPath) {
+  const remotesProbe = gitCommand(repoPath, ['remote', '-v']);
+  if (!remotesProbe.ok) {
+    return {
+      path: repoPath,
+      status: 'critical',
+      reason: 'collection_failed',
+    };
+  }
+
+  const remoteUrls = parseRemoteUrls(remotesProbe.stdout);
+  const githubRemote = remoteUrls.find(isGithubRemote) || null;
+  const branchProbe = gitCommand(repoPath, ['branch', '--show-current']);
+  const headProbe = gitCommand(repoPath, ['rev-parse', '--short=12', 'HEAD']);
+  const upstreamProbe = gitCommand(repoPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
+  const lastCommitProbe = gitCommand(repoPath, ['log', '-1', '--format=%cI']);
+  const statusProbe = gitCommand(repoPath, ['status', '--porcelain=v1', '--untracked-files=normal']);
+
+  let ahead = 0;
+  let behind = 0;
+  if (upstreamProbe.ok && upstreamProbe.stdout) {
+    const countsProbe = gitCommand(repoPath, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']);
+    if (countsProbe.ok) {
+      const [aheadText, behindText] = countsProbe.stdout.split(/\s+/);
+      ahead = Math.max(0, Number.parseInt(aheadText, 10) || 0);
+      behind = Math.max(0, Number.parseInt(behindText, 10) || 0);
+    }
+  }
+
+  const lines = statusProbe.ok && statusProbe.stdout ? statusProbe.stdout.split(/\r?\n/).filter(Boolean) : [];
+  const untracked = lines.filter(line => line.startsWith('??')).length;
+  const dirty = lines.length - untracked;
+  const hasGithubRemote = Boolean(githubRemote);
+  const status = !hasGithubRemote
+    ? 'critical'
+    : (ahead > 0 || behind > 0 || dirty > 0 || untracked > 0) ? 'warning' : 'ok';
+  const reason = !hasGithubRemote
+    ? 'no_github_remote'
+    : ahead > 0 ? 'ahead_of_upstream'
+      : dirty > 0 ? 'dirty_worktree'
+        : untracked > 0 ? 'untracked_files'
+          : behind > 0 ? 'behind_upstream'
+            : null;
+
+  return {
+    path: repoPath,
+    remote: sanitizeRemoteUrl(githubRemote || remoteUrls[0] || null),
+    branch: branchProbe.stdout || null,
+    head: headProbe.stdout || null,
+    upstream: upstreamProbe.ok ? upstreamProbe.stdout || null : null,
+    ahead,
+    behind,
+    dirty,
+    untracked,
+    last_commit_at: lastCommitProbe.stdout || null,
+    status,
+    reason,
+  };
+}
+
+function summarizeBackupRepos(repos) {
+  const summary = {
+    total: repos.length,
+    ok: 0,
+    warning: 0,
+    critical: 0,
+    unsupported: 0,
+    ahead: 0,
+    behind: 0,
+    dirty: 0,
+    untracked: 0,
+    github_remotes: 0,
+  };
+
+  for (const repo of repos) {
+    if (repo.status === 'ok') summary.ok += 1;
+    else if (repo.status === 'warning') summary.warning += 1;
+    else if (repo.status === 'unsupported') summary.unsupported += 1;
+    else summary.critical += 1;
+    summary.ahead += repo.ahead || 0;
+    summary.behind += repo.behind || 0;
+    summary.dirty += repo.dirty || 0;
+    summary.untracked += repo.untracked || 0;
+    if (repo.remote && isGithubRemote(repo.remote)) summary.github_remotes += 1;
+  }
+
+  return summary;
+}
+
+function collectBackupStatus() {
+  const gitProbe = runCommand('git', ['--version'], 2500);
+  if (!gitProbe.ok) {
+    return {
+      supported: false,
+      status: 'unsupported',
+      reason: 'git_not_available',
+      sampled_at: new Date().toISOString(),
+      repos: [],
+      summary: summarizeBackupRepos([]),
+    };
+  }
+
+  const repos = findGitRepos().map(repo => collectGitRepoBackup(repo));
+  const summary = summarizeBackupRepos(repos);
+  const status = summary.critical > 0 ? 'critical'
+    : summary.warning > 0 ? 'warning'
+      : repos.length > 0 ? 'ok' : 'critical';
+
+  return {
+    supported: true,
+    status,
+    reason: repos.length > 0 ? null : 'no_git_repositories_found',
+    sampled_at: new Date().toISOString(),
+    repos,
+    summary,
+  };
+}
+
 function getDiskInfo() {
   try {
     const out = execSync('df -h / 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
@@ -1210,6 +1460,7 @@ async function main() {
     codex: collectCodexUsage(),
     openclaw: collectOpenClawUsage(),
   };
+  const backup = collectBackupStatus();
 
   const roster = collectRoster();
   const payload = {
@@ -1221,6 +1472,7 @@ async function main() {
     runtime,
     quota,
     usage,
+    backup,
     ...(roster ? { roster } : {}),
   };
 
@@ -1245,7 +1497,8 @@ async function main() {
   console.log(
     `[health-reporter] ${botName}: runtime=${runtime.type}@${runtime.version || 'unknown'} ${runtime.status} ` +
     `disk=${disk.pct}% mem=${memory.pct}% cpu=${cpu.pct}%` +
-    `${pm2 ? ` pm2=${pm2.online}/${pm2.total}` : ''} ${quotaSummary} ${usageSummary}`
+    `${pm2 ? ` pm2=${pm2.online}/${pm2.total}` : ''} ${quotaSummary} ${usageSummary} ` +
+    `backup=${backup.status} repos=${backup.summary.total} warn=${backup.summary.warning} critical=${backup.summary.critical}`
   );
 
   try {

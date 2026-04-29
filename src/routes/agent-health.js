@@ -64,6 +64,21 @@ function sanitizeEnum(val, allowed, fallback = null) {
   return normalized && allowed.includes(normalized) ? normalized : fallback;
 }
 
+function sanitizeRemoteUrl(val) {
+  const raw = sanitizeStr(val, 512);
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    parsed.username = '';
+    parsed.password = '';
+    return parsed.toString().replace(/\/$/, '').slice(0, 256);
+  } catch {}
+  return raw
+    .replace(/(https?:\/\/)[^/@\s]+@/i, '$1')
+    .replace(/(x-access-token:|oauth2:|token=)[^@\s/]+/ig, '$1***')
+    .slice(0, 256);
+}
+
 function sanitizeQuotaWindow(window, fallbackLabel = null) {
   if (!window || typeof window !== 'object') return null;
   const usedPercent = typeof window.used_percent === 'number'
@@ -155,6 +170,55 @@ function sanitizeRuntime(runtime) {
   };
 }
 
+function sanitizeBackupRepo(repo) {
+  if (!repo || typeof repo !== 'object') return null;
+  return {
+    path: sanitizeStr(repo.path, 512),
+    remote: sanitizeRemoteUrl(repo.remote),
+    branch: sanitizeStr(repo.branch, 128),
+    head: sanitizeStr(repo.head, 64),
+    upstream: sanitizeStr(repo.upstream, 128),
+    ahead: clampInt(repo.ahead, 0, 1000000) || 0,
+    behind: clampInt(repo.behind, 0, 1000000) || 0,
+    dirty: clampInt(repo.dirty, 0, 1000000) || 0,
+    untracked: clampInt(repo.untracked, 0, 1000000) || 0,
+    last_commit_at: normalizeTimestamp(repo.last_commit_at) || null,
+    status: sanitizeEnum(repo.status, ['ok', 'warning', 'critical', 'unsupported'], 'critical'),
+    reason: sanitizeStr(repo.reason, 128),
+  };
+}
+
+function sanitizeBackupSummary(summary, repos) {
+  const repoList = Array.isArray(repos) ? repos : [];
+  return {
+    total: clampInt(summary?.total, 0, 1000000) ?? repoList.length,
+    ok: clampInt(summary?.ok, 0, 1000000) ?? repoList.filter(repo => repo.status === 'ok').length,
+    warning: clampInt(summary?.warning, 0, 1000000) ?? repoList.filter(repo => repo.status === 'warning').length,
+    critical: clampInt(summary?.critical, 0, 1000000) ?? repoList.filter(repo => repo.status === 'critical').length,
+    unsupported: clampInt(summary?.unsupported, 0, 1000000) ?? repoList.filter(repo => repo.status === 'unsupported').length,
+    ahead: clampInt(summary?.ahead, 0, 1000000) ?? repoList.reduce((sum, repo) => sum + (repo.ahead || 0), 0),
+    behind: clampInt(summary?.behind, 0, 1000000) ?? repoList.reduce((sum, repo) => sum + (repo.behind || 0), 0),
+    dirty: clampInt(summary?.dirty, 0, 1000000) ?? repoList.reduce((sum, repo) => sum + (repo.dirty || 0), 0),
+    untracked: clampInt(summary?.untracked, 0, 1000000) ?? repoList.reduce((sum, repo) => sum + (repo.untracked || 0), 0),
+    github_remotes: clampInt(summary?.github_remotes, 0, 1000000) ?? repoList.filter(repo => /(^|[/:@])github\.com[/:]/i.test(String(repo.remote || ''))).length,
+  };
+}
+
+function sanitizeBackup(backup) {
+  if (!backup || typeof backup !== 'object') return null;
+  const repos = Array.isArray(backup.repos)
+    ? backup.repos.slice(0, 80).map(sanitizeBackupRepo).filter(Boolean)
+    : [];
+  return {
+    supported: typeof backup.supported === 'boolean' ? backup.supported : repos.length > 0,
+    status: sanitizeEnum(backup.status, ['ok', 'warning', 'critical', 'unsupported'], backup.supported === false ? 'unsupported' : 'critical'),
+    reason: sanitizeStr(backup.reason, 128),
+    sampled_at: normalizeTimestamp(backup.sampled_at),
+    summary: sanitizeBackupSummary(backup.summary, repos),
+    repos,
+  };
+}
+
 // GET /api/agent-health/roster — roster data for all agents (花名册采集)
 router.get('/roster', (req, res) => {
   const allHealth = db.getAllAgentHealth();
@@ -181,7 +245,7 @@ router.post('/:name', requireHealthAuth, (req, res) => {
   const agent = db.getAgent(name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const { disk, memory, cpu, pm2, hostname, runtime, quota, usage, roster } = req.body;
+  const { disk, memory, cpu, pm2, hostname, runtime, quota, usage, backup, roster } = req.body;
 
   // Validate required fields
   if (!disk || !memory) {
@@ -235,6 +299,7 @@ router.post('/:name', requireHealthAuth, (req, res) => {
             .filter(([key, value]) => key && value)
         )
       : null,
+    backup: sanitizeBackup(backup),
     roster: roster && typeof roster === 'object' ? roster : null,
   };
 
@@ -274,6 +339,7 @@ router.get('/', (req, res) => {
       runtime: health?.runtime || null,
       quota: health?.quota || null,
       usage: health?.usage || null,
+      backup: health?.backup || null,
       health,
     };
   });
@@ -300,3 +366,4 @@ router.get('/:name', (req, res) => {
 });
 
 module.exports = router;
+module.exports.__private = { sanitizeBackup };

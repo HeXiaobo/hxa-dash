@@ -89,7 +89,7 @@ const DetailDrawer = {
       const total = tokens.total ?? ((tokens.input || 0) + (tokens.output || 0));
       const cache = (tokens.cache_creation || 0) + (tokens.cache_read || 0) + (tokens.cached_input || 0);
       const bits = [
-        total ? `token ${fmtTok(total)}` : null,
+        total ? `用量 ${fmtTok(total)}` : null,
         tokens.output != null ? `输出 ${fmtTok(tokens.output)}` : null,
         cache ? `缓存 ${fmtTok(cache)}` : null,
         tokens.reasoning ? `推理 ${fmtTok(tokens.reasoning)}` : null,

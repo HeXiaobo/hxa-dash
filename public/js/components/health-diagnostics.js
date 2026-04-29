@@ -368,7 +368,7 @@ const HealthDiagnostics = {
     const items = [];
     const total = tokens.total ?? ((tokens.input || 0) + (tokens.output || 0));
     const cache = (tokens.cache_creation || 0) + (tokens.cache_read || 0) + (tokens.cached_input || 0);
-    if (total) items.push(`token ${this._formatCompactNumber(total)}`);
+    if (total) items.push(`用量 ${this._formatCompactNumber(total)}`);
     if (tokens.output != null) items.push(`输出 ${this._formatCompactNumber(tokens.output)}`);
     if (cache) items.push(`缓存 ${this._formatCompactNumber(cache)}`);
     if (tokens.reasoning) items.push(`推理 ${this._formatCompactNumber(tokens.reasoning)}`);

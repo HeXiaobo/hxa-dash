@@ -44,11 +44,14 @@ const BASE = (() => {
 // #114: navbar grouping — map primary tabs to sub-pages
 const NAV_GROUPS = {
   overview: { subpages: ['overview'], default: 'overview' },
-  team:     { subpages: ['team', 'collab', 'live'], default: 'team' },
+  team:     { subpages: ['team'], default: 'team' },
+  limits:   { subpages: ['limits'], default: 'limits' },
+  tokens:   { subpages: ['tokens'], default: 'tokens' },
+  backups:  { subpages: ['backups'], default: 'backups' },
   tasks:    { subpages: ['tasks', 'pipeline', 'mr-board'], default: 'tasks' },
-  analysis: { subpages: ['report', 'timeline', 'limits', 'tokens', 'estimates'], default: 'report' },
-  system:   { subpages: ['health', 'projects'], default: 'health' },
-  myview:   { subpages: ['myview', 'about'], default: 'myview' },
+  analysis: { subpages: ['estimates'], default: 'estimates' },
+  system:   { subpages: ['health', 'live', 'projects', 'report', 'timeline', 'about'], default: 'health' },
+  myview:   { subpages: ['myview'], default: 'myview' },
 };
 
 // Reverse lookup: subpage → group
@@ -86,6 +89,436 @@ function formatTime(ts) {
   const pad = n => String(n).padStart(2, '0');
   return `${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+const RuntimeCenter = {
+  attentionThresholds: {
+    quota: 80,
+    inactiveMs: 48 * 3600 * 1000,
+    heartbeatMs: 10 * 60 * 1000,
+    backupMs: 30 * 3600 * 1000
+  },
+
+  renderOverview(agents, meta, timeline) {
+    const summary = this.summary(agents, meta);
+    this._renderSummary(summary);
+    const attention = this.attentionItems(agents);
+    this._renderAttention(attention);
+    this.renderCards('overview-agent-cards', 'overview-team-stats', agents);
+    this._renderActivity(timeline, agents);
+  },
+
+  renderRoster(agents, statsId) {
+    this.renderCards('team-agent-cards', statsId, agents);
+  },
+
+  renderCards(containerId, statsId, agents) {
+    const container = document.getElementById(containerId);
+    const statsEl = document.getElementById(statsId);
+    if (!container) return;
+    const sorted = [...agents].sort((a, b) => {
+      const aa = this.attentionItems([a]).length;
+      const bb = this.attentionItems([b]).length;
+      if (bb !== aa) return bb - aa;
+      const ar = this._isRunning(a) ? 1 : 0;
+      const br = this._isRunning(b) ? 1 : 0;
+      if (br !== ar) return br - ar;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    container.innerHTML = sorted.length
+      ? sorted.map(a => this.cardHTML(a)).join('')
+      : '<div class="empty-state">暂无助理数据</div>';
+    container.querySelectorAll('.runtime-agent-card[data-name]').forEach(card => {
+      card.addEventListener('click', () => DetailDrawer.open(card.dataset.name));
+    });
+    if (statsEl) {
+      const running = agents.filter(a => this._isRunning(a)).length;
+      const working = agents.filter(a => this._isWorking(a)).length;
+      const attention = this.attentionItems(agents).length;
+      statsEl.textContent = `${agents.length} 位 · ${running} 运行中 · ${working} 工作中 · ${attention} 项关注`;
+    }
+  },
+
+  renderBackups(backups, agents) {
+    const container = document.getElementById('backup-content');
+    const summaryEl = document.getElementById('backup-summary');
+    if (!container) return;
+    const records = this._backupRecords(backups, agents);
+    const abnormal = records.filter(r => ['bad', 'warning'].includes(this._backupStatus(r).key));
+    const waiting = records.filter(r => this._backupStatus(r).key === 'waiting').length;
+    const healthy = records.filter(r => this._backupStatus(r).key === 'ok').length;
+    const payloadSummary = backups?.summary || {};
+    if (summaryEl) {
+      summaryEl.textContent = records.length
+        ? `${payloadSummary.total_agents || records.length} 位 · ${payloadSummary.repos || this._backupRepoCount(records)} 仓库 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
+        : '等待 /api/backups 数据';
+    }
+    if (!records.length) {
+      container.innerHTML = `
+        <div class="empty-state backup-empty">
+          <strong>暂无备份数据</strong>
+          <span>/api/backups 尚未返回记录时会显示这里；后续会自动展示每位助理的备份状态。</span>
+        </div>
+      `;
+      return;
+    }
+    container.innerHTML = `
+      <div class="backup-summary-grid">
+        <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.total_agents || records.length}</span><span class="runtime-stat-label">助理</span></div>
+        <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.repos || this._backupRepoCount(records)}</span><span class="runtime-stat-label">仓库</span></div>
+        <div class="runtime-stat-card"><span class="runtime-stat-value">${healthy}</span><span class="runtime-stat-label">正常</span></div>
+        <div class="runtime-stat-card attention"><span class="runtime-stat-value">${abnormal.length}</span><span class="runtime-stat-label">异常</span></div>
+      </div>
+      <div class="backup-table-wrap">
+        <table class="runtime-table">
+          <thead><tr><th>助理</th><th>状态</th><th>最近检查</th><th>GitHub 仓库</th><th>未推送</th><th>未拉取</th><th>本地变更</th><th>摘要</th></tr></thead>
+          <tbody>
+            ${records.map(r => {
+              const status = this._backupStatus(r);
+              return `<tr>
+                <td>${esc(this._backupAgentName(r))}</td>
+                <td><span class="runtime-pill ${status.cls}">${status.label}</span></td>
+                <td>${esc(this._timeAgoText(this._backupCheckedAt(r)))}</td>
+                <td>${this._backupTargetHTML(r)}</td>
+                <td>${esc(String(this._backupNumber(r, 'ahead')))}</td>
+                <td>${esc(String(this._backupNumber(r, 'behind')))}</td>
+                <td>${esc(String(this._backupNumber(r, 'dirty') + this._backupNumber(r, 'untracked')))}</td>
+                <td>${esc(status.detail || this._backupSummaryText(r))}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  filterAgents(agents, filterValue, search) {
+    let out = agents;
+    if (search) {
+      const q = search.toLowerCase();
+      out = out.filter(a =>
+        (a.name || '').toLowerCase().includes(q) ||
+        (a.role || '').toLowerCase().includes(q) ||
+        (this._runtimeType(a) || '').toLowerCase().includes(q)
+      );
+    }
+    if (filterValue === 'attention') out = out.filter(a => this.attentionItems([a]).length > 0);
+    if (filterValue === 'quota') out = out.filter(a => this._quotaRisk(a).key !== 'ok');
+    if (filterValue === 'inactive') out = out.filter(a => this._inactiveRisk(a).key !== 'ok');
+    if (filterValue === 'backup') out = out.filter(a => ['bad', 'warning'].includes(this._backupRisk(a).key));
+    if (filterValue && filterValue.startsWith('runtime:')) {
+      const runtime = filterValue.split(':')[1];
+      out = out.filter(a => {
+        const type = this._runtimeType(a).toLowerCase();
+        return runtime === 'unknown' ? !type || type === 'unknown' : type.includes(runtime);
+      });
+    }
+    return out;
+  },
+
+  summary(agents, meta = {}) {
+    const total = Number(meta.total_members ?? meta.total ?? meta.member_count ?? agents.length) || agents.length;
+    return {
+      total,
+      running: agents.filter(a => this._isRunning(a)).length,
+      working: agents.filter(a => this._isWorking(a)).length,
+      attention: this.attentionItems(agents).length
+    };
+  },
+
+  attentionItems(agents) {
+    return agents.flatMap(agent => {
+      const items = [];
+      const quota = this._quotaRisk(agent);
+      const runtime = this._runtimeRisk(agent);
+      const inactive = this._inactiveRisk(agent);
+      const backup = this._backupRisk(agent);
+      if (quota.key !== 'ok') items.push(this._attention(agent, '限额风险', quota));
+      if (runtime.key !== 'ok') items.push(this._attention(agent, '运行异常', runtime));
+      if (inactive.key !== 'ok') items.push(this._attention(agent, '极度不活跃', inactive));
+      if (['bad', 'warning'].includes(backup.key)) items.push(this._attention(agent, 'GitHub 备份异常', backup));
+      return items;
+    });
+  },
+
+  cardHTML(agent) {
+    const runtime = this._runtimeLabel(agent);
+    const runtimeRisk = this._runtimeRisk(agent);
+    const quota = this._quotaRisk(agent);
+    const inactive = this._inactiveRisk(agent);
+    const backup = this._backupRisk(agent);
+    const usage = this._usageLabel(agent);
+    const attentionCount = [runtimeRisk, quota, inactive, backup].filter(x => x.key !== 'ok' && x.key !== 'waiting').length;
+    const work = this._isWorking(agent) ? '工作中' : this._isRunning(agent) ? '待命' : '离线';
+    return `
+      <div class="runtime-agent-card ${attentionCount ? 'needs-attention' : ''}" data-name="${esc(agent.name)}">
+        <div class="runtime-card-head">
+          <div>
+            <div class="runtime-card-title">${esc(agent.name || '未命名助理')}</div>
+            <div class="runtime-card-subtitle">${esc(agent.role || runtime)}</div>
+          </div>
+          <span class="runtime-pill ${this._isRunning(agent) ? 'ok' : 'critical'}">${work}</span>
+        </div>
+        <div class="runtime-card-meta">
+          <span>${esc(runtime)}</span>
+          <span>心跳 ${esc(this._timeAgoText(this._heartbeatAt(agent)))}</span>
+          <span>活动 ${esc(this._timeAgoText(this._lastActivityAt(agent)))}</span>
+        </div>
+        <div class="runtime-card-badges">
+          <span class="runtime-pill ${runtimeRisk.cls}">${runtimeRisk.label}</span>
+          <span class="runtime-pill ${quota.cls}">${quota.label}</span>
+          <span class="runtime-pill ${usage.cls}">${usage.label}</span>
+          <span class="runtime-pill ${backup.cls}">${backup.label}</span>
+        </div>
+      </div>
+    `;
+  },
+
+  _renderSummary(summary) {
+    const container = document.getElementById('runtime-summary');
+    const statsEl = document.getElementById('runtime-overview-stats');
+    if (statsEl) statsEl.textContent = `来自 /api/team · 总成员 ${summary.total}`;
+    if (!container) return;
+    container.innerHTML = `
+      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.total}</span><span class="runtime-stat-label">总成员</span></div>
+      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.running}</span><span class="runtime-stat-label">运行中</span></div>
+      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.working}</span><span class="runtime-stat-label">工作中</span></div>
+      <div class="runtime-stat-card attention"><span class="runtime-stat-value">${summary.attention}</span><span class="runtime-stat-label">需关注</span></div>
+    `;
+  },
+
+  _renderAttention(items) {
+    const container = document.getElementById('attention-panel');
+    const totalEl = document.getElementById('attention-total');
+    if (totalEl) totalEl.textContent = `${items.length} 项`;
+    if (!container) return;
+    if (!items.length) {
+      container.innerHTML = '<div class="empty-state">当前没有需关注项</div>';
+      return;
+    }
+    container.innerHTML = items.slice(0, 24).map(item => `
+      <div class="attention-item ${item.risk.cls}">
+        <span class="attention-type">${esc(item.type)}</span>
+        <span class="attention-agent">${esc(item.agent.name || '-')}</span>
+        <span class="attention-detail">${esc(item.risk.detail || item.risk.label)}</span>
+      </div>
+    `).join('');
+  },
+
+  _renderActivity(timeline, agents) {
+    const container = document.getElementById('critical-activity');
+    const totalEl = document.getElementById('critical-activity-total');
+    if (!container) return;
+    const names = new Set(agents.map(a => a.name));
+    const events = (timeline || []).filter(e => !e.agent || names.has(e.agent)).slice(0, 8);
+    if (totalEl) totalEl.textContent = events.length ? `最近 ${events.length} 条` : '';
+    if (!events.length) {
+      container.innerHTML = '<div class="empty-state">暂无关键活动</div>';
+      return;
+    }
+    container.innerHTML = events.map(e => `
+      <div class="runtime-activity-item">
+        <span class="runtime-activity-agent">${esc(e.agent || e.actor || '-')}</span>
+        <span class="runtime-activity-text">${esc(e.action || e.type || 'activity')} ${esc(truncate(e.target_title || e.title || e.message || '', 52))}</span>
+        <span class="runtime-activity-time">${esc(this._timeAgoText(e.timestamp || e.ts || e.created_at))}</span>
+      </div>
+    `).join('');
+  },
+
+  _attention(agent, type, risk) {
+    return { agent, type, risk };
+  },
+
+  _isRunning(agent) {
+    const status = String(agent.runtime_status || agent.runtime?.status || agent.status || '').toLowerCase();
+    return agent.online !== false && !['offline', 'stopped', 'down'].includes(status);
+  },
+
+  _isWorking(agent) {
+    const state = String(agent.work_state || agent.work_status || '').toLowerCase();
+    return ['working', 'busy', 'active'].includes(state);
+  },
+
+  _runtimeRisk(agent) {
+    const status = String(agent.runtime_status || agent.runtime?.status || '').toLowerCase();
+    const heartbeat = this._heartbeatAt(agent);
+    const heartbeatStale = heartbeat && (Date.now() - new Date(heartbeat).getTime() > this.attentionThresholds.heartbeatMs);
+    if (agent.runtime?.stale || agent.hardware?.stale || heartbeatStale) {
+      return { key: 'stale', cls: 'warning', label: '心跳断', detail: `心跳 ${this._timeAgoText(heartbeat)}` };
+    }
+    if (['degraded', 'warning', 'error', 'failed'].includes(status)) {
+      return { key: 'degraded', cls: 'warning', label: '运行异常', detail: status };
+    }
+    if (!this._isRunning(agent)) {
+      return { key: 'offline', cls: 'critical', label: '未运行', detail: 'runtime offline' };
+    }
+    return { key: 'ok', cls: 'ok', label: '运行正常' };
+  },
+
+  _quotaRisk(agent) {
+    const quota = agent.quota || {};
+    const pct = Math.max(
+      Number(quota.primary?.used_percent ?? 0),
+      Number(quota.secondary?.used_percent ?? 0)
+    );
+    if (!quota.supported) return { key: 'ok', cls: 'muted', label: quota.reason === 'unsupported_for_now' ? '限额不支持' : '限额待观测' };
+    if (pct >= 95) return { key: 'critical', cls: 'critical', label: `限额 ${pct}%`, detail: '即将耗尽' };
+    if (pct >= this.attentionThresholds.quota) return { key: 'warning', cls: 'warning', label: `限额 ${pct}%`, detail: '高水位' };
+    return { key: 'ok', cls: 'ok', label: pct ? `限额 ${pct}%` : '限额正常' };
+  },
+
+  _inactiveRisk(agent) {
+    const ts = this._lastActivityAt(agent);
+    if (!ts) return { key: 'ok', cls: 'muted', label: '活动待观测', detail: '未上报 last activity' };
+    const age = Date.now() - new Date(ts).getTime();
+    if (age > this.attentionThresholds.inactiveMs) {
+      return { key: 'inactive', cls: 'warning', label: '不活跃', detail: this._timeAgoText(ts) };
+    }
+    return { key: 'ok', cls: 'ok', label: '活跃' };
+  },
+
+  _backupRisk(agent) {
+    const backup = agent.backup || agent.github_backup || agent.backups;
+    if (!backup) return { key: 'ok', cls: 'muted', label: '备份待接入' };
+    const status = this._backupStatus(backup);
+    if (status.key !== 'ok') return status;
+    return status;
+  },
+
+  _backupStatus(backup) {
+    if (!backup) return { key: 'ok', cls: 'muted', label: '备份待接入', detail: '无备份数据' };
+    const b = Array.isArray(backup) ? backup[0] : backup;
+    const summary = b.summary && typeof b.summary === 'object' ? b.summary : null;
+    const raw = String(summary?.status || b.status || b.state || '').toLowerCase();
+    const reason = summary?.reason || b.reason || b.error || b.message || null;
+
+    if (raw === 'critical') {
+      const count = Number(summary?.critical || 0);
+      return { key: 'bad', cls: 'critical', label: '备份异常', detail: reason || (count ? `${count} 个仓库异常` : 'GitHub remote 缺失或采集失败') };
+    }
+    if (raw === 'warning') {
+      return { key: 'warning', cls: 'warning', label: '待同步', detail: reason || this._backupSummaryText(b) };
+    }
+    if (raw === 'unsupported') {
+      const isMissingReport = !reason || reason === 'not_reported';
+      return {
+        key: isMissingReport ? 'waiting' : 'warning',
+        cls: isMissingReport ? 'muted' : 'warning',
+        label: isMissingReport ? '备份待接入' : '备份不可用',
+        detail: isMissingReport ? '等待 reporter 上报' : reason
+      };
+    }
+    if (raw === 'ok') return { key: 'ok', cls: 'ok', label: this._backupOkLabel(summary) };
+
+    const okRaw = ['ok', 'success', 'healthy', 'fresh', 'synced', 'completed'].includes(raw);
+    const failedRaw = ['failed', 'error', 'stale', 'missing', 'blocked'].includes(raw);
+    const last = this._backupCheckedAt(b);
+    const stale = b.stale || (last && Date.now() - new Date(last).getTime() > this.attentionThresholds.backupMs);
+    if (failedRaw || b.error || b.failed || stale) {
+      return { key: 'bad', cls: failedRaw || b.error ? 'critical' : 'warning', label: failedRaw || b.error ? '备份异常' : '备份过旧', detail: b.error || b.message || this._timeAgoText(last) };
+    }
+    if (okRaw || last) return { key: 'ok', cls: 'ok', label: '备份正常' };
+    return { key: 'ok', cls: 'muted', label: '备份待接入' };
+  },
+
+  _usageLabel(agent) {
+    const usage = agent.usage || {};
+    const tokens = usage.session_tokens || {};
+    const total = tokens.total ?? ((tokens.input || 0) + (tokens.output || 0));
+    if (!usage.supported || !total) return { cls: 'muted', label: '用量待观测' };
+    return { cls: 'ok', label: this._formatTokenCount(total) };
+  },
+
+  _runtimeLabel(agent) {
+    const runtime = agent.runtime || {};
+    const label = runtime.label || runtime.type || agent.runtime_type || 'Unknown';
+    return `${label}${runtime.version ? ` ${runtime.version}` : ''}`;
+  },
+
+  _runtimeType(agent) {
+    return String(agent.runtime?.type || agent.runtime?.label || agent.runtime_type || '').toLowerCase();
+  },
+
+  _heartbeatAt(agent) {
+    return agent.last_heartbeat_at || agent.runtime?.last_heartbeat_at || agent.hardware?.reported_at || agent.reported_at;
+  },
+
+  _lastActivityAt(agent) {
+    return agent.last_active_at || agent.latest_event?.timestamp || agent.latest_event?.ts || agent.last_seen_at;
+  },
+
+  _timeAgoText(ts) {
+    if (!ts) return '未知';
+    const t = typeof ts === 'number' ? ts : new Date(ts).getTime();
+    if (!Number.isFinite(t)) return '未知';
+    return timeAgo(t);
+  },
+
+  _backupRecords(backups, agents) {
+    const raw = Array.isArray(backups) ? backups : (backups?.agents || backups?.backups || backups?.records || []);
+    if (raw.length) return raw;
+    return agents
+      .filter(a => a.backup || a.github_backup || a.backups)
+      .map(a => ({ agent: a.name, ...(Array.isArray(a.backups) ? a.backups[0] : (a.backup || a.github_backup || {})) }));
+  },
+
+  _backupAgentName(record) {
+    return record.agent || record.name || '-';
+  },
+
+  _backupCheckedAt(record) {
+    return record.summary?.sampled_at || record.reported_at || record.last_success_at || record.last_backup_at || record.updated_at || record.checked_at;
+  },
+
+  _backupNumber(record, key) {
+    const value = record.summary?.[key] ?? record[key] ?? 0;
+    return Number.isFinite(Number(value)) ? Number(value) : 0;
+  },
+
+  _backupRepoCount(records) {
+    return records.reduce((sum, record) => sum + (Number(record.summary?.total || 0) || (Array.isArray(record.repos) ? record.repos.length : 0)), 0);
+  },
+
+  _backupOkLabel(summary) {
+    if (summary?.total) return `正常 ${summary.ok || summary.total}/${summary.total}`;
+    return '备份正常';
+  },
+
+  _backupTargetHTML(record) {
+    const repos = Array.isArray(record.repos) ? record.repos : [];
+    if (repos.length) {
+      const shown = repos.slice(0, 3).map(repo => {
+        const label = repo.remote || repo.path || '-';
+        return `<span class="backup-repo-chip">${esc(truncate(label, 42))}</span>`;
+      }).join('');
+      return shown + (repos.length > 3 ? `<span class="backup-repo-more">+${repos.length - 3}</span>` : '');
+    }
+    return esc(record.repo || record.repository || record.remote || record.target || '-');
+  },
+
+  _backupSummaryText(record) {
+    const summary = record.summary || {};
+    const parts = [];
+    const total = Number(summary.total || 0);
+    if (total) parts.push(`${summary.github_remotes || 0}/${total} GitHub`);
+    const ahead = this._backupNumber(record, 'ahead');
+    const behind = this._backupNumber(record, 'behind');
+    const dirty = this._backupNumber(record, 'dirty');
+    const untracked = this._backupNumber(record, 'untracked');
+    if (ahead) parts.push(`${ahead} 未推送`);
+    if (behind) parts.push(`${behind} 未拉取`);
+    if (dirty || untracked) parts.push(`${dirty + untracked} 本地变更`);
+    return parts.join(' · ') || record.message || record.reason || '-';
+  },
+
+  _formatTokenCount(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+    return String(Math.round(n));
+  }
+};
 
 // Scope manager (#100): multi connect-server × org management
 const ScopeManager = {
@@ -192,7 +625,7 @@ const App = {
   ws: null,
   reconnectTimer: null,
   currentPage: 'overview',
-  data: { team: [], board: {}, timeline: [], graph: { nodes: [], edges: [] }, projects: [] },
+  data: { team: [], teamMeta: {}, board: {}, timeline: [], graph: { nodes: [], edges: [] }, projects: [], backups: [] },
   selectedProject: '',  // '' = all projects
 
   // Graph instances for overview and collab pages
@@ -332,6 +765,20 @@ const App = {
 
   // #114: resolve hash string to actual subpage
   _resolveHash(hash) {
+    const legacyHashMap = {
+      analysis: 'report',
+      'analysis/report': 'report',
+      'analysis/timeline': 'timeline',
+      'analysis/limits': 'limits',
+      'analysis/tokens': 'tokens',
+      'analysis/estimates': 'estimates',
+      tasks: 'tasks',
+      'team/live': 'live',
+      myview: 'myview',
+      'myview/about': 'about'
+    };
+    if (legacyHashMap[hash]) return legacyHashMap[hash];
+
     // Handle "group/subpage" format (e.g., "tasks/pipeline")
     if (hash.includes('/')) {
       const [group, sub] = hash.split('/');
@@ -402,23 +849,32 @@ const App = {
     if (page === 'health') HealthDiagnostics.fetch();
     if (page === 'projects' && !Projects.data) Projects.load();
     if (page === 'about') this.loadAbout();
+    if (page === 'backups') this.renderBackups();
   },
 
   // --- Data Fetching ---
   async fetchAll() {
     Progress.show();
     try {
-      const [teamRes, boardRes, timelineRes, graphRes] = await Promise.all([
+      const [teamRes, boardRes, timelineRes, graphRes, backupsRes] = await Promise.all([
         fetch(`${BASE}/api/team`),
         fetch(`${BASE}/api/board`),
         fetch(`${BASE}/api/timeline`),
-        fetch(`${BASE}/api/graph`)
+        fetch(`${BASE}/api/graph`),
+        fetch(`${BASE}/api/backups`).catch(() => null)
       ]);
 
       if (teamRes.ok) {
         const teamData = await teamRes.json();
-        this.data.team = teamData.agents;
-        AgentFilter.setAgents(ScopeManager.filter(teamData.agents));
+        const teamMeta = teamData.stats || teamData.summary || teamData.meta || {};
+        this.data.team = teamData.agents || [];
+        this.data.teamMeta = {
+          ...teamMeta,
+          total_members: teamData.total_members ?? teamMeta.total_members,
+          total: teamData.total ?? teamMeta.total,
+          member_count: teamData.member_count ?? teamMeta.member_count
+        };
+        AgentFilter.setAgents(ScopeManager.filter(this.data.team));
       }
 
       if (boardRes.ok) {
@@ -432,6 +888,12 @@ const App = {
 
       if (graphRes.ok) {
         this.data.graph = await graphRes.json();
+      }
+
+      if (backupsRes && backupsRes.ok) {
+        this.data.backups = await backupsRes.json();
+      } else {
+        this.data.backups = [];
       }
 
       // Fetch project list
@@ -461,6 +923,7 @@ const App = {
     this.renderTasks();
     this.renderTimeline();
     this.renderMyView();
+    this.renderBackups();
     WorkloadHeatmap.render(this.data.team);
   },
 
@@ -471,6 +934,7 @@ const App = {
       case 'collab': this.renderCollab(); break;
       case 'tasks': this.renderTasks(); break;
       case 'timeline': this.renderTimeline(); break;
+      case 'backups': this.renderBackups(); break;
       case 'live': LiveDashboard.render(); break;
       case 'limits': LimitsDashboard.render(); break;
       case 'pipeline': Pipeline.render(); break;
@@ -485,32 +949,10 @@ const App = {
       ? scopedTeam.filter(a => filter.has(a.name))
       : scopedTeam;
 
-    // Team Capacity (#45)
-    TeamCapacity.render(agents);
-
-    // Blocker Detection (#56)
-    this._renderBlockers(agents);
-
-    // Action Suggestions (#57)
-    Suggestions.render(agents, this.data.board, this.data.timeline || []);
-
-    // Cards — apply sort (#50)
     const sortedForOverview = this._applySortOrder(agents, document.getElementById('overview-sort')?.value || 'default');
-    CardWall.renderTo('overview-agent-cards', 'overview-team-stats', sortedForOverview);
-
-    // Board (filtered)
-    const board = this._filterBoard('overview', this.data.board);
-    TaskBoard.renderTo('overview', board);
-
-    // Timeline (filtered — scope then agent)
     const scopedTimeline = ScopeManager.filter(this.data.timeline);
     const events = AgentFilter.filterItems('overview', scopedTimeline, 'agent');
-    Timeline.renderTo('overview-timeline', events, 20);
-
-    // Graph (filtered)
-    const graphData = this._filterGraph('overview', this.data.graph);
-    if (this.overviewGraph) this.overviewGraph.setData(graphData.nodes, graphData.edges);
-
+    RuntimeCenter.renderOverview(sortedForOverview, this.data.teamMeta, events || []);
   },
 
   renderTeam() {
@@ -528,14 +970,13 @@ const App = {
         (a.bio || '').toLowerCase().includes(search)
       );
     }
-    if (statusFilter === 'online') agents = agents.filter(a => a.online);
-    if (statusFilter === 'offline') agents = agents.filter(a => !a.online);
+    agents = RuntimeCenter.filterAgents(agents, statusFilter, search);
 
     // Apply sort (#50)
     const sortVal = document.getElementById('team-sort')?.value || 'default';
     agents = this._applySortOrder(agents, sortVal);
 
-    CardWall.renderTo('team-agent-cards', 'team-stats', agents);
+    RuntimeCenter.renderRoster(agents, 'team-stats');
 
     // Attach search handlers (once)
     if (!this._teamSearchBound) {
@@ -581,6 +1022,10 @@ const App = {
 
   renderMyView() {
     MyView.populateAgents(this.data.team);
+  },
+
+  renderBackups() {
+    RuntimeCenter.renderBackups(this.data.backups, ScopeManager.filter(this.data.team));
   },
 
   // --- Filter Helpers ---
@@ -721,6 +1166,7 @@ const App = {
         if (msg.data.team) {
           const agents = Array.isArray(msg.data.team) ? msg.data.team : [];
           this.data.team = agents;
+          this.data.teamMeta = msg.data.teamMeta || msg.data.team_meta || msg.data.stats || this.data.teamMeta;
           AgentFilter.setAgents(ScopeManager.filter(agents));
         }
         if (msg.data.board) this.data.board = msg.data.board;
@@ -732,6 +1178,9 @@ const App = {
         }
         if (msg.data.projects) {
           Projects.update(msg.data.projects);
+        }
+        if (msg.data.backups) {
+          this.data.backups = msg.data.backups;
         }
         this.renderAllPages();
         break;
@@ -746,9 +1195,17 @@ const App = {
           AgentFilter.setAgents(ScopeManager.filter(msg.data));
           this.renderOverview();
           this.renderTeam();
+          this.renderBackups();
           if (this.currentPage === 'live') LiveDashboard.fetch();
           if (this.currentPage === 'limits') LimitsDashboard.fetch();
         }
+        break;
+
+      case 'backups:update':
+        this.data.backups = msg.data || [];
+        this.renderOverview();
+        this.renderTeam();
+        this.renderBackups();
         break;
 
       case 'board:update':
@@ -911,7 +1368,7 @@ const App = {
     // Get visible cards on the current page
     const page = document.querySelector('.page.active');
     if (!page) return;
-    const cards = Array.from(page.querySelectorAll('.agent-card'));
+    const cards = Array.from(page.querySelectorAll('.runtime-agent-card, .agent-card'));
     if (!cards.length) return;
 
     // Remove previous focus
@@ -925,7 +1382,7 @@ const App = {
   },
 
   _kbdClearFocus() {
-    document.querySelectorAll('.agent-card.kbd-focused').forEach(c => c.classList.remove('kbd-focused'));
+    document.querySelectorAll('.runtime-agent-card.kbd-focused, .agent-card.kbd-focused').forEach(c => c.classList.remove('kbd-focused'));
     this._kbdIndex = -1;
   },
 

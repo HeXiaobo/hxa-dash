@@ -87,7 +87,7 @@ const LimitsDashboard = {
       const quotaText = this._formatQuotaText(quota);
       const tokenText = usage.supported
         ? [
-            usageTokens.total != null ? `${this._formatTokenCount(usageTokens.total)} tok` : null,
+            usageTokens.total != null ? this._formatTokenCount(usageTokens.total) : null,
             usageTokens.reasoning != null ? `推理 ${this._formatTokenCount(usageTokens.reasoning)}` : null,
             usage.session_cost_usd != null ? `$${Number(usage.session_cost_usd).toFixed(2)} 估算` : null,
           ].filter(Boolean).join(' · ') || '已观测'

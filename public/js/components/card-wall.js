@@ -342,9 +342,9 @@ const CardWall = {
     const cacheTokens = (usageTokens.cache_creation || 0) + (usageTokens.cache_read || 0) + (usageTokens.cached_input || 0);
     const usageHTML = usage.supported && usageTotal ? `
       <div class="card-activity-metrics">
-        <span class="card-stat" title="本机会话 token，本地观测非账单口径">🧮 ${this._formatTokenCount(usageTotal)} tok</span>
-        ${cacheTokens ? `<span class="card-stat" title="缓存相关 token">🗄️ ${this._formatTokenCount(cacheTokens)}</span>` : ''}
-        ${usageTokens.reasoning ? `<span class="card-stat" title="推理输出 token">🧠 ${this._formatTokenCount(usageTokens.reasoning)}</span>` : ''}
+        <span class="card-stat" title="本机会话用量，本地观测非账单口径">🧮 ${this._formatTokenCount(usageTotal)}</span>
+        ${cacheTokens ? `<span class="card-stat" title="缓存用量">🗄️ ${this._formatTokenCount(cacheTokens)}</span>` : ''}
+        ${usageTokens.reasoning ? `<span class="card-stat" title="推理用量">🧠 ${this._formatTokenCount(usageTokens.reasoning)}</span>` : ''}
       </div>
     ` : '';
 

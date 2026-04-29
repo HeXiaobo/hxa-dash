@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HxA Dash — Agent 团队面板</title>
+  <title>HxA Dash — AI 助理运行中枢</title>
   <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
@@ -16,12 +16,12 @@
       </h1>
       <button class="nav-hamburger" id="nav-hamburger" aria-label="菜单" aria-expanded="false">☰</button>
       <nav id="main-nav">
-        <a href="#overview" class="nav-item active" data-page="overview">Overview</a>
-        <a href="#team" class="nav-item" data-page="team">团队</a>
-        <a href="#tasks" class="nav-item" data-page="tasks">任务</a>
-        <a href="#analysis" class="nav-item" data-page="analysis">分析</a>
+        <a href="#overview" class="nav-item active" data-page="overview">总览</a>
+        <a href="#team" class="nav-item" data-page="team">助理</a>
+        <a href="#limits" class="nav-item" data-page="limits">限额</a>
+        <a href="#tokens" class="nav-item" data-page="tokens">用量</a>
+        <a href="#backups" class="nav-item" data-page="backups">备份</a>
         <a href="#system" class="nav-item" data-page="system">系统</a>
-        <a href="#myview" class="nav-item" data-page="myview">我的</a>
       </nav>
       <button id="nav-close-btn" aria-label="关闭菜单">×</button>
     </div>
@@ -47,11 +47,6 @@
 
   <main>
     <!-- Sub-tabs for grouped pages (#114) -->
-    <div class="sub-tabs hidden" data-group="team">
-      <a href="#team" class="sub-tab active" data-subpage="team">团队</a>
-      <a href="#team/collab" class="sub-tab" data-subpage="collab">协作</a>
-      <a href="#team/live" class="sub-tab" data-subpage="live">Live</a>
-    </div>
     <div class="sub-tabs hidden" data-group="tasks">
       <a href="#tasks" class="sub-tab active" data-subpage="tasks">任务</a>
       <a href="#tasks/pipeline" class="sub-tab" data-subpage="pipeline">Pipeline</a>
@@ -61,58 +56,49 @@
       <a href="#analysis" class="sub-tab active" data-subpage="report">报表</a>
       <a href="#analysis/timeline" class="sub-tab" data-subpage="timeline">时间轴</a>
       <a href="#analysis/limits" class="sub-tab" data-subpage="limits">限额</a>
-      <a href="#analysis/tokens" class="sub-tab" data-subpage="tokens">Tokens</a>
+      <a href="#analysis/tokens" class="sub-tab" data-subpage="tokens">用量</a>
       <a href="#analysis/estimates" class="sub-tab" data-subpage="estimates">预估</a>
     </div>
     <div class="sub-tabs hidden" data-group="system">
       <a href="#system" class="sub-tab active" data-subpage="health">健康</a>
+      <a href="#system/live" class="sub-tab" data-subpage="live">Live</a>
       <a href="#system/projects" class="sub-tab" data-subpage="projects">项目</a>
-    </div>
-    <div class="sub-tabs hidden" data-group="myview">
-      <a href="#myview" class="sub-tab active" data-subpage="myview">我的</a>
-      <a href="#myview/about" class="sub-tab" data-subpage="about">版本信息</a>
+      <a href="#system/report" class="sub-tab" data-subpage="report">高级</a>
+      <a href="#system/timeline" class="sub-tab" data-subpage="timeline">归档</a>
+      <a href="#system/about" class="sub-tab" data-subpage="about">版本</a>
     </div>
 
     <!-- Page: Overview -->
     <div id="page-overview" class="page active">
-      <!-- Team Capacity Overview (#45) -->
       <section class="section">
         <div class="section-header">
-          <h2>团队概况</h2>
+          <h2>运行总览</h2>
+          <span id="runtime-overview-stats" class="team-stats"></span>
         </div>
-        <div id="team-capacity" class="team-capacity-section"></div>
+        <div id="runtime-summary" class="runtime-summary-grid"></div>
       </section>
 
-      <!-- Blocker Detection (#56) -->
-      <section id="blocker-section" class="section blocker-section hidden">
-        <div class="section-header">
-          <h2><span class="blocker-toggle">▾</span> ⚠️ 卡点告警</h2>
-          <span id="blocker-count" class="team-stats"></span>
-        </div>
-        <div id="blocker-definitions" class="blocker-definitions"></div>
-        <div id="blocker-list" class="blocker-list"></div>
-      </section>
+      <div class="runtime-layout">
+        <section class="section attention-section">
+          <div class="section-header">
+            <h2>需关注</h2>
+            <span id="attention-total" class="team-stats"></span>
+          </div>
+          <div id="attention-panel" class="attention-list"></div>
+        </section>
 
-      <!-- Action Suggestions (#57) -->
-      <section class="section suggestions-section">
-        <div class="section-header">
-          <h2>💡 行动建议</h2>
-        </div>
-        <div id="suggestions-list" class="suggestions-list"></div>
-      </section>
+        <section class="section activity-section">
+          <div class="section-header">
+            <h2>最近关键活动</h2>
+            <span id="critical-activity-total" class="team-stats"></span>
+          </div>
+          <div id="critical-activity" class="runtime-activity-list"></div>
+        </section>
+      </div>
 
-      <!-- Team Utilization & Output Metrics (#62) -->
-      <section class="section">
+      <section class="section runtime-agents-section">
         <div class="section-header">
-          <h2>📊 运行与协作概况</h2>
-        </div>
-        <div id="metrics-panel" class="metrics-panel"></div>
-      </section>
-
-      <!-- Team Members (HxA Friendly #58) -->
-      <section class="section">
-        <div class="section-header">
-          <h2>团队成员</h2>
+          <h2>Agent 运行</h2>
           <div class="section-tools">
             <span id="overview-team-stats" class="team-stats"></span>
             <select id="overview-sort" class="sort-select" title="排序方式">
@@ -123,85 +109,8 @@
             </select>
           </div>
         </div>
-        <p class="section-subtitle">实时显示每位成员的工作状态、runtime、最后心跳、当前任务和限额摘要</p>
-        <div id="overview-agent-cards" class="card-grid"></div>
-      </section>
-
-      <!-- Work Panel (tasks + timeline side by side) — moved above collab per #31 -->
-      <div class="bottom-row">
-        <section class="section flex-1">
-          <div class="section-header">
-            <h2>任务看板</h2>
-          </div>
-          <div id="overview-task-board" class="board">
-            <div class="board-col" data-state="todo">
-              <h3>待办 <span class="count" id="overview-todo-count">0</span></h3>
-              <div class="board-list" id="overview-todo-list"></div>
-            </div>
-            <div class="board-col" data-state="doing">
-              <h3>进行中 <span class="count" id="overview-doing-count">0</span></h3>
-              <div class="board-list" id="overview-doing-list"></div>
-            </div>
-            <div class="board-col" data-state="done">
-              <h3>已完成 <span class="count" id="overview-done-count">0</span></h3>
-              <div class="board-list" id="overview-done-list"></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="section flex-1">
-          <div class="section-header">
-            <h2>最近活动</h2>
-          </div>
-          <div id="overview-timeline" class="timeline-list"></div>
-        </section>
-      </div>
-
-      <!-- Performance Trends (#47) -->
-      <section class="section">
-        <div class="section-header">
-          <h2>生产力趋势</h2>
-          <div class="section-tools">
-            <div class="view-toggle">
-              <button data-trends-mode="team" class="btn-toggle active">团队</button>
-              <button data-trends-mode="individual" class="btn-toggle">个人</button>
-            </div>
-            <div class="view-toggle">
-              <button data-trends-period="7" class="btn-toggle">7天</button>
-              <button data-trends-period="14" class="btn-toggle active">14天</button>
-              <button data-trends-period="30" class="btn-toggle">30天</button>
-            </div>
-          </div>
-        </div>
-        <div class="trends-container">
-          <div class="trends-sublabel">每日完成任务</div>
-          <div id="trends-line-chart" class="trends-chart-area"></div>
-          <div id="trends-line-legend" class="trends-legend"></div>
-          <div class="trends-sublabel" style="margin-top:14px">活跃时段热力图</div>
-          <div id="trends-heatmap" class="trends-heatmap-area"></div>
-        </div>
-      </section>
-
-      <!-- Collab Graph (mini) -->
-      <section class="section">
-        <div class="section-header">
-          <h2>协作关系</h2>
-        </div>
-        <div class="graph-container" style="height: 300px;">
-          <canvas id="overview-collab-canvas"></canvas>
-          <div id="overview-collab-empty" class="graph-empty hidden">暂无协作数据</div>
-          <div class="graph-legend">
-            <span class="legend-separator">连线类型</span>
-            <span class="legend-item"><span class="legend-line" style="background:var(--purple)"></span> Code Review</span>
-            <span class="legend-item"><span class="legend-line" style="background:var(--green)"></span> Issue 协作</span>
-            <span class="legend-item"><span class="legend-line" style="background:var(--accent)"></span> 同项目</span>
-            <span class="legend-separator">节点</span>
-            <span class="legend-item"><span class="legend-dot online"></span> 在线</span>
-            <span class="legend-item"><span class="legend-dot offline"></span> 离线</span>
-            <span class="legend-item"><span class="legend-size-hint"></span> 大小 = 任务量</span>
-          </div>
-          <div class="graph-help">拖拽节点调整位置 · 悬停查看详情 · 线粗 = 协作频次</div>
-        </div>
+        <p class="section-subtitle">按 runtime、心跳、活动、限额、用量和备份状态扫描助理运行态</p>
+        <div id="overview-agent-cards" class="runtime-card-grid"></div>
       </section>
     </div>
 
@@ -209,13 +118,19 @@
     <div id="page-team" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>团队成员列表</h2>
+          <h2>助理 Roster</h2>
           <div class="section-tools">
-            <input type="text" id="team-search" class="search-input" placeholder="搜索成员…">
+            <input type="text" id="team-search" class="search-input" placeholder="搜索助理…">
             <select id="team-status-filter" class="select-filter">
-              <option value="all">全部状态</option>
-              <option value="online">在线</option>
-              <option value="offline">离线</option>
+              <option value="all">全部助理</option>
+              <option value="attention">需关注</option>
+              <option value="quota">限额高</option>
+              <option value="inactive">不活跃</option>
+              <option value="backup">备份异常</option>
+              <option value="runtime:claude">Claude</option>
+              <option value="runtime:codex">Codex</option>
+              <option value="runtime:openclaw">OpenClaw</option>
+              <option value="runtime:unknown">Unknown</option>
             </select>
             <select id="team-sort" class="sort-select" title="排序方式">
               <option value="default">排序: 默认</option>
@@ -226,7 +141,18 @@
           </div>
         </div>
         <span id="team-stats" class="team-stats"></span>
-        <div id="team-agent-cards" class="card-grid card-grid-wide"></div>
+        <div id="team-agent-cards" class="runtime-card-grid runtime-card-grid-wide"></div>
+      </section>
+    </div>
+
+    <!-- Page: Backups -->
+    <div id="page-backups" class="page">
+      <section class="section">
+        <div class="section-header">
+          <h2>备份</h2>
+          <span id="backup-summary" class="team-stats"></span>
+        </div>
+        <div id="backup-content" class="backup-layout"></div>
       </section>
     </div>
 
@@ -362,7 +288,7 @@
     <div id="page-limits" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>⏳ Runtime 限额</h2>
+          <h2>限额</h2>
         </div>
         <p class="section-subtitle">集中查看 Claude Code / Codex 的 5 小时与 7 天限额用量、重置时间和不支持状态。</p>
         <div id="limits-dashboard"></div>
@@ -397,7 +323,7 @@
     <div id="page-tokens" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>Token 用量分析</h2>
+          <h2>用量</h2>
           <div class="section-tools">
             <div class="btn-group">
               <button data-token-range="today" class="btn-toggle active">今天</button>

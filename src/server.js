@@ -39,6 +39,8 @@ const overviewRoutes = require('./routes/overview');
 const agentHealthRoutes = require('./routes/agent-health');
 const healthWatchdog = require('./health-watchdog');
 const pm2Routes = require('./routes/pm2-services');
+const backupRoutes = require('./routes/backups');
+const { buildBackupsPayload } = backupRoutes.__private;
 
 const PORT = process.env.PORT || 3479;
 
@@ -142,6 +144,7 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use('/api/agent-health', agentHealthRoutes);
 app.use('/api/pm2', pm2Routes);
+app.use('/api/backups', backupRoutes);
 
 // Health watchdog alerts endpoint (#129)
 app.get('/api/health-watchdog/alerts', (req, res) => {
@@ -238,7 +241,8 @@ ws.init(server, () => ({
   timeline: db.getTimeline(50),
   graph: collab.getGraph(),
   metrics: computeMetrics(),
-  projects: buildProjects()
+  projects: buildProjects(),
+  backups: buildBackupsPayload(db.getAllAgents(), db.getAllAgentHealth())
 }));
 
 // Data polling engine
@@ -267,7 +271,8 @@ async function pollAll() {
       timeline: db.getTimeline(50),
       graph,
       metrics: computeMetrics(),
-      projects: buildProjects()
+      projects: buildProjects(),
+      backups: buildBackupsPayload(db.getAllAgents(), db.getAllAgentHealth())
     };
 
     // Always broadcast full snapshot after each poll cycle (#40)
@@ -293,7 +298,8 @@ async function startPolling() {
     timeline: db.getTimeline(50),
     graph: collab.getGraph(),
     metrics: computeMetrics(),
-    projects: buildProjects()
+    projects: buildProjects(),
+    backups: buildBackupsPayload(db.getAllAgents(), db.getAllAgentHealth())
   };
   ws.sendSnapshot(snapshot);
 
