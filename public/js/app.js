@@ -531,7 +531,7 @@ const RuntimeCenter = {
       git_not_available: '未安装 git，无法检查仓库状态',
       collection_failed: '仓库状态采集失败',
       no_github_remote: '未配置 GitHub 远端',
-      no_github_backup_repo: '未发现 AI GitHub 备份仓库',
+      no_github_backup_repo: '未发现 GitHub 仓库',
       ahead_of_upstream: '有未推送提交',
       dirty_worktree: '有未提交修改',
       untracked_files: '有未跟踪文件',
