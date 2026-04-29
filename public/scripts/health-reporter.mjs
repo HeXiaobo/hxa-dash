@@ -1650,7 +1650,7 @@ async function main() {
     codex: collectCodexUsage(),
     openclaw: collectOpenClawUsage(),
   };
-  const backup = collectBackupStatus();
+  const backup = collectBackupStatus(botName);
 
   const roster = collectRoster();
   const payload = {
