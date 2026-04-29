@@ -41,7 +41,14 @@ function getArg(name, fallback) {
   return idx >= 0 && args[idx + 1] ? args[idx + 1] : fallback;
 }
 const dashboardUrl = getArg('--dashboard-url', DEFAULT_DASHBOARD);
-const overrideName = getArg('--name', null);
+const overrideName = getArg('--name',
+  process.env.HEALTH_AGENT_NAME ||
+  process.env.HXA_AGENT_NAME ||
+  process.env.HXA_BOT_NAME ||
+  process.env.AGENT_NAME ||
+  process.env.BOT_NAME ||
+  null
+);
 const apiKey = getArg('--api-key', process.env.HEALTH_API_KEY || null);
 const runtimeOverride = normalizeRuntimeType(
   getArg('--runtime-type', getArg('--runtime', process.env.HEALTH_RUNTIME_TYPE || process.env.RUNTIME_TYPE || null))
@@ -59,16 +66,16 @@ const RUNTIME_CONFIG_CANDIDATES = [
 ];
 
 function detectBotName() {
-  if (overrideName) return overrideName;
+  if (overrideName) return String(overrideName).trim().toLowerCase();
   try {
     const idPath = path.join(ZYLOS_DIR, 'memory', 'identity.md');
     if (fs.existsSync(idPath)) {
       const content = fs.readFileSync(idPath, 'utf8').slice(0, 500);
-      const match = content.match(/I am (\w+)/i);
+      const match = content.match(/(?:I am|HXA ID|agent(?:_name)?|bot(?:_name)?)[\s:=：]+([a-z0-9_-]+)/i);
       if (match) return match[1].toLowerCase();
     }
   } catch {}
-  return os.userInfo().username || os.hostname();
+  return String(os.userInfo().username || os.hostname()).trim().toLowerCase();
 }
 
 function normalizeRuntimeType(value) {
@@ -1348,12 +1355,27 @@ function backupLogCandidates(botName) {
   const configured = process.env.HXA_BACKUP_LOG_PATH || process.env.BACKUP_LOG_PATH || '';
   if (configured.trim()) return splitPathList(configured);
   const name = String(botName || '').trim();
-  return [
+  const candidates = [
     path.join(os.homedir(), 'zylos', 'workspace', 'scripts', 'backup.log'),
     path.join(os.homedir(), 'zylos-workspace', 'scripts', 'backup.log'),
     name ? path.join(os.homedir(), `${name}-workspace`, 'scripts', 'backup.log') : null,
     path.join(os.homedir(), 'workspace', 'scripts', 'backup.log'),
+    path.join(os.homedir(), 'backup.log'),
+    name ? path.join('/tmp', `${name}-backup.log`) : null,
+    path.join('/tmp', 'backup.log'),
   ].filter(Boolean);
+
+  try {
+    const tmpLogs = fs.readdirSync('/tmp')
+      .filter(file => /-backup\.log$/i.test(file))
+      .map(file => path.join('/tmp', file))
+      .sort((a, b) => {
+        try { return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs; } catch { return 0; }
+      });
+    candidates.push(...tmpLogs);
+  } catch {}
+
+  return [...new Set(candidates)];
 }
 
 function readBackupCronStatus(botName) {
