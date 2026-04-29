@@ -388,6 +388,7 @@ const RuntimeCenter = {
     if (!backup) return { key: 'ok', cls: 'muted', label: '备份待接入', detail: '无备份数据' };
     const b = Array.isArray(backup) ? backup[0] : backup;
     const summary = b.summary && typeof b.summary === 'object' ? b.summary : null;
+    if (summary?.backup_required === false) return { key: 'ok', cls: 'muted', label: '无需备份', detail: this._backupReasonText('backup_not_required') };
     const raw = String(summary?.status || b.status || b.state || '').toLowerCase();
     const reason = summary?.reason || b.reason || b.error || b.message || null;
     const reasonText = this._backupReasonText(reason);
@@ -491,14 +492,19 @@ const RuntimeCenter = {
   },
 
   _backupTargetHTML(record) {
+    if (record.summary?.backup_required === false) return '<span class="backup-repo-chip">不要求 GitHub 仓库</span>';
     const repos = Array.isArray(record.repos) ? record.repos : [];
     if (repos.length) {
       const shown = repos.slice(0, 3).map(repo => {
         const label = repo.remote || repo.path || '-';
         return `<span class="backup-repo-chip">${esc(truncate(label, 42))}</span>`;
       }).join('');
-      return shown + (repos.length > 3 ? `<span class="backup-repo-more">+${repos.length - 3}</span>` : '');
+      const expected = record.summary?.expected_remote && record.summary?.expected_match === false
+        ? `<span class="backup-repo-more">应为 ${esc(truncate(record.summary.expected_remote, 36))}</span>`
+        : '';
+      return shown + (repos.length > 3 ? `<span class="backup-repo-more">+${repos.length - 3}</span>` : '') + expected;
     }
+    if (record.summary?.expected_remote) return `<span class="backup-repo-chip">预期 ${esc(truncate(record.summary.expected_remote, 42))}</span>`;
     if (record.summary?.log_path || record.cron?.log_path) return '<span class="backup-repo-chip">未发现 GitHub 仓库</span>';
     return esc(record.repo || record.repository || record.remote || record.target || '-');
   },
@@ -506,8 +512,11 @@ const RuntimeCenter = {
   _backupSummaryText(record) {
     const summary = record.summary || {};
     const parts = [];
+    if (summary.backup_required === false) parts.push('非 AI 员工，无需 GitHub 仓库');
     const total = Number(summary.total || 0);
     if (total) parts.push(`${summary.github_remotes || 0}/${total} 个 GitHub 仓库`);
+    if (summary.expected_remote && summary.expected_match === false) parts.push('预期仓库未匹配');
+    else if (summary.expected_remote && !total) parts.push('预期仓库未上报');
     else if (summary.log_path || record.cron?.log_path) parts.push('仅检测到备份日志');
     const lastSuccess = this._backupLastSuccessAt(record);
     if (lastSuccess) parts.push(`最近成功 ${this._timeAgoText(lastSuccess)}`);
@@ -528,10 +537,12 @@ const RuntimeCenter = {
       not_reported: '等待上报程序上报',
       unsupported: '备份状态不可用',
       unsupported_for_now: '备份状态暂不支持',
+      backup_not_required: '非 AI 员工，无需 GitHub 仓库',
       git_not_available: '未安装 git，无法检查仓库状态',
       collection_failed: '仓库状态采集失败',
       no_github_remote: '未配置 GitHub 远端',
       no_github_backup_repo: '未发现 GitHub 仓库',
+      github_repo_mismatch: 'GitHub 仓库不匹配',
       ahead_of_upstream: '有未推送提交',
       dirty_worktree: '有未提交修改',
       untracked_files: '有未跟踪文件',

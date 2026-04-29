@@ -1,4 +1,6 @@
 const { Router } = require('express');
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
 
 const router = Router();
@@ -11,20 +13,84 @@ const STATUS_RANK = {
   unknown: 4,
 };
 
-function statusFromRepo(repo) {
+const EXPECTED_BACKUP_REPOS_PATH = path.join(__dirname, '..', '..', 'config', 'expected-backup-repos.json');
+
+function loadExpectedBackupRepos() {
+  try {
+    if (fs.existsSync(EXPECTED_BACKUP_REPOS_PATH)) {
+      return JSON.parse(fs.readFileSync(EXPECTED_BACKUP_REPOS_PATH, 'utf8'));
+    }
+  } catch { /* ignore config errors */ }
+  return { default_owner: 'zhi-wai', default_repo_template: '{agent}-workspace', aliases: {}, exempt: {} };
+}
+
+function githubSlug(remoteUrl) {
+  const raw = String(remoteUrl || '').trim().replace(/\/$/, '').replace(/\.git$/i, '');
+  if (!raw) return null;
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.hostname.toLowerCase() === 'github.com') {
+      const [owner, repo] = parsed.pathname.replace(/^\/+/, '').split('/');
+      if (owner && repo) return `${owner.toLowerCase()}/${repo.toLowerCase().replace(/\.git$/i, '')}`;
+    }
+  } catch {}
+
+  const scp = raw.match(/^git@github\.com:([^/]+)\/(.+)$/i);
+  if (scp) return `${scp[1].toLowerCase()}/${scp[2].toLowerCase().replace(/\.git$/i, '')}`;
+  const ssh = raw.match(/^ssh:\/\/git@github\.com\/([^/]+)\/(.+)$/i);
+  if (ssh) return `${ssh[1].toLowerCase()}/${ssh[2].toLowerCase().replace(/\.git$/i, '')}`;
+  return null;
+}
+
+function repoMatchesExpected(repo, expected) {
+  const actual = githubSlug(repo?.remote);
+  const wanted = githubSlug(expected?.url);
+  return Boolean(actual && wanted && actual === wanted);
+}
+
+function expectedBackupRepo(agentName, registry = loadExpectedBackupRepos()) {
+  const name = String(agentName || '').trim().toLowerCase();
+  if (!name) return { required: true, url: null, reason: null };
+
+  const exempt = registry.exempt || {};
+  if (Object.prototype.hasOwnProperty.call(exempt, name)) {
+    return { required: false, url: null, reason: String(exempt[name] || '无需 GitHub 备份仓库') };
+  }
+
+  const aliases = registry.aliases || {};
+  const alias = aliases[name];
+  if (typeof alias === 'string' && alias.trim()) return { required: true, url: alias.trim(), reason: null };
+  if (alias && typeof alias === 'object') {
+    return {
+      required: alias.required !== false,
+      url: alias.url || null,
+      reason: alias.reason || null,
+    };
+  }
+
+  const owner = String(registry.default_owner || 'zhi-wai').trim();
+  const template = String(registry.default_repo_template || '{agent}-workspace');
+  const repo = template.replace(/\{agent\}/g, name);
+  return { required: true, url: owner && repo ? `https://github.com/${owner}/${repo}` : null, reason: null };
+}
+
+function statusFromRepo(repo, expected = null, anyExpectedMatch = null) {
   if (!repo || typeof repo !== 'object') return 'critical';
   if (repo.status === 'unsupported') return 'unsupported';
   if (repo.status === 'critical' || repo.reason === 'collection_failed') return 'critical';
   if (!/(^|[/:@])github\.com[/:]/i.test(String(repo.remote || ''))) return 'critical';
+  if (expected?.required && expected.url && anyExpectedMatch === false && !repoMatchesExpected(repo, expected)) return 'critical';
   if ((repo.ahead || 0) > 0 || (repo.behind || 0) > 0 || (repo.dirty || 0) > 0 || (repo.untracked || 0) > 0) {
     return 'warning';
   }
   return 'ok';
 }
 
-function reasonFromRepo(repo, status) {
+function reasonFromRepo(repo, status, expected = null, anyExpectedMatch = null) {
   if (repo?.reason) return repo.reason;
   if (status === 'critical' && !/(^|[/:@])github\.com[/:]/i.test(String(repo?.remote || ''))) return 'no_github_remote';
+  if (status === 'critical' && expected?.required && expected.url && anyExpectedMatch === false) return 'github_repo_mismatch';
   if (status === 'warning') {
     if ((repo.ahead || 0) > 0) return 'ahead_of_upstream';
     if ((repo.dirty || 0) > 0) return 'dirty_worktree';
@@ -61,7 +127,39 @@ function normalizeCron(cron) {
   };
 }
 
-function buildBackupSummary(backup) {
+function buildBackupSummary(backup, agentName = null, registry = loadExpectedBackupRepos()) {
+  const expected = expectedBackupRepo(agentName, registry);
+  const expectedFields = {
+    backup_required: expected.required,
+    expected_remote: expected.url,
+    expected_match: null,
+    expected_reason: expected.reason,
+  };
+
+  if (expected.required === false) {
+    return {
+      supported: true,
+      status: 'ok',
+      reason: 'backup_not_required',
+      total: 0,
+      ok: 0,
+      warning: 0,
+      critical: 0,
+      unsupported: 0,
+      ahead: 0,
+      behind: 0,
+      dirty: 0,
+      untracked: 0,
+      github_remotes: 0,
+      cron_status: null,
+      last_success_at: null,
+      last_run_at: null,
+      log_path: null,
+      sampled_at: backup?.sampled_at || null,
+      ...expectedFields,
+    };
+  }
+
   if (!backup || typeof backup !== 'object') {
     return {
       supported: false,
@@ -82,6 +180,7 @@ function buildBackupSummary(backup) {
       last_run_at: null,
       log_path: null,
       sampled_at: null,
+      ...expectedFields,
     };
   }
 
@@ -108,9 +207,11 @@ function buildBackupSummary(backup) {
       last_run_at: null,
       log_path: null,
       sampled_at: backup.sampled_at || null,
+      ...expectedFields,
     };
   }
 
+  const anyExpectedMatch = expected.url ? repos.some(repo => repoMatchesExpected(repo, expected)) : null;
   const summary = {
     supported: true,
     status: 'ok',
@@ -130,6 +231,8 @@ function buildBackupSummary(backup) {
     last_run_at: cron?.last_run_at || null,
     log_path: cron?.log_path || null,
     sampled_at: backup.sampled_at || null,
+    ...expectedFields,
+    expected_match: anyExpectedMatch,
   };
 
   if (repos.length === 0) {
@@ -140,7 +243,7 @@ function buildBackupSummary(backup) {
   }
 
   for (const repo of repos) {
-    const status = statusFromRepo(repo);
+    const status = statusFromRepo(repo, expected, anyExpectedMatch);
     summary[status] += 1;
     summary.ahead += repo.ahead || 0;
     summary.behind += repo.behind || 0;
@@ -155,18 +258,25 @@ function buildBackupSummary(backup) {
   summary.status = combineStatuses([repoStatus, cron?.status]);
   summary.reason = cron?.status && cron.status !== 'ok'
     ? cron.reason
-    : backup.reason || repos.map(repo => reasonFromRepo(repo, statusFromRepo(repo))).find(Boolean) || null;
+    : backup.reason || repos.map(repo => {
+      const status = statusFromRepo(repo, expected, anyExpectedMatch);
+      return reasonFromRepo(repo, status, expected, anyExpectedMatch);
+    }).find(Boolean) || null;
   return summary;
 }
 
-function buildBackupAgent(agent, health) {
+function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos()) {
   const backup = health?.backup || null;
-  const summary = buildBackupSummary(backup);
+  const expected = expectedBackupRepo(agent.name, registry);
+  const anyExpectedMatch = expected.url && Array.isArray(backup?.repos)
+    ? backup.repos.some(repo => repoMatchesExpected(repo, expected))
+    : null;
+  const summary = buildBackupSummary(backup, agent.name, registry);
   const repos = Array.isArray(backup?.repos)
     ? backup.repos
         .map(repo => {
-          const status = statusFromRepo(repo);
-          return { ...repo, status, reason: reasonFromRepo(repo, status) };
+          const status = statusFromRepo(repo, expected, anyExpectedMatch);
+          return { ...repo, status, reason: reasonFromRepo(repo, status, expected, anyExpectedMatch) };
         })
         .sort((a, b) => (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9) || String(a.path || '').localeCompare(String(b.path || '')))
     : [];
@@ -183,8 +293,9 @@ function buildBackupAgent(agent, health) {
 }
 
 function buildBackupsPayload(agents, allHealth) {
+  const registry = loadExpectedBackupRepos();
   const items = agents
-    .map(agent => buildBackupAgent(agent, allHealth[agent.name]))
+    .map(agent => buildBackupAgent(agent, allHealth[agent.name], registry))
     .sort((a, b) => (STATUS_RANK[a.summary.status] ?? 9) - (STATUS_RANK[b.summary.status] ?? 9) || a.name.localeCompare(b.name));
 
   const summary = {
@@ -212,4 +323,4 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
-module.exports.__private = { buildBackupSummary, buildBackupsPayload, statusFromRepo };
+module.exports.__private = { buildBackupSummary, buildBackupsPayload, statusFromRepo, expectedBackupRepo, githubSlug };

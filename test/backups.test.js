@@ -5,7 +5,7 @@ const require = createRequire(import.meta.url);
 const backupRoute = require('../src/routes/backups');
 const agentHealthRoute = require('../src/routes/agent-health');
 
-const { buildBackupSummary, buildBackupsPayload } = backupRoute.__private;
+const { buildBackupSummary, buildBackupsPayload, expectedBackupRepo, githubSlug } = backupRoute.__private;
 const { sanitizeBackup } = agentHealthRoute.__private;
 
 describe('backup health helpers', () => {
@@ -90,6 +90,37 @@ describe('backup health helpers', () => {
     expect(summary.reason).toBe('backup_success_too_old');
   });
 
+  it('uses explicit expected backup repo aliases', () => {
+    expect(expectedBackupRepo('mylos').url).toBe('https://github.com/with3ai/zylos-workspace');
+    expect(expectedBackupRepo('wanyanshu').url).toBe('https://github.com/zhi-wai/maxiaozhuo-workspace');
+    expect(expectedBackupRepo('hongshu').url).toBe('https://github.com/with3ai/hongshu-workspace');
+    expect(expectedBackupRepo('veda').url).toBe('https://github.com/with3ai/veda-workspace');
+    expect(expectedBackupRepo('wenwen').required).toBe(false);
+    expect(githubSlug('git@github.com:with3ai/zylos-workspace.git')).toBe('with3ai/zylos-workspace');
+  });
+
+  it('flags a repo that does not match the expected agent repository', () => {
+    const summary = buildBackupSummary({
+      supported: true,
+      repos: [
+        { remote: 'https://github.com/zhi-wai/mylos-workspace.git', ahead: 0, behind: 0, dirty: 0, untracked: 0 },
+      ],
+    }, 'mylos');
+
+    expect(summary.status).toBe('critical');
+    expect(summary.reason).toBe('github_repo_mismatch');
+    expect(summary.expected_remote).toBe('https://github.com/with3ai/zylos-workspace');
+    expect(summary.expected_match).toBe(false);
+  });
+
+  it('treats exempt non-AI staff as not requiring a backup repo', () => {
+    const summary = buildBackupSummary(null, 'wenwen');
+
+    expect(summary.status).toBe('ok');
+    expect(summary.reason).toBe('backup_not_required');
+    expect(summary.backup_required).toBe(false);
+  });
+
   it('sorts backup agents with critical and warning first', () => {
     const payload = buildBackupsPayload(
       [
@@ -98,8 +129,8 @@ describe('backup health helpers', () => {
         { name: 'crit-agent', online: true },
       ],
       {
-        'ok-agent': { backup: { supported: true, repos: [{ path: '/ok', remote: 'https://github.com/acme/ok.git' }] } },
-        'warn-agent': { backup: { supported: true, repos: [{ path: '/warn', remote: 'https://github.com/acme/warn.git', dirty: 1 }] } },
+        'ok-agent': { backup: { supported: true, repos: [{ path: '/ok', remote: 'https://github.com/zhi-wai/ok-agent-workspace.git' }] } },
+        'warn-agent': { backup: { supported: true, repos: [{ path: '/warn', remote: 'https://github.com/zhi-wai/warn-agent-workspace.git', dirty: 1 }] } },
         'crit-agent': { backup: { supported: true, repos: [{ path: '/crit', remote: null }] } },
       }
     );

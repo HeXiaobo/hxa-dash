@@ -300,7 +300,7 @@ function buildAgents() {
     const runtime = buildRuntimeSummary(a, health, now);
     const quota = selectQuotaForRuntime(health, runtime.type);
     const usage = selectUsageForRuntime(health, runtime.type);
-    const backup = buildBackupSummary(health?.backup || null);
+    const backup = buildBackupSummary(health?.backup || null, a.name);
     const recentWorkEvents = allRecentEvents.filter(e => e.timestamp && e.timestamp > (now - WORK_SIGNAL_WINDOW_MS) && isWorkSignal(e.action));
     const lastWorkSignal = recentWorkEvents[0] || allRecentEvents.find(e => isWorkSignal(e.action)) || null;
     const latestEventTs = (lastWorkSignal && lastWorkSignal.timestamp) || (latestEvent && latestEvent.timestamp) || 0;
