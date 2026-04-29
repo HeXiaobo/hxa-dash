@@ -892,7 +892,7 @@ function collectClaudeUsage() {
     source: transcript ? 'transcript' : 'statusline',
     sampled_at: best.sampled_at || statusline?.sampled_at || null,
     session_id: best.session_id || statusline?.session_id || null,
-    model: best.model || statusline?.model || null,
+    model: statusline?.model || best.model || null,
     session_tokens: best.session_tokens || statusline?.session_tokens || null,
     last_turn_tokens: best.last_turn_tokens || statusline?.last_turn_tokens || null,
     session_cost_usd: statusline?.session_cost_usd ?? null,
