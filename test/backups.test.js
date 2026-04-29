@@ -50,7 +50,7 @@ describe('backup health helpers', () => {
     expect(summary.reason).toBe('ahead_of_upstream');
   });
 
-  it('treats a fresh backup cron success as healthy even before repo status is reported', () => {
+  it('requires a GitHub backup repo even when backup cron is fresh', () => {
     const summary = buildBackupSummary({
       supported: true,
       status: 'ok',
@@ -65,10 +65,11 @@ describe('backup health helpers', () => {
       repos: [],
     });
 
-    expect(summary.status).toBe('ok');
-    expect(summary.reason).toBe(null);
+    expect(summary.status).toBe('critical');
+    expect(summary.reason).toBe('no_github_backup_repo');
     expect(summary.last_success_at).toBe('2026-04-29T04:27:00.000Z');
     expect(summary.total).toBe(0);
+    expect(summary.critical).toBe(1);
   });
 
   it('lets stale backup cron status override a clean repo', () => {

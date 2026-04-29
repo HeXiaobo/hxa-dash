@@ -86,8 +86,9 @@ function buildBackupSummary(backup) {
   }
 
   const cron = normalizeCron(backup.cron);
+  const repos = Array.isArray(backup.repos) ? backup.repos : [];
 
-  if ((backup.supported === false || backup.status === 'unsupported') && !cron?.supported) {
+  if ((backup.supported === false || backup.status === 'unsupported') && !cron?.supported && repos.length === 0 && backup.reason === 'not_reported') {
     return {
       supported: false,
       status: 'unsupported',
@@ -110,7 +111,6 @@ function buildBackupSummary(backup) {
     };
   }
 
-  const repos = Array.isArray(backup.repos) ? backup.repos : [];
   const summary = {
     supported: true,
     status: 'ok',
@@ -133,11 +133,9 @@ function buildBackupSummary(backup) {
   };
 
   if (repos.length === 0) {
-    summary.status = cron?.supported ? cron.status : 'critical';
-    summary.reason = summary.status === 'ok' ? null : (cron?.reason || backup.reason || 'no_backup_signal_found');
-    if (summary.status === 'ok') summary.ok = 1;
-    else if (summary.status === 'warning') summary.warning = 1;
-    else summary.critical = 1;
+    summary.status = 'critical';
+    summary.reason = backup.reason === 'git_not_available' ? 'git_not_available' : 'no_github_backup_repo';
+    summary.critical = 1;
     return summary;
   }
 

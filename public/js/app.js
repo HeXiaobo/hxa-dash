@@ -149,7 +149,7 @@ const RuntimeCenter = {
     const payloadSummary = backups?.summary || {};
     if (summaryEl) {
       summaryEl.textContent = records.length
-        ? `${payloadSummary.total_agents || records.length} 位 · ${payloadSummary.repos || this._backupRepoCount(records)} 仓库 · ${healthy} 正常 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
+        ? `${payloadSummary.total_agents || records.length} 位 · ${payloadSummary.repos || this._backupRepoCount(records)} 个 GitHub 仓库 · ${healthy} 正常 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
         : '等待 /api/backups 数据';
     }
     if (!records.length) {
@@ -164,7 +164,7 @@ const RuntimeCenter = {
     container.innerHTML = `
       <div class="backup-summary-grid">
         <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.total_agents || records.length}</span><span class="runtime-stat-label">助理</span></div>
-        <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.repos || this._backupRepoCount(records)}</span><span class="runtime-stat-label">仓库</span></div>
+        <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.repos || this._backupRepoCount(records)}</span><span class="runtime-stat-label">GitHub 仓库</span></div>
         <div class="runtime-stat-card"><span class="runtime-stat-value">${healthy}</span><span class="runtime-stat-label">正常</span></div>
         <div class="runtime-stat-card attention"><span class="runtime-stat-value">${abnormal.length}</span><span class="runtime-stat-label">异常</span></div>
       </div>
@@ -499,9 +499,7 @@ const RuntimeCenter = {
       }).join('');
       return shown + (repos.length > 3 ? `<span class="backup-repo-more">+${repos.length - 3}</span>` : '');
     }
-    if (record.summary?.log_path || record.cron?.log_path) {
-      return '<span class="backup-repo-chip">backup.log</span>';
-    }
+    if (record.summary?.log_path || record.cron?.log_path) return '<span class="backup-repo-chip">未发现 GitHub 仓库</span>';
     return esc(record.repo || record.repository || record.remote || record.target || '-');
   },
 
@@ -510,6 +508,7 @@ const RuntimeCenter = {
     const parts = [];
     const total = Number(summary.total || 0);
     if (total) parts.push(`${summary.github_remotes || 0}/${total} 个 GitHub 仓库`);
+    else if (summary.log_path || record.cron?.log_path) parts.push('仅检测到备份日志');
     const lastSuccess = this._backupLastSuccessAt(record);
     if (lastSuccess) parts.push(`最近成功 ${this._timeAgoText(lastSuccess)}`);
     const ahead = this._backupNumber(record, 'ahead');
@@ -532,6 +531,7 @@ const RuntimeCenter = {
       git_not_available: '未安装 git，无法检查仓库状态',
       collection_failed: '仓库状态采集失败',
       no_github_remote: '未配置 GitHub 远端',
+      no_github_backup_repo: '未发现 AI GitHub 备份仓库',
       ahead_of_upstream: '有未推送提交',
       dirty_worktree: '有未提交修改',
       untracked_files: '有未跟踪文件',
