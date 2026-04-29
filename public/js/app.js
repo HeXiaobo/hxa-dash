@@ -390,15 +390,16 @@ const RuntimeCenter = {
     const summary = b.summary && typeof b.summary === 'object' ? b.summary : null;
     const raw = String(summary?.status || b.status || b.state || '').toLowerCase();
     const reason = summary?.reason || b.reason || b.error || b.message || null;
+    const reasonText = this._backupReasonText(reason);
 
     if (raw === 'critical') {
       const count = Number(summary?.critical || 0);
       const isCron = String(reason || '').includes('backup_') || String(reason || '').includes('last_backup');
-      return { key: 'bad', cls: 'critical', label: isCron ? '备份异常' : '备份异常', detail: reason || (count ? `${count} 个仓库异常` : 'GitHub remote 缺失或采集失败') };
+      return { key: 'bad', cls: 'critical', label: isCron ? '备份异常' : '备份异常', detail: reasonText || (count ? `${count} 个仓库异常` : '缺少 GitHub 远端或采集失败') };
     }
     if (raw === 'warning') {
       const isCron = String(reason || '').includes('backup_') || String(reason || '').includes('last_backup') || String(reason || '').includes('success_stale');
-      return { key: 'warning', cls: 'warning', label: isCron ? '备份待确认' : '待同步', detail: reason || this._backupSummaryText(b) };
+      return { key: 'warning', cls: 'warning', label: isCron ? '备份待确认' : '待同步', detail: reasonText || this._backupSummaryText(b) };
     }
     if (raw === 'unsupported') {
       const isMissingReport = !reason || reason === 'not_reported';
@@ -406,7 +407,7 @@ const RuntimeCenter = {
         key: isMissingReport ? 'waiting' : 'warning',
         cls: isMissingReport ? 'muted' : 'warning',
         label: isMissingReport ? '备份待接入' : '备份不可用',
-        detail: isMissingReport ? '等待 reporter 上报' : reason
+        detail: isMissingReport ? '等待上报程序上报' : (reasonText || '备份状态不可用')
       };
     }
     if (raw === 'ok') return { key: 'ok', cls: 'ok', label: this._backupOkLabel(summary) };
@@ -416,7 +417,7 @@ const RuntimeCenter = {
     const last = this._backupCheckedAt(b);
     const stale = b.stale || (last && Date.now() - new Date(last).getTime() > this.attentionThresholds.backupMs);
     if (failedRaw || b.error || b.failed || stale) {
-      return { key: 'bad', cls: failedRaw || b.error ? 'critical' : 'warning', label: failedRaw || b.error ? '备份异常' : '备份过旧', detail: b.error || b.message || this._timeAgoText(last) };
+      return { key: 'bad', cls: failedRaw || b.error ? 'critical' : 'warning', label: failedRaw || b.error ? '备份异常' : '备份过旧', detail: this._backupReasonText(b.error || b.message) || this._timeAgoText(last) };
     }
     if (okRaw || last) return { key: 'ok', cls: 'ok', label: '备份正常' };
     return { key: 'ok', cls: 'muted', label: '备份待接入' };
@@ -508,7 +509,7 @@ const RuntimeCenter = {
     const summary = record.summary || {};
     const parts = [];
     const total = Number(summary.total || 0);
-    if (total) parts.push(`${summary.github_remotes || 0}/${total} GitHub`);
+    if (total) parts.push(`${summary.github_remotes || 0}/${total} 个 GitHub 仓库`);
     const lastSuccess = this._backupLastSuccessAt(record);
     if (lastSuccess) parts.push(`最近成功 ${this._timeAgoText(lastSuccess)}`);
     const ahead = this._backupNumber(record, 'ahead');
@@ -518,7 +519,36 @@ const RuntimeCenter = {
     if (ahead) parts.push(`${ahead} 未推送`);
     if (behind) parts.push(`${behind} 未拉取`);
     if (dirty || untracked) parts.push(`${dirty + untracked} 本地变更`);
-    return parts.join(' · ') || record.message || record.reason || '等待 reporter 上报';
+    return parts.join(' · ') || this._backupReasonText(record.message || record.reason) || '等待上报程序上报';
+  },
+
+  _backupReasonText(reason) {
+    const key = String(reason || '').trim();
+    if (!key) return '';
+    const map = {
+      not_reported: '等待上报程序上报',
+      unsupported: '备份状态不可用',
+      unsupported_for_now: '备份状态暂不支持',
+      git_not_available: '未安装 git，无法检查仓库状态',
+      collection_failed: '仓库状态采集失败',
+      no_github_remote: '未配置 GitHub 远端',
+      ahead_of_upstream: '有未推送提交',
+      dirty_worktree: '有未提交修改',
+      untracked_files: '有未跟踪文件',
+      behind_upstream: '落后远端仓库',
+      backup_log_not_found: '未找到备份日志',
+      backup_log_unreadable: '备份日志无法读取',
+      last_backup_failed: '最近一次备份失败',
+      no_success_marker: '备份日志未发现成功记录',
+      failure_after_last_success: '最近成功后又出现失败记录',
+      backup_success_too_old: '最近成功备份时间过久',
+      backup_success_stale: '最近成功备份已超过预期',
+      no_backup_signal_found: '未发现备份日志或备份仓库',
+      no_git_repositories_found: '未发现备份仓库'
+    };
+    if (map[key]) return map[key];
+    if (/[\u4e00-\u9fff]/.test(key)) return key;
+    return '状态待确认';
   },
 
   _formatTokenCount(value) {
