@@ -204,16 +204,31 @@ function sanitizeBackupSummary(summary, repos) {
   };
 }
 
+function sanitizeBackupCron(cron) {
+  if (!cron || typeof cron !== 'object') return null;
+  return {
+    supported: typeof cron.supported === 'boolean' ? cron.supported : false,
+    status: sanitizeEnum(cron.status, ['ok', 'warning', 'critical', 'unsupported'], cron.supported === false ? 'unsupported' : 'warning'),
+    reason: sanitizeStr(cron.reason, 128),
+    log_path: sanitizeStr(cron.log_path, 512),
+    last_success_at: normalizeTimestamp(cron.last_success_at) || null,
+    last_run_at: normalizeTimestamp(cron.last_run_at) || null,
+    latest_line: sanitizeStr(cron.latest_line, 240),
+  };
+}
+
 function sanitizeBackup(backup) {
   if (!backup || typeof backup !== 'object') return null;
   const repos = Array.isArray(backup.repos)
     ? backup.repos.slice(0, 80).map(sanitizeBackupRepo).filter(Boolean)
     : [];
+  const cron = sanitizeBackupCron(backup.cron);
   return {
-    supported: typeof backup.supported === 'boolean' ? backup.supported : repos.length > 0,
+    supported: typeof backup.supported === 'boolean' ? backup.supported : repos.length > 0 || !!cron?.supported,
     status: sanitizeEnum(backup.status, ['ok', 'warning', 'critical', 'unsupported'], backup.supported === false ? 'unsupported' : 'critical'),
     reason: sanitizeStr(backup.reason, 128),
     sampled_at: normalizeTimestamp(backup.sampled_at),
+    cron,
     summary: sanitizeBackupSummary(backup.summary, repos),
     repos,
   };

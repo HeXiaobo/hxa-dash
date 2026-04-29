@@ -50,6 +50,45 @@ describe('backup health helpers', () => {
     expect(summary.reason).toBe('ahead_of_upstream');
   });
 
+  it('treats a fresh backup cron success as healthy even before repo status is reported', () => {
+    const summary = buildBackupSummary({
+      supported: true,
+      status: 'ok',
+      sampled_at: new Date().toISOString(),
+      cron: {
+        supported: true,
+        status: 'ok',
+        last_success_at: '2026-04-29T04:27:00.000Z',
+        last_run_at: '2026-04-29T04:27:00.000Z',
+        log_path: '/Users/example/zylos/workspace/scripts/backup.log',
+      },
+      repos: [],
+    });
+
+    expect(summary.status).toBe('ok');
+    expect(summary.reason).toBe(null);
+    expect(summary.last_success_at).toBe('2026-04-29T04:27:00.000Z');
+    expect(summary.total).toBe(0);
+  });
+
+  it('lets stale backup cron status override a clean repo', () => {
+    const summary = buildBackupSummary({
+      supported: true,
+      cron: {
+        supported: true,
+        status: 'critical',
+        reason: 'backup_success_too_old',
+        last_success_at: '2026-04-20T04:27:00.000Z',
+      },
+      repos: [
+        { remote: 'https://github.com/acme/clean.git', ahead: 0, behind: 0, dirty: 0, untracked: 0 },
+      ],
+    });
+
+    expect(summary.status).toBe('critical');
+    expect(summary.reason).toBe('backup_success_too_old');
+  });
+
   it('sorts backup agents with critical and warning first', () => {
     const payload = buildBackupsPayload(
       [

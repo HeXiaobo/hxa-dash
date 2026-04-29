@@ -149,7 +149,7 @@ const RuntimeCenter = {
     const payloadSummary = backups?.summary || {};
     if (summaryEl) {
       summaryEl.textContent = records.length
-        ? `${payloadSummary.total_agents || records.length} 位 · ${payloadSummary.repos || this._backupRepoCount(records)} 仓库 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
+        ? `${payloadSummary.total_agents || records.length} 位 · ${payloadSummary.repos || this._backupRepoCount(records)} 仓库 · ${healthy} 正常 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
         : '等待 /api/backups 数据';
     }
     if (!records.length) {
@@ -170,14 +170,14 @@ const RuntimeCenter = {
       </div>
       <div class="backup-table-wrap">
         <table class="runtime-table">
-          <thead><tr><th>助理</th><th>状态</th><th>最近检查</th><th>GitHub 仓库</th><th>未推送</th><th>未拉取</th><th>本地变更</th><th>摘要</th></tr></thead>
+          <thead><tr><th>助理</th><th>状态</th><th>最近备份</th><th>GitHub 仓库</th><th>未推送</th><th>未拉取</th><th>本地变更</th><th>摘要</th></tr></thead>
           <tbody>
             ${records.map(r => {
               const status = this._backupStatus(r);
               return `<tr>
                 <td>${esc(this._backupAgentName(r))}</td>
                 <td><span class="runtime-pill ${status.cls}">${status.label}</span></td>
-                <td>${esc(this._timeAgoText(this._backupCheckedAt(r)))}</td>
+                <td>${esc(this._timeAgoText(this._backupLastSuccessAt(r) || this._backupCheckedAt(r)))}</td>
                 <td>${this._backupTargetHTML(r)}</td>
                 <td>${esc(String(this._backupNumber(r, 'ahead')))}</td>
                 <td>${esc(String(this._backupNumber(r, 'behind')))}</td>
@@ -393,10 +393,12 @@ const RuntimeCenter = {
 
     if (raw === 'critical') {
       const count = Number(summary?.critical || 0);
-      return { key: 'bad', cls: 'critical', label: '备份异常', detail: reason || (count ? `${count} 个仓库异常` : 'GitHub remote 缺失或采集失败') };
+      const isCron = String(reason || '').includes('backup_') || String(reason || '').includes('last_backup');
+      return { key: 'bad', cls: 'critical', label: isCron ? '备份异常' : '备份异常', detail: reason || (count ? `${count} 个仓库异常` : 'GitHub remote 缺失或采集失败') };
     }
     if (raw === 'warning') {
-      return { key: 'warning', cls: 'warning', label: '待同步', detail: reason || this._backupSummaryText(b) };
+      const isCron = String(reason || '').includes('backup_') || String(reason || '').includes('last_backup') || String(reason || '').includes('success_stale');
+      return { key: 'warning', cls: 'warning', label: isCron ? '备份待确认' : '待同步', detail: reason || this._backupSummaryText(b) };
     }
     if (raw === 'unsupported') {
       const isMissingReport = !reason || reason === 'not_reported';
@@ -466,7 +468,11 @@ const RuntimeCenter = {
   },
 
   _backupCheckedAt(record) {
-    return record.summary?.sampled_at || record.reported_at || record.last_success_at || record.last_backup_at || record.updated_at || record.checked_at;
+    return record.summary?.last_run_at || record.cron?.last_run_at || record.summary?.sampled_at || record.reported_at || record.last_success_at || record.last_backup_at || record.updated_at || record.checked_at;
+  },
+
+  _backupLastSuccessAt(record) {
+    return record.summary?.last_success_at || record.cron?.last_success_at || record.last_success_at || record.last_backup_at;
   },
 
   _backupNumber(record, key) {
@@ -492,6 +498,9 @@ const RuntimeCenter = {
       }).join('');
       return shown + (repos.length > 3 ? `<span class="backup-repo-more">+${repos.length - 3}</span>` : '');
     }
+    if (record.summary?.log_path || record.cron?.log_path) {
+      return '<span class="backup-repo-chip">backup.log</span>';
+    }
     return esc(record.repo || record.repository || record.remote || record.target || '-');
   },
 
@@ -500,6 +509,8 @@ const RuntimeCenter = {
     const parts = [];
     const total = Number(summary.total || 0);
     if (total) parts.push(`${summary.github_remotes || 0}/${total} GitHub`);
+    const lastSuccess = this._backupLastSuccessAt(record);
+    if (lastSuccess) parts.push(`最近成功 ${this._timeAgoText(lastSuccess)}`);
     const ahead = this._backupNumber(record, 'ahead');
     const behind = this._backupNumber(record, 'behind');
     const dirty = this._backupNumber(record, 'dirty');
@@ -507,7 +518,7 @@ const RuntimeCenter = {
     if (ahead) parts.push(`${ahead} 未推送`);
     if (behind) parts.push(`${behind} 未拉取`);
     if (dirty || untracked) parts.push(`${dirty + untracked} 本地变更`);
-    return parts.join(' · ') || record.message || record.reason || '-';
+    return parts.join(' · ') || record.message || record.reason || '等待 reporter 上报';
   },
 
   _formatTokenCount(value) {

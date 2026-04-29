@@ -1064,27 +1064,50 @@ function collectOpenClawUsage() {
   });
 }
 
-function parseBackupScanDirs() {
-  const configured = process.env.HXA_BACKUP_SCAN_DIRS || process.env.GITHUB_BACKUP_SCAN_DIRS || '';
-  if (configured.trim()) {
-    return configured
-      .split(/[,\n]/)
-      .map(item => item.trim())
-      .filter(Boolean);
-  }
-  return [
-    process.cwd(),
-    os.homedir(),
-    path.join(os.homedir(), 'workspace'),
-    path.join(os.homedir(), 'workspaces'),
-    path.join(os.homedir(), 'repos'),
-    path.join(os.homedir(), '.codex', 'worktrees'),
-    path.join(os.homedir(), 'hxa-dash'),
-  ];
+function expandHome(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return raw;
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
 }
 
-const BACKUP_SCAN_DIRS = parseBackupScanDirs();
+function splitPathList(value) {
+  return String(value || '')
+    .split(/[,\n:]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function backupRepoDirCandidates(botName) {
+  const name = String(botName || '').trim();
+  return [
+    process.env.ZYLOS_WORKSPACE,
+    process.env.HXA_BACKUP_REPO_DIR,
+    path.join(os.homedir(), 'zylos', 'workspace'),
+    path.join(os.homedir(), 'zylos-workspace'),
+    name ? path.join(os.homedir(), `${name}-workspace`) : null,
+    path.join(os.homedir(), 'workspace'),
+  ].filter(Boolean);
+}
+
+function parseBackupScanDirs(botName) {
+  const configured = process.env.HXA_BACKUP_SCAN_DIRS || process.env.GITHUB_BACKUP_SCAN_DIRS || '';
+  if (configured.trim()) {
+    return {
+      dirs: splitPathList(configured),
+      explicit: true,
+    };
+  }
+  return {
+    dirs: backupRepoDirCandidates(botName),
+    explicit: false,
+  };
+}
+
 const BACKUP_MAX_REPOS = Math.max(1, Math.min(100, Number.parseInt(process.env.HXA_BACKUP_MAX_REPOS || '40', 10) || 40));
+const BACKUP_WARN_HOURS = Math.max(1, Number.parseInt(process.env.HXA_BACKUP_WARN_HOURS || '36', 10) || 36);
+const BACKUP_CRITICAL_HOURS = Math.max(BACKUP_WARN_HOURS + 1, Number.parseInt(process.env.HXA_BACKUP_CRITICAL_HOURS || '72', 10) || 72);
 
 const BACKUP_SKIP_DIRS = new Set([
   '.git',
@@ -1102,7 +1125,7 @@ const BACKUP_SKIP_DIRS = new Set([
 function uniqueExistingDirs(dirs) {
   const seen = new Set();
   return dirs
-    .map(dir => path.resolve(dir))
+    .map(dir => path.resolve(expandHome(dir)))
     .filter(dir => {
       if (seen.has(dir) || !fs.existsSync(dir)) return false;
       seen.add(dir);
@@ -1142,13 +1165,17 @@ function scanGitRepos(rootDir, maxDepth) {
   return repos;
 }
 
-function findGitRepos() {
+function findGitRepos(botName) {
   const repos = new Set();
-  for (const root of uniqueExistingDirs(BACKUP_SCAN_DIRS)) {
-    const maxDepth = root === os.homedir() ? 2 : 5;
+  const scan = parseBackupScanDirs(botName);
+  for (const root of uniqueExistingDirs(scan.dirs)) {
+    const maxDepth = scan.explicit ? 5 : 2;
     for (const repo of scanGitRepos(root, maxDepth)) repos.add(repo);
   }
-  return [...repos].sort().slice(0, BACKUP_MAX_REPOS);
+  return {
+    explicit: scan.explicit,
+    repos: [...repos].sort().slice(0, BACKUP_MAX_REPOS),
+  };
 }
 
 function gitCommand(repoPath, args, timeoutMs = 4000) {
@@ -1194,6 +1221,21 @@ function parseRemoteUrls(stdout) {
     if (parts.length >= 2) urls.push(parts[1]);
   }
   return [...new Set(urls)];
+}
+
+function isLikelyBackupRepo(repo, botName, explicitScan) {
+  if (explicitScan) return true;
+  const name = String(botName || '').toLowerCase();
+  const remote = String(repo.remote || '').toLowerCase();
+  const repoPath = String(repo.path || '').toLowerCase();
+  const base = path.basename(repoPath);
+  if (base === 'hxa-dash' || remote.includes('/hxa-dash')) return false;
+  if (base === 'nvm' || remote.includes('nvm-sh/nvm')) return false;
+  if (base === 'workspace' || base === 'zylos-workspace') return true;
+  if (name && base === `${name}-workspace`) return true;
+  if (remote.includes('/zylos-workspace') || remote.includes('/zylos-workspace.git')) return true;
+  if (name && (remote.includes(`/${name}-workspace`) || remote.includes(`/${name}-workspace.git`))) return true;
+  return false;
 }
 
 function collectGitRepoBackup(repoPath) {
@@ -1285,9 +1327,123 @@ function summarizeBackupRepos(repos) {
   return summary;
 }
 
-function collectBackupStatus() {
+function parseLogTimestamp(line) {
+  const text = String(line || '');
+  const iso = text.match(/\b(20\d{2}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/);
+  if (iso) {
+    const normalized = `${iso[1]}T${iso[2].length === 5 ? `${iso[2]}:00` : iso[2]}`;
+    const parsed = Date.parse(normalized);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const compact = text.match(/\b(20\d{2})[/-](\d{1,2})[/-](\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\b/);
+  if (compact) {
+    const [, y, mo, d, h, mi, s = '00'] = compact;
+    const parsed = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)).getTime();
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function backupLogCandidates(botName) {
+  const configured = process.env.HXA_BACKUP_LOG_PATH || process.env.BACKUP_LOG_PATH || '';
+  if (configured.trim()) return splitPathList(configured);
+  const name = String(botName || '').trim();
+  return [
+    path.join(os.homedir(), 'zylos', 'workspace', 'scripts', 'backup.log'),
+    path.join(os.homedir(), 'zylos-workspace', 'scripts', 'backup.log'),
+    name ? path.join(os.homedir(), `${name}-workspace`, 'scripts', 'backup.log') : null,
+    path.join(os.homedir(), 'workspace', 'scripts', 'backup.log'),
+  ].filter(Boolean);
+}
+
+function readBackupCronStatus(botName) {
+  const logPath = backupLogCandidates(botName)
+    .map(file => path.resolve(expandHome(file)))
+    .find(file => fs.existsSync(file));
+
+  if (!logPath) {
+    return {
+      supported: false,
+      status: 'unsupported',
+      reason: 'backup_log_not_found',
+      log_path: null,
+      last_success_at: null,
+      last_run_at: null,
+      latest_line: null,
+    };
+  }
+
+  let lines = [];
+  let stat = null;
+  try {
+    stat = fs.statSync(logPath);
+    lines = fs.readFileSync(logPath, 'utf8').split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(-300);
+  } catch {
+    return {
+      supported: true,
+      status: 'critical',
+      reason: 'backup_log_unreadable',
+      log_path: logPath,
+      last_success_at: null,
+      last_run_at: null,
+      latest_line: null,
+    };
+  }
+
+  const successRe = /(success|successful|completed|complete|done|pushed|up[- ]?to[- ]?date|备份完成|备份成功|成功)/i;
+  const failureRe = /(fail|failed|failure|error|fatal|denied|rejected|失败|错误|异常)/i;
+  const latestLine = lines.at(-1) || null;
+  const mtime = stat?.mtimeMs || Date.now();
+  const successLines = lines.filter(line => successRe.test(line) && !failureRe.test(line));
+  const failureLines = lines.filter(line => failureRe.test(line));
+  const latestSuccessLine = successLines.at(-1) || null;
+  const latestFailureLine = failureLines.at(-1) || null;
+  const lastSuccessAt = latestSuccessLine ? (parseLogTimestamp(latestSuccessLine) || mtime) : null;
+  const lastFailureAt = latestFailureLine ? (parseLogTimestamp(latestFailureLine) || mtime) : null;
+  const lastRunAt = latestLine ? (parseLogTimestamp(latestLine) || mtime) : mtime;
+
+  let status = 'ok';
+  let reason = null;
+  if (!lastSuccessAt) {
+    status = latestFailureLine ? 'critical' : 'warning';
+    reason = latestFailureLine ? 'last_backup_failed' : 'no_success_marker';
+  } else if (lastFailureAt && lastFailureAt > lastSuccessAt) {
+    status = 'warning';
+    reason = 'failure_after_last_success';
+  } else {
+    const ageHours = (Date.now() - lastSuccessAt) / 3600000;
+    if (ageHours > BACKUP_CRITICAL_HOURS) {
+      status = 'critical';
+      reason = 'backup_success_too_old';
+    } else if (ageHours > BACKUP_WARN_HOURS) {
+      status = 'warning';
+      reason = 'backup_success_stale';
+    }
+  }
+
+  return {
+    supported: true,
+    status,
+    reason,
+    log_path: logPath,
+    last_success_at: lastSuccessAt ? new Date(lastSuccessAt).toISOString() : null,
+    last_run_at: lastRunAt ? new Date(lastRunAt).toISOString() : null,
+    latest_line: latestLine ? latestLine.slice(0, 240) : null,
+  };
+}
+
+function combineBackupStatuses(statuses) {
+  const real = statuses.filter(status => status && status !== 'unsupported');
+  if (real.includes('critical')) return 'critical';
+  if (real.includes('warning')) return 'warning';
+  if (real.includes('ok')) return 'ok';
+  return 'critical';
+}
+
+function collectBackupStatus(botName) {
+  const cron = readBackupCronStatus(botName);
   const gitProbe = runCommand('git', ['--version'], 2500);
-  if (!gitProbe.ok) {
+  if (!gitProbe.ok && !cron.supported) {
     return {
       supported: false,
       status: 'unsupported',
@@ -1295,20 +1451,32 @@ function collectBackupStatus() {
       sampled_at: new Date().toISOString(),
       repos: [],
       summary: summarizeBackupRepos([]),
+      cron,
     };
   }
 
-  const repos = findGitRepos().map(repo => collectGitRepoBackup(repo));
+  const found = gitProbe.ok ? findGitRepos(botName) : { explicit: false, repos: [] };
+  const repos = found.repos
+    .map(repo => collectGitRepoBackup(repo))
+    .filter(repo => isLikelyBackupRepo(repo, botName, found.explicit));
   const summary = summarizeBackupRepos(repos);
-  const status = summary.critical > 0 ? 'critical'
+  const repoStatus = summary.critical > 0 ? 'critical'
     : summary.warning > 0 ? 'warning'
-      : repos.length > 0 ? 'ok' : 'critical';
+      : repos.length > 0 ? 'ok' : 'unsupported';
+  const cronStatus = cron.supported ? cron.status : 'unsupported';
+  const status = combineBackupStatuses([repoStatus, cronStatus]);
+  const reason = cron.supported && cron.status !== 'ok'
+    ? cron.reason
+    : repos.length > 0
+      ? null
+      : cron.supported ? cron.reason : 'no_backup_signal_found';
 
   return {
-    supported: true,
+    supported: cron.supported || repos.length > 0,
     status,
-    reason: repos.length > 0 ? null : 'no_git_repositories_found',
+    reason,
     sampled_at: new Date().toISOString(),
+    cron,
     repos,
     summary,
   };

@@ -34,6 +34,33 @@ function reasonFromRepo(repo, status) {
   return null;
 }
 
+function statusFromCron(cron) {
+  if (!cron || typeof cron !== 'object' || cron.supported === false) return 'unsupported';
+  if (['ok', 'warning', 'critical'].includes(cron.status)) return cron.status;
+  return 'warning';
+}
+
+function combineStatuses(statuses) {
+  const real = statuses.filter(status => status && status !== 'unsupported');
+  if (real.includes('critical')) return 'critical';
+  if (real.includes('warning')) return 'warning';
+  if (real.includes('ok')) return 'ok';
+  return 'unsupported';
+}
+
+function normalizeCron(cron) {
+  if (!cron || typeof cron !== 'object') return null;
+  return {
+    supported: !!cron.supported,
+    status: statusFromCron(cron),
+    reason: cron.reason || null,
+    log_path: cron.log_path || null,
+    last_success_at: cron.last_success_at || null,
+    last_run_at: cron.last_run_at || null,
+    latest_line: cron.latest_line || null,
+  };
+}
+
 function buildBackupSummary(backup) {
   if (!backup || typeof backup !== 'object') {
     return {
@@ -50,11 +77,17 @@ function buildBackupSummary(backup) {
       dirty: 0,
       untracked: 0,
       github_remotes: 0,
+      cron_status: null,
+      last_success_at: null,
+      last_run_at: null,
+      log_path: null,
       sampled_at: null,
     };
   }
 
-  if (backup.supported === false || backup.status === 'unsupported') {
+  const cron = normalizeCron(backup.cron);
+
+  if ((backup.supported === false || backup.status === 'unsupported') && !cron?.supported) {
     return {
       supported: false,
       status: 'unsupported',
@@ -69,6 +102,10 @@ function buildBackupSummary(backup) {
       dirty: 0,
       untracked: 0,
       github_remotes: 0,
+      cron_status: null,
+      last_success_at: null,
+      last_run_at: null,
+      log_path: null,
       sampled_at: backup.sampled_at || null,
     };
   }
@@ -88,13 +125,19 @@ function buildBackupSummary(backup) {
     dirty: 0,
     untracked: 0,
     github_remotes: 0,
+    cron_status: cron?.status || null,
+    last_success_at: cron?.last_success_at || null,
+    last_run_at: cron?.last_run_at || null,
+    log_path: cron?.log_path || null,
     sampled_at: backup.sampled_at || null,
   };
 
   if (repos.length === 0) {
-    summary.status = 'critical';
-    summary.reason = backup.reason || 'no_git_repositories_found';
-    summary.critical = 1;
+    summary.status = cron?.supported ? cron.status : 'critical';
+    summary.reason = summary.status === 'ok' ? null : (cron?.reason || backup.reason || 'no_backup_signal_found');
+    if (summary.status === 'ok') summary.ok = 1;
+    else if (summary.status === 'warning') summary.warning = 1;
+    else summary.critical = 1;
     return summary;
   }
 
@@ -108,10 +151,13 @@ function buildBackupSummary(backup) {
     if (/(^|[/:@])github\.com[/:]/i.test(String(repo.remote || ''))) summary.github_remotes += 1;
   }
 
-  summary.status = summary.critical > 0 ? 'critical'
+  const repoStatus = summary.critical > 0 ? 'critical'
     : summary.warning > 0 ? 'warning'
       : summary.unsupported > 0 ? 'unsupported' : 'ok';
-  summary.reason = backup.reason || repos.map(repo => reasonFromRepo(repo, statusFromRepo(repo))).find(Boolean) || null;
+  summary.status = combineStatuses([repoStatus, cron?.status]);
+  summary.reason = cron?.status && cron.status !== 'ok'
+    ? cron.reason
+    : backup.reason || repos.map(repo => reasonFromRepo(repo, statusFromRepo(repo))).find(Boolean) || null;
   return summary;
 }
 
@@ -133,6 +179,7 @@ function buildBackupAgent(agent, health) {
     hostname: health?.hostname || null,
     reported_at: health?.reported_at || null,
     summary,
+    cron: health?.backup?.cron || null,
     repos,
   };
 }
