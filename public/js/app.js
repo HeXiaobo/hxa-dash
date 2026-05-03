@@ -328,9 +328,18 @@ const RuntimeCenter = {
     return { agent, type, risk };
   },
 
+  _heartbeatStale(agent) {
+    const heartbeat = this._heartbeatAt(agent);
+    if (!heartbeat) return false;
+    const ts = new Date(heartbeat).getTime();
+    return !Number.isFinite(ts) || (Date.now() - ts > this.attentionThresholds.heartbeatMs);
+  },
+
   _isRunning(agent) {
     const status = String(agent.runtime_status || agent.runtime?.status || agent.status || '').toLowerCase();
-    return agent.online !== false && !['offline', 'stopped', 'down'].includes(status);
+    if (['offline', 'stopped', 'down'].includes(status)) return false;
+    if (status) return agent.runtime?.stale !== true && agent.hardware?.stale !== true && !this._heartbeatStale(agent);
+    return agent.online !== false;
   },
 
   _isWorking(agent) {
@@ -340,10 +349,8 @@ const RuntimeCenter = {
 
   _runtimeRisk(agent) {
     const status = String(agent.runtime_status || agent.runtime?.status || '').toLowerCase();
-    const heartbeat = this._heartbeatAt(agent);
-    const heartbeatStale = heartbeat && (Date.now() - new Date(heartbeat).getTime() > this.attentionThresholds.heartbeatMs);
-    if (agent.runtime?.stale || agent.hardware?.stale || heartbeatStale) {
-      return { key: 'stale', cls: 'warning', label: '心跳断', detail: `心跳 ${this._timeAgoText(heartbeat)}` };
+    if (agent.runtime?.stale || agent.hardware?.stale || this._heartbeatStale(agent)) {
+      return { key: 'stale', cls: 'warning', label: '心跳断', detail: `心跳 ${this._timeAgoText(this._heartbeatAt(agent))}` };
     }
     if (['degraded', 'warning', 'error', 'failed'].includes(status)) {
       return { key: 'degraded', cls: 'warning', label: '运行异常', detail: status };
