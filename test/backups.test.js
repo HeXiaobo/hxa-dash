@@ -121,6 +121,41 @@ describe('backup health helpers', () => {
     expect(summary.backup_required).toBe(false);
   });
 
+  it('deduplicates multiple local clones of the same expected GitHub repo', () => {
+    const payload = buildBackupsPayload(
+      [{ name: 'xiaozhang', online: true }],
+      {
+        xiaozhang: {
+          backup: {
+            supported: true,
+            repos: [
+              { path: '/home/cocoai/zylos/workspace/backup-staging', remote: 'https://github.com/zhi-wai/xiaozhang-workspace.git' },
+              { path: '/home/cocoai/zylos/workspace/xiaozhang-workspace', remote: 'https://github.com/zhi-wai/xiaozhang-workspace.git' },
+            ],
+          },
+        },
+      }
+    );
+
+    expect(payload.agents[0].summary.total).toBe(1);
+    expect(payload.agents[0].repos).toHaveLength(1);
+    expect(payload.agents[0].repos[0].path).toBe('/home/cocoai/zylos/workspace/xiaozhang-workspace');
+  });
+
+  it('reports repo worktree problems before missing optional cron logs', () => {
+    const summary = buildBackupSummary({
+      supported: true,
+      cron: { supported: false, status: 'unsupported', reason: 'backup_log_not_found' },
+      repos: [
+        { path: '/home/cocoai/zylos/workspace/xiaochuaner-workspace', remote: 'https://github.com/zhi-wai/xiaochuaner-workspace.git', dirty: 317 },
+      ],
+    }, 'xiaochuaner');
+
+    expect(summary.status).toBe('warning');
+    expect(summary.reason).toBe('dirty_worktree');
+    expect(summary.dirty).toBe(317);
+  });
+
   it('sorts backup agents with critical and warning first', () => {
     const payload = buildBackupsPayload(
       [

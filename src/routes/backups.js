@@ -49,6 +49,34 @@ function repoMatchesExpected(repo, expected) {
   return Boolean(actual && wanted && actual === wanted);
 }
 
+function repoDedupeKey(repo) {
+  return githubSlug(repo?.remote) || `path:${String(repo?.path || '').toLowerCase()}`;
+}
+
+function repoPreferenceScore(repo, expected = null) {
+  const repoPath = String(repo?.path || '').toLowerCase();
+  const base = path.basename(repoPath);
+  const expectedName = githubSlug(expected?.url)?.split('/')[1] || '';
+  let score = 0;
+  if (expectedName && base === expectedName) score += 100;
+  if (expectedName && repoPath.endsWith(`/${expectedName}`)) score += 50;
+  if (repoPath.includes('/backup-staging') || base.includes('backup') || base.includes('staging')) score -= 50;
+  return score;
+}
+
+function dedupeBackupRepos(repos, expected = null) {
+  const byKey = new Map();
+  for (const repo of Array.isArray(repos) ? repos : []) {
+    const key = repoDedupeKey(repo);
+    if (!key) continue;
+    const current = byKey.get(key);
+    if (!current || repoPreferenceScore(repo, expected) > repoPreferenceScore(current, expected)) {
+      byKey.set(key, repo);
+    }
+  }
+  return [...byKey.values()];
+}
+
 function expectedBackupRepo(agentName, registry = loadExpectedBackupRepos()) {
   const name = String(agentName || '').trim().toLowerCase();
   if (!name) return { required: true, url: null, reason: null };
@@ -185,7 +213,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
   }
 
   const cron = normalizeCron(backup.cron);
-  const repos = Array.isArray(backup.repos) ? backup.repos : [];
+  const repos = dedupeBackupRepos(backup.repos, expected);
 
   if ((backup.supported === false || backup.status === 'unsupported') && !cron?.supported && repos.length === 0 && backup.reason === 'not_reported') {
     return {
@@ -256,24 +284,25 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     : summary.warning > 0 ? 'warning'
       : summary.unsupported > 0 ? 'unsupported' : 'ok';
   summary.status = combineStatuses([repoStatus, cron?.status]);
-  summary.reason = cron?.status && cron.status !== 'ok'
-    ? cron.reason
-    : backup.reason || repos.map(repo => {
-      const status = statusFromRepo(repo, expected, anyExpectedMatch);
-      return reasonFromRepo(repo, status, expected, anyExpectedMatch);
-    }).find(Boolean) || null;
+  const repoReason = repos.map(repo => {
+    const status = statusFromRepo(repo, expected, anyExpectedMatch);
+    return reasonFromRepo(repo, status, expected, anyExpectedMatch);
+  }).find(Boolean) || null;
+  summary.reason = backup.reason || repoReason || (cron?.status && cron.status !== 'ok' ? cron.reason : null);
   return summary;
 }
 
 function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos()) {
   const backup = health?.backup || null;
   const expected = expectedBackupRepo(agent.name, registry);
-  const anyExpectedMatch = expected.url && Array.isArray(backup?.repos)
-    ? backup.repos.some(repo => repoMatchesExpected(repo, expected))
+  const rawRepos = Array.isArray(backup?.repos) ? backup.repos : [];
+  const dedupedRepos = dedupeBackupRepos(rawRepos, expected);
+  const anyExpectedMatch = expected.url
+    ? dedupedRepos.some(repo => repoMatchesExpected(repo, expected))
     : null;
   const summary = buildBackupSummary(backup, agent.name, registry);
-  const repos = Array.isArray(backup?.repos)
-    ? backup.repos
+  const repos = dedupedRepos.length
+    ? dedupedRepos
         .map(repo => {
           const status = statusFromRepo(repo, expected, anyExpectedMatch);
           return { ...repo, status, reason: reasonFromRepo(repo, status, expected, anyExpectedMatch) };
