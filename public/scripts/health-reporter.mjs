@@ -1086,15 +1086,79 @@ function splitPathList(value) {
     .filter(Boolean);
 }
 
+const BACKUP_DEFAULT_OWNER = process.env.HXA_BACKUP_DEFAULT_OWNER || 'zhi-wai';
+const BACKUP_DEFAULT_REPO_TEMPLATE = process.env.HXA_BACKUP_DEFAULT_REPO_TEMPLATE || '{agent}-workspace';
+const BACKUP_REPO_ALIASES = {
+  hongshu: 'https://github.com/with3ai/hongshu-workspace',
+  mylos: 'https://github.com/with3ai/zylos-workspace',
+  veda: 'https://github.com/with3ai/veda-workspace',
+  wanyanshu: 'https://github.com/zhi-wai/maxiaozhuo-workspace',
+};
+
+function githubSlug(remoteUrl) {
+  const raw = String(remoteUrl || '').trim().replace(/\/$/, '').replace(/\.git$/i, '');
+  if (!raw) return null;
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.hostname.toLowerCase() === 'github.com') {
+      const [owner, repo] = parsed.pathname.replace(/^\/+/, '').split('/');
+      if (owner && repo) return `${owner.toLowerCase()}/${repo.toLowerCase().replace(/\.git$/i, '')}`;
+    }
+  } catch {}
+
+  const scp = raw.match(/^git@github\.com:([^/]+)\/(.+)$/i);
+  if (scp) return `${scp[1].toLowerCase()}/${scp[2].toLowerCase().replace(/\.git$/i, '')}`;
+  const ssh = raw.match(/^ssh:\/\/git@github\.com\/([^/]+)\/(.+)$/i);
+  if (ssh) return `${ssh[1].toLowerCase()}/${ssh[2].toLowerCase().replace(/\.git$/i, '')}`;
+  return null;
+}
+
+function expectedBackupRemote(botName) {
+  const configured = process.env.HXA_BACKUP_EXPECTED_REMOTE || process.env.GITHUB_BACKUP_EXPECTED_REMOTE || '';
+  if (configured.trim()) return configured.trim();
+
+  const name = String(botName || '').trim().toLowerCase();
+  if (!name) return null;
+  if (BACKUP_REPO_ALIASES[name]) return BACKUP_REPO_ALIASES[name];
+
+  const repo = BACKUP_DEFAULT_REPO_TEMPLATE.replace(/\{agent\}/g, name);
+  return BACKUP_DEFAULT_OWNER && repo ? `https://github.com/${BACKUP_DEFAULT_OWNER}/${repo}` : null;
+}
+
+function expectedBackupRepoName(botName) {
+  const slug = githubSlug(expectedBackupRemote(botName));
+  return slug ? slug.split('/')[1] : null;
+}
+
 function backupRepoDirCandidates(botName) {
   const name = String(botName || '').trim();
+  const expectedRepo = expectedBackupRepoName(name);
+  const commonHome = '/home/cocoai';
+  const commonCandidates = os.homedir() === commonHome
+    ? []
+    : [
+        commonHome,
+        path.join(commonHome, 'zylos'),
+        path.join(commonHome, 'zylos', 'workspace'),
+        path.join(commonHome, 'workspace'),
+        expectedRepo ? path.join(commonHome, expectedRepo) : null,
+        expectedRepo ? path.join(commonHome, 'zylos', 'workspace', expectedRepo) : null,
+        expectedRepo ? path.join(commonHome, 'workspace', expectedRepo) : null,
+      ];
   return [
     process.env.ZYLOS_WORKSPACE,
     process.env.HXA_BACKUP_REPO_DIR,
+    ZYLOS_DIR,
+    path.join(ZYLOS_DIR, 'workspace'),
     path.join(os.homedir(), 'zylos', 'workspace'),
     path.join(os.homedir(), 'zylos-workspace'),
     name ? path.join(os.homedir(), `${name}-workspace`) : null,
+    expectedRepo ? path.join(os.homedir(), expectedRepo) : null,
+    expectedRepo ? path.join(os.homedir(), 'zylos', 'workspace', expectedRepo) : null,
+    expectedRepo ? path.join(os.homedir(), 'workspace', expectedRepo) : null,
     path.join(os.homedir(), 'workspace'),
+    ...commonCandidates,
   ].filter(Boolean);
 }
 
@@ -1236,6 +1300,10 @@ function isLikelyBackupRepo(repo, botName, explicitScan) {
   const remote = String(repo.remote || '').toLowerCase();
   const repoPath = String(repo.path || '').toLowerCase();
   const base = path.basename(repoPath);
+  const expectedSlug = githubSlug(expectedBackupRemote(botName));
+  const expectedRepo = expectedSlug ? expectedSlug.split('/')[1] : null;
+  if (expectedSlug && githubSlug(remote) === expectedSlug) return true;
+  if (expectedRepo && (base === expectedRepo || repoPath.endsWith(`/${expectedRepo}`))) return true;
   if (base === 'hxa-dash' || remote.includes('/hxa-dash')) return false;
   if (base === 'nvm' || remote.includes('nvm-sh/nvm')) return false;
   if (base === 'workspace' || base === 'zylos-workspace') return true;

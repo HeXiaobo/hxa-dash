@@ -288,7 +288,13 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     const status = statusFromRepo(repo, expected, anyExpectedMatch);
     return reasonFromRepo(repo, status, expected, anyExpectedMatch);
   }).find(Boolean) || null;
-  summary.reason = backup.reason || repoReason || (cron?.status && cron.status !== 'ok' ? cron.reason : null);
+  const cronReason = cron?.status && cron.status !== 'ok' ? cron.reason : null;
+  const rawReason = backup.reason && backup.reason !== 'backup_log_not_found' ? backup.reason : null;
+  if (repoStatus === 'critical') summary.reason = repoReason || rawReason || cronReason;
+  else if (cron?.status === 'critical') summary.reason = cronReason || rawReason || repoReason;
+  else if (repoStatus === 'warning') summary.reason = repoReason || cronReason || rawReason;
+  else if (cron?.status === 'warning') summary.reason = cronReason || rawReason || repoReason;
+  else summary.reason = rawReason || repoReason || cronReason;
   return summary;
 }
 

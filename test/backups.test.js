@@ -145,6 +145,7 @@ describe('backup health helpers', () => {
   it('reports repo worktree problems before missing optional cron logs', () => {
     const summary = buildBackupSummary({
       supported: true,
+      reason: 'backup_log_not_found',
       cron: { supported: false, status: 'unsupported', reason: 'backup_log_not_found' },
       repos: [
         { path: '/home/cocoai/zylos/workspace/xiaochuaner-workspace', remote: 'https://github.com/zhi-wai/xiaochuaner-workspace.git', dirty: 317 },
