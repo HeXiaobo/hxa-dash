@@ -10,7 +10,6 @@ const COST_PER_M_INPUT  = 3.00;
 const COST_PER_M_OUTPUT = 15.00;
 const DAY_MS = 86400000;
 const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
-const HISTORY_LOOKBACK_MS = 30 * DAY_MS;
 const TOKEN_FIELDS = ['input', 'output', 'cache_creation', 'cache_read', 'cached_input', 'reasoning', 'total'];
 
 // Per-action token estimates (based on typical Claude API usage patterns)
@@ -226,14 +225,15 @@ function summarizeAgents(agents) {
 }
 
 function buildObservedUsage(window) {
-  const historyStart = Math.max(0, window.start_ms - HISTORY_LOOKBACK_MS);
-  const historyRows = typeof db.getHealthHistoryBetween === 'function'
-    ? db.getHealthHistoryBetween(historyStart, window.end_ms)
+  const historyRows = typeof db.iterHealthHistoryBetween === 'function'
+    ? db.iterHealthHistoryBetween(window.start_ms, window.end_ms)
+    : typeof db.getHealthHistoryBetween === 'function'
+      ? db.getHealthHistoryBetween(window.start_ms, window.end_ms)
     : [];
 
   const historyUsage = buildObservedUsageFromHistory(historyRows, window);
   let agents = historyUsage.agents;
-  let fromHistory = historyUsage.sample_count > 0;
+  let fromHistory = historyUsage.sample_count > 0 && agents.length > 0;
   if (!fromHistory) {
     agents = buildAgents()
       .filter(agent => agent.usage?.supported)

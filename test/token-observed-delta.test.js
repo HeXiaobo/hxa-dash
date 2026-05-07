@@ -71,6 +71,25 @@ describe('observed last-turn token usage', () => {
     });
   });
 
+  it('accepts lazy history iterables without materializing all rows', () => {
+    function* rows() {
+      yield healthRow({ name: 'agent-lazy', reportedAt: 2000, input: 90, output: 10, cacheRead: 20 });
+      yield healthRow({ name: 'agent-lazy', reportedAt: 3000, input: 40, output: 20, cacheRead: 30 });
+    }
+
+    const result = buildObservedUsageFromHistory(rows(), window);
+
+    expect(result.agents).toHaveLength(1);
+    expect(result.agents[0]).toMatchObject({
+      name: 'agent-lazy',
+      input: 130,
+      output: 30,
+      cache_read: 50,
+      total: 210,
+      turn_count: 2,
+    });
+  });
+
   it('keeps usage from multiple sessions for the same agent', () => {
     const result = buildObservedUsageFromHistory([
       healthRow({ reportedAt: 900, session: 'old', input: 80, output: 20, total: 100 }),

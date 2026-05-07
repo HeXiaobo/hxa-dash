@@ -798,6 +798,13 @@ const getHealthHistoryBetween = (sinceMs, untilMs) => {
   }).filter(Boolean);
 };
 
+function* iterHealthHistoryBetween(sinceMs, untilMs) {
+  for (const row of _healthHistoryBetweenStmt.iterate(sinceMs, untilMs)) {
+    try { yield { name: row.name, reported_at: row.reported_at, ...JSON.parse(row.data) }; }
+    catch (_) { /* skip corrupt rows */ }
+  }
+}
+
 const pruneHealthHistory = (olderThanMs) => {
   return _healthHistoryPruneStmt.run(olderThanMs);
 };
@@ -839,7 +846,7 @@ module.exports = {
   getUnassignedIssues,
   getSessionVelocity, getSessionSummary, getCompletionStats,
   upsertAgentHealth, getAgentHealth, getAllAgentHealth,
-  getHealthHistory, getHealthHistoryByName, getHealthHistoryBetween, pruneHealthHistory, getLatestHealthPerAgent,
+  getHealthHistory, getHealthHistoryByName, getHealthHistoryBetween, iterHealthHistoryBetween, pruneHealthHistory, getLatestHealthPerAgent,
   getAgentDailyOutput, getAgentSparkline7d,
   ESTIMATE_SESSIONS, ESTIMATE_MINUTES,
 };
