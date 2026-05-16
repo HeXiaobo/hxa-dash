@@ -12,6 +12,7 @@ import path from 'path';
 import os from 'os';
 import https from 'https';
 import http from 'http';
+import { pathToFileURL } from 'url';
 import { execSync, spawnSync } from 'child_process';
 
 const ZYLOS_DIR = process.env.ZYLOS_DIR || path.join(os.homedir(), 'zylos');
@@ -1419,6 +1420,75 @@ function parseLogTimestamp(line) {
   return null;
 }
 
+const BACKUP_SUCCESS_RE = /(success|successful|completed|complete|done|pushed|up[- ]?to[- ]?date|备份完成|备份成功|成功)/i;
+const BACKUP_FAILURE_RE = /(fail|failed|failure|error|fatal|denied|rejected|失败|错误|异常)/i;
+const GIT_REF_UPDATE_RE = /(?:[0-9a-f]{6,}\.\.[0-9a-f]{6,}|[0-9a-f]{6,})\s+\S+\s+->\s+\S+/i;
+
+export function isBackupSuccessLine(line) {
+  const text = String(line || '').trim();
+  return BACKUP_SUCCESS_RE.test(text) || GIT_REF_UPDATE_RE.test(text);
+}
+
+function isBackupFailureLine(line) {
+  return BACKUP_FAILURE_RE.test(String(line || ''));
+}
+
+function latestMatchingLine(lines, predicate) {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (predicate(lines[index])) return { line: lines[index], index };
+  }
+  return null;
+}
+
+function isFailureAfterSuccess(failureEntry, successEntry) {
+  if (!failureEntry || !successEntry) return false;
+  const failureAt = parseLogTimestamp(failureEntry.line);
+  const successAt = parseLogTimestamp(successEntry.line);
+  if (Number.isFinite(failureAt) && Number.isFinite(successAt) && failureAt !== successAt) {
+    return failureAt > successAt;
+  }
+  return failureEntry.index > successEntry.index;
+}
+
+export function classifyBackupLogLines(lines, mtimeMs = Date.now(), nowMs = Date.now()) {
+  const normalized = Array.isArray(lines)
+    ? lines.map(line => String(line || '').trim()).filter(Boolean).slice(-300)
+    : [];
+  const latestLine = normalized.at(-1) || null;
+  const latestSuccess = latestMatchingLine(normalized, line => isBackupSuccessLine(line) && !isBackupFailureLine(line));
+  const latestFailure = latestMatchingLine(normalized, isBackupFailureLine);
+  const fallbackTime = Number.isFinite(mtimeMs) ? mtimeMs : nowMs;
+  const lastSuccessAt = latestSuccess ? (parseLogTimestamp(latestSuccess.line) || fallbackTime) : null;
+  const lastRunAt = latestLine ? (parseLogTimestamp(latestLine) || fallbackTime) : fallbackTime;
+
+  let status = 'ok';
+  let reason = null;
+  if (!lastSuccessAt) {
+    status = latestFailure ? 'critical' : 'warning';
+    reason = latestFailure ? 'last_backup_failed' : 'no_success_marker';
+  } else if (isFailureAfterSuccess(latestFailure, latestSuccess)) {
+    status = 'warning';
+    reason = 'failure_after_last_success';
+  } else {
+    const ageHours = (nowMs - lastSuccessAt) / 3600000;
+    if (ageHours > BACKUP_CRITICAL_HOURS) {
+      status = 'critical';
+      reason = 'backup_success_too_old';
+    } else if (ageHours > BACKUP_WARN_HOURS) {
+      status = 'warning';
+      reason = 'backup_success_stale';
+    }
+  }
+
+  return {
+    status,
+    reason,
+    last_success_at: lastSuccessAt ? new Date(lastSuccessAt).toISOString() : null,
+    last_run_at: lastRunAt ? new Date(lastRunAt).toISOString() : null,
+    latest_line: latestLine ? latestLine.slice(0, 240) : null,
+  };
+}
+
 function backupLogCandidates(botName) {
   const configured = process.env.HXA_BACKUP_LOG_PATH || process.env.BACKUP_LOG_PATH || '';
   if (configured.trim()) return splitPathList(configured);
@@ -1480,45 +1550,12 @@ function readBackupCronStatus(botName) {
     };
   }
 
-  const successRe = /(success|successful|completed|complete|done|pushed|up[- ]?to[- ]?date|备份完成|备份成功|成功)/i;
-  const failureRe = /(fail|failed|failure|error|fatal|denied|rejected|失败|错误|异常)/i;
-  const latestLine = lines.at(-1) || null;
-  const mtime = stat?.mtimeMs || Date.now();
-  const successLines = lines.filter(line => successRe.test(line) && !failureRe.test(line));
-  const failureLines = lines.filter(line => failureRe.test(line));
-  const latestSuccessLine = successLines.at(-1) || null;
-  const latestFailureLine = failureLines.at(-1) || null;
-  const lastSuccessAt = latestSuccessLine ? (parseLogTimestamp(latestSuccessLine) || mtime) : null;
-  const lastFailureAt = latestFailureLine ? (parseLogTimestamp(latestFailureLine) || mtime) : null;
-  const lastRunAt = latestLine ? (parseLogTimestamp(latestLine) || mtime) : mtime;
-
-  let status = 'ok';
-  let reason = null;
-  if (!lastSuccessAt) {
-    status = latestFailureLine ? 'critical' : 'warning';
-    reason = latestFailureLine ? 'last_backup_failed' : 'no_success_marker';
-  } else if (lastFailureAt && lastFailureAt > lastSuccessAt) {
-    status = 'warning';
-    reason = 'failure_after_last_success';
-  } else {
-    const ageHours = (Date.now() - lastSuccessAt) / 3600000;
-    if (ageHours > BACKUP_CRITICAL_HOURS) {
-      status = 'critical';
-      reason = 'backup_success_too_old';
-    } else if (ageHours > BACKUP_WARN_HOURS) {
-      status = 'warning';
-      reason = 'backup_success_stale';
-    }
-  }
+  const status = classifyBackupLogLines(lines, stat?.mtimeMs || Date.now());
 
   return {
     supported: true,
-    status,
-    reason,
     log_path: logPath,
-    last_success_at: lastSuccessAt ? new Date(lastSuccessAt).toISOString() : null,
-    last_run_at: lastRunAt ? new Date(lastRunAt).toISOString() : null,
-    latest_line: latestLine ? latestLine.slice(0, 240) : null,
+    ...status,
   };
 }
 
@@ -1766,4 +1803,6 @@ async function main() {
   }
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

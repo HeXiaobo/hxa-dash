@@ -32,7 +32,7 @@ describe('backup health helpers', () => {
     expect(backup.repos[0].remote).not.toContain('ghp_secret123');
   });
 
-  it('summarizes repo backup status by GitHub remote and worktree state', () => {
+  it('summarizes repo backup status by GitHub remote and sync state', () => {
     const summary = buildBackupSummary({
       supported: true,
       repos: [
@@ -142,19 +142,37 @@ describe('backup health helpers', () => {
     expect(payload.agents[0].repos[0].path).toBe('/home/cocoai/zylos/workspace/xiaozhang-workspace');
   });
 
-  it('reports repo worktree problems before missing optional cron logs', () => {
-    const summary = buildBackupSummary({
-      supported: true,
-      reason: 'backup_log_not_found',
-      cron: { supported: false, status: 'unsupported', reason: 'backup_log_not_found' },
-      repos: [
-        { path: '/home/cocoai/zylos/workspace/xiaochuaner-workspace', remote: 'https://github.com/zhi-wai/xiaochuaner-workspace.git', dirty: 317 },
-      ],
-    }, 'xiaochuaner');
+  it('keeps local worktree changes informational when GitHub is synced', () => {
+    const payload = buildBackupsPayload(
+      [{ name: 'xiaochuaner', online: true }],
+      {
+        xiaochuaner: {
+          backup: {
+            supported: true,
+            reason: 'backup_log_not_found',
+            cron: { supported: false, status: 'unsupported', reason: 'backup_log_not_found' },
+            repos: [
+              {
+                path: '/home/cocoai/zylos/workspace/xiaochuaner-workspace',
+                remote: 'https://github.com/zhi-wai/xiaochuaner-workspace.git',
+                dirty: 317,
+                status: 'warning',
+                reason: 'dirty_worktree',
+              },
+            ],
+          },
+        },
+      }
+    );
 
-    expect(summary.status).toBe('warning');
-    expect(summary.reason).toBe('dirty_worktree');
-    expect(summary.dirty).toBe(317);
+    const agent = payload.agents[0];
+    expect(agent.summary.status).toBe('ok');
+    expect(agent.summary.reason).toBeNull();
+    expect(agent.summary.dirty).toBe(317);
+    expect(agent.summary.warning).toBe(0);
+    expect(agent.summary.ok).toBe(1);
+    expect(agent.repos[0].status).toBe('ok');
+    expect(agent.repos[0].reason).toBeNull();
   });
 
   it('sorts backup agents with critical and warning first', () => {
@@ -166,7 +184,7 @@ describe('backup health helpers', () => {
       ],
       {
         'ok-agent': { backup: { supported: true, repos: [{ path: '/ok', remote: 'https://github.com/zhi-wai/ok-agent-workspace.git' }] } },
-        'warn-agent': { backup: { supported: true, repos: [{ path: '/warn', remote: 'https://github.com/zhi-wai/warn-agent-workspace.git', dirty: 1 }] } },
+        'warn-agent': { backup: { supported: true, repos: [{ path: '/warn', remote: 'https://github.com/zhi-wai/warn-agent-workspace.git', ahead: 1 }] } },
         'crit-agent': { backup: { supported: true, repos: [{ path: '/crit', remote: null }] } },
       }
     );

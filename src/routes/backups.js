@@ -49,6 +49,10 @@ function repoMatchesExpected(repo, expected) {
   return Boolean(actual && wanted && actual === wanted);
 }
 
+function hasGithubRemote(repo) {
+  return /(^|[/:@])github\.com[/:]/i.test(String(repo?.remote || ''));
+}
+
 function repoDedupeKey(repo) {
   return githubSlug(repo?.remote) || `path:${String(repo?.path || '').toLowerCase()}`;
 }
@@ -107,24 +111,21 @@ function statusFromRepo(repo, expected = null, anyExpectedMatch = null) {
   if (!repo || typeof repo !== 'object') return 'critical';
   if (repo.status === 'unsupported') return 'unsupported';
   if (repo.status === 'critical' || repo.reason === 'collection_failed') return 'critical';
-  if (!/(^|[/:@])github\.com[/:]/i.test(String(repo.remote || ''))) return 'critical';
+  if (!hasGithubRemote(repo)) return 'critical';
   if (expected?.required && expected.url && anyExpectedMatch === false && !repoMatchesExpected(repo, expected)) return 'critical';
-  if ((repo.ahead || 0) > 0 || (repo.behind || 0) > 0 || (repo.dirty || 0) > 0 || (repo.untracked || 0) > 0) {
-    return 'warning';
-  }
+  if ((repo.ahead || 0) > 0 || (repo.behind || 0) > 0) return 'warning';
   return 'ok';
 }
 
 function reasonFromRepo(repo, status, expected = null, anyExpectedMatch = null) {
-  if (repo?.reason) return repo.reason;
-  if (status === 'critical' && !/(^|[/:@])github\.com[/:]/i.test(String(repo?.remote || ''))) return 'no_github_remote';
+  if (status === 'critical' && repo?.reason === 'collection_failed') return repo.reason;
+  if (status === 'critical' && !hasGithubRemote(repo)) return 'no_github_remote';
   if (status === 'critical' && expected?.required && expected.url && anyExpectedMatch === false) return 'github_repo_mismatch';
   if (status === 'warning') {
     if ((repo.ahead || 0) > 0) return 'ahead_of_upstream';
-    if ((repo.dirty || 0) > 0) return 'dirty_worktree';
-    if ((repo.untracked || 0) > 0) return 'untracked_files';
     if ((repo.behind || 0) > 0) return 'behind_upstream';
   }
+  if (status === 'unsupported') return repo?.reason || null;
   return null;
 }
 
@@ -288,7 +289,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     const status = statusFromRepo(repo, expected, anyExpectedMatch);
     return reasonFromRepo(repo, status, expected, anyExpectedMatch);
   }).find(Boolean) || null;
-  const cronReason = cron?.status && cron.status !== 'ok' ? cron.reason : null;
+  const cronReason = cron?.status && !['ok', 'unsupported'].includes(cron.status) ? cron.reason : null;
   const rawReason = backup.reason && backup.reason !== 'backup_log_not_found' ? backup.reason : null;
   if (repoStatus === 'critical') summary.reason = repoReason || rawReason || cronReason;
   else if (cron?.status === 'critical') summary.reason = cronReason || rawReason || repoReason;
