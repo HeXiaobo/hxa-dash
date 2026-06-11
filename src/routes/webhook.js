@@ -3,6 +3,8 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
+const { hasApiKey } = require('../auth/api-key');
+const { isAuthEnabled } = require('../auth/config');
 
 let webhookSecret = null;
 let wsRef = null;
@@ -16,8 +18,9 @@ function init(config, ws) {
 
 // Verify GitLab webhook token
 function verifyToken(req) {
-  if (!webhookSecret) return true; // no secret configured = accept all
-  return req.headers['x-gitlab-token'] === webhookSecret;
+  if (webhookSecret) return req.headers['x-gitlab-token'] === webhookSecret;
+  if (isAuthEnabled()) return hasApiKey(req);
+  return true; // Local/dev compatibility when auth is disabled.
 }
 
 // Parse dependency references from issue description

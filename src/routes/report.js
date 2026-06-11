@@ -11,6 +11,8 @@ const db = require('../db');
 const collab = require('../analyzers/collab');
 const { buildAgents } = require('./team');
 const { computeMetrics } = require('./metrics');
+const { hasApiKey, requireIngestAuth } = require('../auth/api-key');
+const { isAuthEnabled } = require('../auth/config');
 
 let ws = null;
 let config = null;
@@ -22,11 +24,18 @@ function init(wsModule, cfg) {
 
 const router = Router();
 
+function verifyGitlabWebhook(req) {
+  const secret = config?.webhooks?.gitlab_secret;
+  if (secret) return req.headers['x-gitlab-token'] === secret;
+  if (isAuthEnabled()) return hasApiKey(req);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/report — Agent heartbeat / status push
 // Body: { name, status?, current_task?, metadata? }
 // ---------------------------------------------------------------------------
-router.post('/report', (req, res) => {
+router.post('/report', requireIngestAuth, (req, res) => {
   const { name, status, current_task, metadata } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
 
@@ -71,7 +80,7 @@ router.post('/report', (req, res) => {
 // POST /api/webhook/connect — HxA Connect online/offline callbacks
 // Body: { event: 'bot.online'|'bot.offline', bot: { name, role, bio, tags } }
 // ---------------------------------------------------------------------------
-router.post('/webhook/connect', (req, res) => {
+router.post('/webhook/connect', requireIngestAuth, (req, res) => {
   const { event, bot } = req.body || {};
   if (!event || !bot?.name) return res.status(400).json({ error: 'event and bot.name required' });
 
@@ -117,9 +126,7 @@ router.post('/webhook/connect', (req, res) => {
 // Handles: Push, Merge Request, Issue, Note (comment)
 // ---------------------------------------------------------------------------
 router.post('/webhook/gitlab', (req, res) => {
-  // Validate secret if configured
-  const secret = config?.webhooks?.gitlab_secret;
-  if (secret && req.headers['x-gitlab-token'] !== secret) {
+  if (!verifyGitlabWebhook(req)) {
     return res.status(401).json({ error: 'invalid token' });
   }
 
@@ -424,7 +431,7 @@ router.get('/report/summary', (req, res) => {
 // Allows any bot to push its own activity events (messages, tasks, etc.)
 // Body: { agent, events: [{ action, target_type?, target_title, timestamp?, external_id? }] }
 // ---------------------------------------------------------------------------
-router.post('/report/activity', (req, res) => {
+router.post('/report/activity', requireIngestAuth, (req, res) => {
   const { agent, events: activityEvents } = req.body || {};
   if (!agent) return res.status(400).json({ error: 'agent required' });
   if (!Array.isArray(activityEvents) || activityEvents.length === 0) {
