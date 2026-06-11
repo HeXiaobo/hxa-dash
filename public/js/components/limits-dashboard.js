@@ -24,6 +24,19 @@ const LimitsDashboard = {
     return '未提供';
   },
 
+  _freshnessMeta(quota) {
+    const freshness = quota?.freshness || {};
+    const sampledAt = freshness.sampled_at || quota?.sampled_at || null;
+    if (!quota?.supported) return { cls: 'muted', label: '—', title: quota?.reason || '未追踪' };
+    if (!sampledAt) return { cls: 'stale', label: '无采样时间', title: '缺少 sampled_at' };
+    const ageText = timeAgo(sampledAt);
+    const timeText = formatTime(sampledAt);
+    if (freshness.status === 'stale') {
+      return { cls: 'stale', label: `${ageText} · 过期`, title: `采样于 ${timeText}` };
+    }
+    return { cls: 'fresh', label: `${ageText}`, title: `采样于 ${timeText}` };
+  },
+
   async fetch() {
     if (this._loading) return;
     this._loading = true;
@@ -61,6 +74,10 @@ const LimitsDashboard = {
           <div class="metrics-card-label">接近上限</div>
         </div>
         <div class="metrics-card">
+          <div class="metrics-card-value">${team.stale_count || 0}</div>
+          <div class="metrics-card-label">采样过期</div>
+        </div>
+        <div class="metrics-card">
           <div class="metrics-card-value">${team.unsupported || 0}</div>
           <div class="metrics-card-label">暂不支持</div>
         </div>
@@ -85,6 +102,7 @@ const LimitsDashboard = {
       const runtimeText = `${runtime.label || runtime.type || 'Unknown'}${runtime.version ? ` ${runtime.version}` : ''}`;
       const workText = agent.work_state === 'working' ? '工作中' : agent.work_state === 'standby' ? '待命' : '离线';
       const quotaText = this._formatQuotaText(quota);
+      const freshness = this._freshnessMeta(quota);
       const tokenText = usage.supported
         ? [
             usageTokens.total != null ? this._formatTokenCount(usageTokens.total) : null,
@@ -99,6 +117,7 @@ const LimitsDashboard = {
           <td>${esc(runtimeText)}</td>
           <td>${esc(workText)}</td>
           <td>${esc(quotaText)}</td>
+          <td><span class="quota-freshness ${freshness.cls}" title="${esc(freshness.title)}">${esc(freshness.label)}</span></td>
           <td>${esc(tokenText)}</td>
           <td>${primary.resets_at ? formatTime(primary.resets_at) : '—'}</td>
           <td>${secondary.resets_at ? formatTime(secondary.resets_at) : '—'}</td>
@@ -115,12 +134,13 @@ const LimitsDashboard = {
               <th>Runtime</th>
               <th>状态</th>
               <th>限额用量</th>
+              <th>采样时间</th>
               <th>本地 Usage</th>
               <th>5h 重置</th>
               <th>7d 重置</th>
             </tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="7" class="metrics-empty">暂无限额数据</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="8" class="metrics-empty">暂无限额数据</td></tr>'}</tbody>
         </table>
       </div>
     `;
