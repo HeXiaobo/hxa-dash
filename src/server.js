@@ -1,6 +1,10 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const { loadRuntimeEnv } = require('./env');
+
+loadRuntimeEnv();
+
 const fs = require('fs');
 const { execSync } = require('child_process');
 
