@@ -3,6 +3,7 @@
 const TokenDashboard = {
   _data: null,
   _range: 'today',
+  _view: 'agent',
   _customStart: null,
   _customEnd: null,
   _COLORS: ['#58a6ff', '#3fb950', '#bc8cff', '#f0883e', '#79c0ff', '#56d364', '#d2a8ff', '#f85149'],
@@ -42,6 +43,16 @@ const TokenDashboard = {
     });
 
     this._syncCustomRangeVisibility();
+
+    document.querySelectorAll('[data-token-view]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._view = btn.dataset.tokenView || 'agent';
+        document.querySelectorAll('[data-token-view]').forEach(b =>
+          b.classList.toggle('active', b === btn)
+        );
+        if (this._data) this._render();
+      });
+    });
 
     window.addEventListener('resize', () => {
       if (this._data) this._render();
@@ -200,12 +211,80 @@ const TokenDashboard = {
   _renderChart() {
     const container = document.getElementById('token-chart');
     if (!container) return;
-    if (this._hasObserved()) {
+    if (!this._hasObserved()) {
+      container.innerHTML = '<div class="trends-empty">暂无观测数据</div>';
+      return;
+    }
+    if (this._view === 'agent') {
       this._renderObservedChart(container);
+    } else {
+      this._renderGroupedChart(container);
+    }
+  },
+
+  _renderGroupedChart(container) {
+    const groups = this._getGroupedData();
+    if (!groups.length) {
+      container.innerHTML = '<div class="trends-empty">暂无分组数据</div>';
       return;
     }
 
-    container.innerHTML = '<div class="trends-empty">暂无观测数据</div>';
+    const W = Math.max(container.clientWidth || 600, 300);
+    const H = 220;
+    let canvas = container.querySelector('canvas');
+    if (!canvas) {
+      container.innerHTML = '';
+      canvas = document.createElement('canvas');
+      container.appendChild(canvas);
+    }
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const pad = { top: 18, right: 16, bottom: 46, left: 50 };
+    const cW = W - pad.left - pad.right;
+    const cH = H - pad.top - pad.bottom;
+    const maxVal = Math.max(1, ...groups.map(g => g.summary?.total_tokens || 0));
+    const barGap = 12;
+    const barW = Math.max(20, (cW - barGap * (groups.length - 1)) / groups.length);
+
+    ctx.lineWidth = 1;
+    ctx.font = '10px -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+      const y = pad.top + cH - (i / 4) * cH;
+      ctx.strokeStyle = 'rgba(48,54,61,0.9)';
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(pad.left + cW, y);
+      ctx.stroke();
+      ctx.fillStyle = '#8b949e';
+      ctx.fillText(this._fmt((i / 4) * maxVal), pad.left - 4, y + 3.5);
+    }
+
+    groups.forEach((group, i) => {
+      const x = pad.left + i * (barW + barGap);
+      const total = group.summary?.total_tokens || 0;
+      const h = (total / maxVal) * cH;
+      const y = pad.top + cH - h;
+
+      ctx.fillStyle = this._COLORS[i % this._COLORS.length];
+      ctx.fillRect(x, y, barW, h);
+
+      ctx.fillStyle = '#e6edf3';
+      ctx.font = 'bold 11px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      if (h > 16) ctx.fillText(this._fmt(total), x + barW / 2, y + 13);
+
+      ctx.fillStyle = '#8b949e';
+      ctx.font = '10px -apple-system, sans-serif';
+      ctx.save();
+      ctx.translate(x + barW / 2, H - 8);
+      ctx.rotate(-Math.PI / 8);
+      ctx.fillText(String(group.label || group.key).slice(0, 10), 0, 0);
+      ctx.restore();
+    });
   },
 
   _renderObservedChart(container) {
@@ -281,12 +360,15 @@ const TokenDashboard = {
   _renderAgentTable() {
     const el = document.getElementById('token-agent-table');
     if (!el) return;
-    if (this._hasObserved()) {
-      this._renderObservedAgentTable(el);
+    if (!this._hasObserved()) {
+      el.innerHTML = '<div class="trends-empty">暂无观测数据</div>';
       return;
     }
-
-    el.innerHTML = '<div class="trends-empty">暂无观测数据</div>';
+    if (this._view === 'agent') {
+      this._renderObservedAgentTable(el);
+    } else {
+      this._renderGroupedTable(el);
+    }
   },
 
   _renderObservedAgentTable(el) {
@@ -354,12 +436,108 @@ const TokenDashboard = {
     `;
   },
 
+  _getGroupedData() {
+    const observed = this._data?.observed || {};
+    const viewMap = {
+      business_line: observed.by_business_line,
+      division: observed.by_division,
+      human: observed.by_human,
+    };
+    return viewMap[this._view] || [];
+  },
+
+  _renderGroupedTable(el) {
+    const groups = this._getGroupedData();
+    if (!groups.length) {
+      el.innerHTML = '<div class="trends-empty">暂无分组数据</div>';
+      return;
+    }
+
+    const totalTokens = groups.reduce((s, g) => s + (g.summary?.total_tokens || 0), 0) || 1;
+    const maxTokens = Math.max(...groups.map(g => g.summary?.total_tokens || 0), 1);
+
+    el.innerHTML = `
+      <table class="token-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>${this._view === 'human' ? '人员' : '业务线'}</th>
+            <th>成员数</th>
+            <th>输入</th>
+            <th>输出</th>
+            <th>缓存</th>
+            <th>推理</th>
+            <th>合计</th>
+            <th>费用</th>
+            <th>占比</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${groups.map((g, i) => {
+            const s = g.summary || {};
+            const total = s.total_tokens || 0;
+            const pct = ((total / totalTokens) * 100).toFixed(1);
+            const barW = ((total / maxTokens) * 100).toFixed(1);
+            const costText = s.cost_agent_count > 0 ? '$' + (s.total_cost_usd || 0).toFixed(2) : '—';
+            const members = (g.agents || []).map(a => a.name).join(', ');
+            return `<tr>
+              <td class="token-rank">${i + 1}</td>
+              <td class="token-agent-name" title="${esc(members)}">
+                <span class="token-agent-dot" style="background:${this._COLORS[i % this._COLORS.length]}"></span>
+                <span>${esc(g.label || g.key)}</span>
+              </td>
+              <td>${g.agent_count || 0}</td>
+              <td>${this._fmt(s.total_input)}</td>
+              <td>${this._fmt(s.total_output)}</td>
+              <td>${this._fmt(s.cache_tokens)}</td>
+              <td>${this._fmt(s.reasoning_tokens)}</td>
+              <td><strong>${this._fmt(total)}</strong></td>
+              <td>${costText}</td>
+              <td>
+                <div class="token-bar-cell">
+                  <div class="token-bar" style="width:${barW}%;background:${this._COLORS[i % this._COLORS.length]}"></div>
+                  <span>${pct}%</span>
+                </div>
+              </td>
+            </tr>
+            ${(g.agents || []).map(a => {
+              const aTotal = Number(a.total || 0);
+              const aPct = ((aTotal / totalTokens) * 100).toFixed(1);
+              return `<tr style="opacity:0.7;font-size:12px">
+                <td></td>
+                <td style="padding-left:28px">${esc(a.name)}</td>
+                <td></td>
+                <td>${this._fmt(a.input || 0)}</td>
+                <td>${this._fmt(a.output || 0)}</td>
+                <td>${this._fmt(this._cacheTokens(a))}</td>
+                <td>${this._fmt(a.reasoning || 0)}</td>
+                <td>${this._fmt(aTotal)}</td>
+                <td></td>
+                <td><span style="color:#8b949e">${aPct}%</span></td>
+              </tr>`;
+            }).join('')}`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  },
+
   _renderCostPie() {
     const container = document.getElementById('token-cost-pie');
     if (!container) return;
 
-    const agents = this._data.observed?.agents || [];
-    if (!agents.length) {
+    let items, totalValue;
+    if (this._view === 'agent') {
+      const agents = this._data.observed?.agents || [];
+      items = agents.map(a => ({ label: a.name, value: Number(a.total || 0) }));
+      totalValue = Number(this._data.observed?.summary?.total_tokens || 0);
+    } else {
+      const groups = this._getGroupedData();
+      items = groups.map(g => ({ label: g.label || g.key, value: g.summary?.total_tokens || 0 }));
+      totalValue = items.reduce((s, it) => s + it.value, 0);
+    }
+
+    if (!items.length) {
       container.innerHTML = '<div class="trends-empty">暂无观测数据</div>';
       return;
     }
@@ -380,15 +558,12 @@ const TokenDashboard = {
     const cy = size / 2;
     const r = size / 2 - 8;
     const innerR = r * 0.55;
-    const totalValue = Number(this._data.observed?.summary?.total_tokens || 0);
     const safeTotalValue = totalValue || 1;
 
     let startAngle = -Math.PI / 2;
 
-    for (let i = 0; i < agents.length; i++) {
-      const a = agents[i];
-      const value = Number(a.total || 0);
-      const slice = (value / safeTotalValue) * Math.PI * 2;
+    for (let i = 0; i < items.length; i++) {
+      const slice = (items[i].value / safeTotalValue) * Math.PI * 2;
       const endAngle = startAngle + slice;
 
       ctx.beginPath();
@@ -401,7 +576,6 @@ const TokenDashboard = {
       startAngle = endAngle;
     }
 
-    // Center text
     ctx.fillStyle = '#e6edf3';
     ctx.font = 'bold 16px -apple-system, sans-serif';
     ctx.textAlign = 'center';

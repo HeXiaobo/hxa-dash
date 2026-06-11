@@ -2,8 +2,33 @@
 // Estimates token usage from actual GitLab activity data
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
+const entity = require('../entity');
 const { buildAgents, __private: { selectUsageForRuntime } } = require('./team');
+
+const BUSINESS_LINE_LABELS = (() => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'config', 'entities.json'), 'utf8'));
+    return cfg._business_lines || {};
+  } catch { return {}; }
+})();
+
+const DIVISION_MAP = {
+  overseas: 'overseas',
+  xiaohongshu: 'domestic',
+  zhihu: 'domestic',
+  advertising: 'domestic',
+  commercial: 'domestic',
+  finance: 'support',
+  hr: 'support',
+  ceo_office: 'support',
+  tech: 'support',
+  admin: 'support',
+  '3ai': '3ai',
+};
+const DIVISION_LABELS = { overseas: '海外', domestic: '国内', support: '支持', '3ai': '3AI' };
 
 // Cost per 1M tokens (USD) — Claude Sonnet pricing
 const COST_PER_M_INPUT  = 3.00;
@@ -245,12 +270,15 @@ function buildObservedUsage(window) {
       .sort((a, b) => b.total - a.total);
   }
 
+  const grouped = agents.length > 0 ? buildGroupedViews(agents) : { by_business_line: [], by_division: [], by_human: [] };
+
   return {
     supported: agents.length > 0,
     agent_count: agents.length,
     window,
     summary: summarizeAgents(agents),
     agents,
+    ...grouped,
     methodology: fromHistory
       ? '来自历史健康快照，按时间窗口汇总去重后的最后一轮用量'
       : '来自各 agent 本机 runtime usage 快照，subscription 模式下为本地观测值，非账单口径',
@@ -302,6 +330,50 @@ function buildObservedUsageFromHistory(historyRows, window) {
     .sort((a, b) => b.total - a.total);
 
   return { agents, sample_count: sampleCount };
+}
+
+function entityMeta(name) {
+  const e = entity.get(name);
+  return e?.meta || {};
+}
+
+function groupAgents(agents, keyFn, labelMap) {
+  const groups = new Map();
+  for (const agent of agents) {
+    const key = keyFn(agent) || '_unassigned';
+    if (!groups.has(key)) groups.set(key, { key, label: labelMap[key] || key, agents: [] });
+    groups.get(key).agents.push(agent);
+  }
+  const result = [];
+  for (const group of groups.values()) {
+    group.summary = summarizeAgents(group.agents);
+    group.agent_count = group.agents.length;
+    result.push(group);
+  }
+  result.sort((a, b) => b.summary.total_tokens - a.summary.total_tokens);
+  return result;
+}
+
+function buildGroupedViews(agents) {
+  const byBusinessLine = groupAgents(
+    agents,
+    a => entityMeta(a.name).business_line,
+    { ...BUSINESS_LINE_LABELS, _unassigned: '未分配' }
+  );
+
+  const byDivision = groupAgents(
+    agents,
+    a => DIVISION_MAP[entityMeta(a.name).business_line] || '_unassigned',
+    { ...DIVISION_LABELS, _unassigned: '未分配' }
+  );
+
+  const byHuman = groupAgents(
+    agents,
+    a => entityMeta(a.name).human_associate,
+    { _unassigned: '未关联' }
+  );
+
+  return { by_business_line: byBusinessLine, by_division: byDivision, by_human: byHuman };
 }
 
 // GET /api/tokens — token consumption estimates for a time window
