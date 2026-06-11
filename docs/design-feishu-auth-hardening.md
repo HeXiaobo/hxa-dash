@@ -26,6 +26,12 @@ This design makes Feishu auth a reviewed, reproducible prerequisite for #4 befor
 
 Auth middleware should run after request body parsing and `/auth/*` routes, but before static assets and API routes.
 
+The boundary is intentionally split into three zones:
+
+- Browser UI + read APIs: Feishu login.
+- Machine ingest: `X-API-Key` server-to-server auth.
+- WebSocket snapshot stream: same browser auth as the UI.
+
 Public routes:
 
 | Route | Method | Reason | Protection |
@@ -37,12 +43,14 @@ Public routes:
 | `/api/about` | GET | deploy verification | public, no sensitive data beyond version/commit |
 | `/api/health` | GET | liveness check | public, keep payload minimal if changed later |
 | `/api/webhook/gitlab` | POST | GitLab webhook | existing GitLab secret, fail closed when configured |
-| `/api/agent-health/:name` | POST | health reporter ingest | existing `HEALTH_API_KEY` route guard |
-| `/api/report` | POST | legacy agent heartbeat ingest | new shared ingest key before public use |
-| `/api/report/activity` | POST | external activity ingest | new shared ingest key before public use |
-| `/api/webhook/connect` | POST | Connect callbacks | new shared ingest key before public use |
+| `/api/agent-health/:name` | POST | health reporter ingest | shared `X-API-Key` ingest guard |
+| `/api/report` | POST | legacy agent heartbeat ingest | shared `X-API-Key` ingest guard |
+| `/api/report/activity` | POST | external activity ingest | shared `X-API-Key` ingest guard |
+| `/api/webhook/connect` | POST | Connect callbacks | shared `X-API-Key` ingest guard |
 
 All other `/api/*`, HTML, JS, CSS, and static assets require a valid `hxa_token` browser cookie.
+
+Mylos confirmed the five machine POST routes above are active production data paths for health reporters, activity reporters, agent heartbeats, HXA Connect callbacks, and GitLab events. They must not be protected with Feishu browser login, or the fleet will stop reporting.
 
 ## WebSocket policy
 
@@ -80,7 +88,8 @@ Required for production auth:
 Machine ingest:
 
 - Existing: `HEALTH_API_KEY`
-- Proposed: `HXA_INGEST_API_KEY` for legacy report/connect ingest routes that do not currently have their own secret.
+- Proposed: `HXA_INGEST_API_KEY` for report/connect ingest routes that do not currently have their own secret.
+- Header: reuse the existing `X-API-Key` convention. Accept `HEALTH_API_KEY` as a compatibility key for `/api/agent-health/:name`; prefer `HXA_INGEST_API_KEY` for the broader ingest surface once clients are configured.
 
 Behavior:
 
@@ -101,7 +110,12 @@ Behavior:
    - auth middleware
    - static files
    - API routes
-4. Add API ingest key checks for legacy unauthenticated POST routes or gate them through the auth policy.
+4. Add API ingest key checks for legacy unauthenticated POST routes or gate them through the auth policy:
+   - `/api/agent-health/:name`
+   - `/api/report`
+   - `/api/report/activity`
+   - `/api/webhook/connect`
+   - `/api/webhook/gitlab`
 5. Add WebSocket auth checks before sending snapshots.
 6. Add tests for:
    - route policy: protected API reads vs public health/about/webhook/ingest routes.
@@ -148,3 +162,9 @@ If auth config is wrong but the code is healthy, rollback may also be done by re
 - Which legacy ingest routes are still actively used: `/api/report`, `/api/report/activity`, `/api/webhook/connect`?
 - Is `HXA_INGEST_API_KEY` acceptable for those legacy machine routes, or should each source get its own scoped key?
 - Should WebSocket auth reject during HTTP upgrade or accept then immediately close with a policy code for better diagnostics?
+
+## Review decisions
+
+- Mylos confirmed `/api/report`, `/api/report/activity`, `/api/webhook/connect`, `/api/webhook/gitlab`, and `/api/agent-health/:name` are all active production ingest paths.
+- Use the existing `X-API-Key` style for machine ingest.
+- Keep code and deployment execution owned by Codex; Mylos remains reviewer/context provider.
