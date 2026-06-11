@@ -41,11 +41,16 @@ find_reporter_paths() {
     pgrep -af "activity-reporter" || true
   } | tr ' ' '\n' | sed -n 's#.*\(/[^[:space:]]*activity-reporter\(-openclaw\)\?\.mjs\).*#\1#p'
 
-  for candidate in \
-    "$HOME/hxa-dash/scripts/activity-reporter.mjs" \
-    "$HOME/hxa-dash/scripts/activity-reporter-openclaw.mjs" \
-    "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter.mjs" \
+  local candidates=(
+    "$HOME/hxa-dash/scripts/activity-reporter.mjs"
+    "$HOME/hxa-dash/scripts/activity-reporter-openclaw.mjs"
+    "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter.mjs"
     "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter-openclaw.mjs"
+    "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter.mjs"
+    "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter-openclaw.mjs"
+  )
+
+  for candidate in "${candidates[@]}"
   do
     [ -f "$candidate" ] && printf '%s\n' "$candidate"
   done
@@ -90,10 +95,14 @@ Run this in the same shell after Step 1:
 
 ```bash
 HEALTH_ENV_FILE=""
-for candidate in \
-  "$(dirname "${NORMAL_REPORTER:-$HOME/hxa-dash/scripts/activity-reporter.mjs}")/health-reporter.env" \
-  "$HOME/hxa-dash/scripts/health-reporter.env" \
+health_env_candidates=(
+  "$(dirname "${NORMAL_REPORTER:-$HOME/hxa-dash/scripts/activity-reporter.mjs}")/health-reporter.env"
+  "$HOME/hxa-dash/scripts/health-reporter.env"
   "$HOME/zylos/workspace/hxa-dash/scripts/health-reporter.env"
+  "$HOME/zylos/workspace/hxa-dash-reporter/health-reporter.env"
+)
+
+for candidate in "${health_env_candidates[@]}"
 do
   if [ -f "$candidate" ] && grep -q '^HEALTH_API_KEY=' "$candidate"; then
     HEALTH_ENV_FILE="$candidate"
@@ -105,6 +114,13 @@ if [ -n "$HEALTH_ENV_FILE" ]; then
   set -a; . "$HEALTH_ENV_FILE"; set +a
 fi
 
+if [ -z "${HXA_INGEST_API_KEY:-${HEALTH_API_KEY:-}}" ]; then
+  echo "No HEALTH_API_KEY/HXA_INGEST_API_KEY found in this shell."
+  echo "Use the same secure --api-key source as the scheduler, or add --api-key to the scheduler command before auth flips."
+  echo "Do not paste the key into chat."
+  exit 1
+fi
+
 if [ -n "${NORMAL_REPORTER:-}" ]; then
   node "$NORMAL_REPORTER" --name __BOT__
 fi
@@ -114,7 +130,7 @@ if [ -n "${OPENCLAW_REPORTER:-}" ]; then
 fi
 ```
 
-If no health env file is found, keep the local --api-key source that your current cron or PM2 loop already uses. Do not paste the key into chat.
+If no health env file is found, keep the local --api-key source that your current cron, PM2 loop, or C5 interval command already uses. For C5 interval tasks with no key in env and no `--api-key` argument, add `--api-key` from the secure local key source before the hxa-dash auth flip. Do not paste the key into chat.
 
 Step 3: keep the existing scheduler pointed at the same path.
 

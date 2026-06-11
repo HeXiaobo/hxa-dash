@@ -70,7 +70,10 @@ The helper sends update instructions to bot owners; it does not SSH or mutate
 production hosts directly. The instructions detect the actual reporter file
 paths from crontab, PM2, running processes, and known fallback locations, then
 replace those files in place. This matters because fleet hosts may run reporters
-from either `~/hxa-dash/scripts/` or `~/zylos/workspace/hxa-dash/scripts/`.
+from `~/hxa-dash/scripts/`, `~/zylos/workspace/hxa-dash/scripts/`, or the
+main fleet path `~/zylos/workspace/hxa-dash-reporter/`. For C5 interval tasks,
+confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
+`--api-key` from the secure local key source before the auth flip.
 
 ## Pre-deploy checklist
 
@@ -81,7 +84,7 @@ from either `~/hxa-dash/scripts/` or `~/zylos/workspace/hxa-dash/scripts/`.
 5. Confirm Feishu redirect URI is registered.
 6. Confirm GitLab webhook secret is configured on both sides.
 7. Confirm `HEALTH_API_KEY` is the shared key currently accepted by production.
-8. Confirm activity reporters and OpenClaw activity reporters are distributed and tested.
+8. Confirm activity reporters and OpenClaw activity reporters are distributed and tested, including the main `~/zylos/workspace/hxa-dash-reporter/` path and C5 interval key source.
 9. Confirm the central HXA Connect callback producer sends the ingest key, or explicitly set `HXA_CONNECT_WEBHOOK_PUBLIC=true` as a temporary fallback and record the risk on #4.
 10. Post deploy commit, rollback commit, and this checklist result on #4.
 
