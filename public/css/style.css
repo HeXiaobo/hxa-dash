@@ -1549,6 +1549,16 @@ main {
 .metrics-num, .metrics-num-header { text-align: center; }
 .metrics-num { font-variant-numeric: tabular-nums; }
 .metrics-empty { text-align: center; color: var(--text-secondary); padding: 18px; }
+.quota-freshness {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.quota-freshness.fresh { color: var(--green); }
+.quota-freshness.stale { color: var(--red); font-weight: 600; }
+.quota-freshness.muted { color: var(--text-secondary); opacity: .7; }
 
 /* Weekly trend bar chart */
 .metrics-trend-section {

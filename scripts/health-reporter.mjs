@@ -457,7 +457,8 @@ function collectLatestRateLimitSnapshot(rootDir) {
       if (!rateLimits) continue;
       latest = {
         rate_limits: rateLimits,
-        timestamp: parsed.timestamp || parsed?.payload?.timestamp || null,
+        timestamp: parsed.timestamp ?? parsed?.payload?.timestamp ?? candidate.stat.mtimeMs,
+        source_mtime_ms: candidate.stat.mtimeMs,
         type: parsed.type || parsed?.payload?.type || null,
       };
     }
@@ -470,6 +471,31 @@ function collectLatestRateLimitSnapshot(rootDir) {
   }
 
   return null;
+}
+
+function timestampToMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 0 && value < 1e12 ? value * 1000 : value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric > 0 && numeric < 1e12 ? numeric * 1000 : numeric;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizeSampledAt(value, fallback = null) {
+  return timestampToMs(value) ?? timestampToMs(fallback);
+}
+
+function fileMtimeMs(filePath) {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeQuotaWindow(window) {
@@ -505,7 +531,7 @@ function buildQuotaPayload({ supported, source, reason = null, snapshot = null, 
     supported: hasUsedQuotaWindow,
     source,
     reason: hasUsedQuotaWindow ? null : (reason || 'no_used_quota_window'),
-    sampled_at: snapshot?.timestamp || null,
+    sampled_at: normalizeSampledAt(snapshot?.timestamp, snapshot?.source_mtime_ms),
     primary,
     secondary,
     credits,
@@ -637,7 +663,11 @@ function collectClaudeQuota() {
     return buildQuotaPayload({
       supported: true,
       source: slPath,
-      snapshot: { rate_limits: mapped, timestamp: parsed.timestamp || null },
+      snapshot: {
+        rate_limits: mapped,
+        timestamp: parsed.timestamp ?? parsed.updated_at ?? parsed.sampled_at ?? fileMtimeMs(slPath),
+        source_mtime_ms: fileMtimeMs(slPath),
+      },
     });
   }
 
@@ -657,7 +687,8 @@ function collectClaudeQuota() {
           source: filePath,
           snapshot: {
             rate_limits: parsed.rate_limits,
-            timestamp: parsed.timestamp || null,
+            timestamp: parsed.timestamp ?? parsed.updated_at ?? parsed.sampled_at ?? fileMtimeMs(filePath),
+            source_mtime_ms: fileMtimeMs(filePath),
           },
         });
       }
@@ -676,7 +707,8 @@ function collectClaudeQuota() {
             source: filePath,
             snapshot: {
               rate_limits: rateLimits,
-              timestamp: parsed.timestamp || parsed?.payload?.timestamp || null,
+              timestamp: parsed.timestamp ?? parsed?.payload?.timestamp ?? fileMtimeMs(filePath),
+              source_mtime_ms: fileMtimeMs(filePath),
             },
           });
         }
