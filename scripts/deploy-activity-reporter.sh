@@ -21,7 +21,7 @@ fi
 
 # Mirrors the health reporter rollout list. Keep explicit until ownership
 # metadata is source-controlled.
-BOTS=(afu aqi chengzi hongshu kimi lingling linlin siyue ss veda wanyanshu wenwen xiaochuaner xiaodao xiaolv xiaonuo xiaoyou xiaoz xiaozhang xinghang yaya zhugeliang)
+BOTS=(afu aqi chengzi hongdou hongshu kele kimi lingling linlin siyue ss veda wanyanshu wenwen xiaochuaner xiaodao xiaolv xiaonuo xiaoyou xiaoz xiaozhang xinghang yaya zhugeliang)
 
 SENT=0
 FAILED=0
