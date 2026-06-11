@@ -168,3 +168,5 @@ If auth config is wrong but the code is healthy, rollback may also be done by re
 - Mylos confirmed `/api/report`, `/api/report/activity`, `/api/webhook/connect`, `/api/webhook/gitlab`, and `/api/agent-health/:name` are all active production ingest paths.
 - Use the existing `X-API-Key` style for machine ingest.
 - Keep code and deployment execution owned by Codex; Mylos remains reviewer/context provider.
+- Post-review deployment boundary: set `HXA_INGEST_API_KEY` to the existing `HEALTH_API_KEY` value for the first rollout, patch the previously open activity/report/connect producers to send `X-API-Key`, and configure GitLab with `webhooks.gitlab_secret` plus `X-GitLab-Token`.
+- Production runbook: see `docs/auth-production-runbook.md`.

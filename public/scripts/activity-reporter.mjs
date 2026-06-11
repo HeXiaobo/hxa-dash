@@ -2,7 +2,7 @@
 // activity-reporter.mjs — Lightweight activity reporter for hxa-dash
 // Zero npm dependencies — uses sqlite3 CLI for database reads.
 //
-// Usage: node activity-reporter.mjs [--dashboard-url URL] [--window-minutes N] [--name BOT_NAME]
+// Usage: node activity-reporter.mjs [--dashboard-url URL] [--window-minutes N] [--name BOT_NAME] [--api-key KEY]
 //
 // Auto-detects bot name from ~/zylos/memory/identity.md or system username.
 // Reports to: https://hxa.zhiw.ai/api/report/activity (default)
@@ -26,6 +26,7 @@ function getArg(name, fallback) {
 const dashboardUrl = getArg('--dashboard-url', DEFAULT_DASHBOARD);
 const windowMin = parseInt(getArg('--window-minutes', String(DEFAULT_WINDOW_MIN)));
 const overrideName = getArg('--name', null);
+const apiKey = getArg('--api-key', process.env.HXA_INGEST_API_KEY || process.env.HEALTH_API_KEY || null);
 
 function detectBotName() {
   if (overrideName) return overrideName;
@@ -113,13 +114,18 @@ function postActivity(agent, events) {
     const body = JSON.stringify({ agent, events });
     const parsed = new URL(url);
     const mod = parsed.protocol === 'https:' ? https : http;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body)
+    };
+    if (apiKey) headers['X-API-Key'] = apiKey;
 
     const req = mod.request({
       hostname: parsed.hostname,
       port: parsed.port,
       path: parsed.pathname,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      headers
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
