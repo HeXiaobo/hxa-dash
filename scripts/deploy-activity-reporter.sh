@@ -35,24 +35,98 @@ REPORTER_URL="__REPORTER_URL__"
 OPENCLAW_REPORTER_URL="__OPENCLAW_REPORTER_URL__"
 
 find_reporter_paths() {
+  extract_reporter_paths_from_text() {
+    node -e '
+      const fs = require("fs");
+      const input = fs.readFileSync(0, "utf8");
+      const matches = input.match(/\/[^\s"'"'"']+\/activity-reporter(?:-openclaw)?\.mjs/g) || [];
+      for (const match of matches) console.log(match);
+    '
+  }
+
+  extract_reporter_paths_from_pm2() {
+    node -e '
+      const path = require("path");
+      let input = "";
+
+      process.stdin.on("data", chunk => {
+        input += chunk;
+      });
+
+      process.stdin.on("end", () => {
+        let processes;
+        try {
+          processes = JSON.parse(input);
+        } catch {
+          return;
+        }
+
+        const flatten = value => {
+          if (Array.isArray(value)) return value.flatMap(flatten);
+          if (value === undefined || value === null) return [];
+          return String(value).split(/\s+/).filter(Boolean);
+        };
+
+        const emitCandidate = (value, cwd) => {
+          const cleaned = String(value).replace(/^["'"'"']|["'"'"']$/g, "");
+          let candidate = cleaned;
+          if (!path.isAbsolute(candidate) && cwd && path.isAbsolute(cwd) && cwd !== "/") {
+            candidate = path.join(cwd, candidate);
+          }
+          if (/\/activity-reporter(?:-openclaw)?\.mjs$/.test(candidate)) {
+            console.log(candidate);
+          }
+        };
+
+        for (const processInfo of processes) {
+          const env = processInfo.pm2_env || {};
+          const cwd = env.cwd || processInfo.pm_cwd || "";
+          for (const value of [
+            env.pm_exec_path,
+            env.script,
+            processInfo.pm_exec_path,
+            processInfo.pm2_env && processInfo.pm2_env.pm_exec_path,
+            ...flatten(env.args),
+            ...flatten(env.node_args)
+          ].filter(Boolean)) {
+            emitCandidate(value, cwd);
+          }
+        }
+      });
+    '
+  }
+
   {
-    crontab -l 2>/dev/null || true
-    pm2 jlist 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", d => s += d); process.stdin.on("end", () => { try { for (const p of JSON.parse(s)) { const e = p.pm2_env || {}; console.log([e.pm_exec_path, e.script, e.cwd, e.args, e.node_args].flat().filter(Boolean).join(" ")); } } catch {} });' || true
-    pgrep -af "activity-reporter" || true
-  } | tr ' ' '\n' | sed -n 's#.*\(/[^[:space:]]*activity-reporter\(-openclaw\)\?\.mjs\).*#\1#p'
+    {
+      crontab -l 2>/dev/null || true
+      pgrep -af "activity-reporter" || true
+    } | extract_reporter_paths_from_text
 
-  local candidates=(
-    "$HOME/hxa-dash/scripts/activity-reporter.mjs"
-    "$HOME/hxa-dash/scripts/activity-reporter-openclaw.mjs"
-    "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter.mjs"
-    "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter-openclaw.mjs"
-    "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter.mjs"
-    "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter-openclaw.mjs"
-  )
+    pm2 jlist 2>/dev/null | extract_reporter_paths_from_pm2 || true
 
-  for candidate in "${candidates[@]}"
-  do
-    [ -f "$candidate" ] && printf '%s\n' "$candidate"
+    local candidates=(
+      "$HOME/hxa-dash/scripts/activity-reporter.mjs"
+      "$HOME/hxa-dash/scripts/activity-reporter-openclaw.mjs"
+      "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter.mjs"
+      "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter-openclaw.mjs"
+      "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter.mjs"
+      "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter-openclaw.mjs"
+    )
+
+    for candidate in "${candidates[@]}"
+    do
+      if [ -f "$candidate" ]; then
+        printf '%s\n' "$candidate"
+      fi
+    done
+  } | while IFS= read -r path; do
+    case "$path" in
+      /*/activity-reporter.mjs|/*/activity-reporter-openclaw.mjs)
+        if [ -f "$path" ]; then
+          printf '%s\n' "$path"
+        fi
+        ;;
+    esac
   done
 }
 
