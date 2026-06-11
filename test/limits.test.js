@@ -6,8 +6,10 @@ const limitsRoute = require('../src/routes/limits.js');
 const { QUOTA_STALE_MS, enrichQuota } = limitsRoute.__private;
 
 describe('limits quota freshness', () => {
+  const nowMs = 1_781_142_900_000;
+
   it('marks supported quota with recent sampled_at as fresh', () => {
-    const now = 10_000_000;
+    const now = nowMs;
     const quota = enrichQuota({
       supported: true,
       sampled_at: now - 60_000,
@@ -25,7 +27,7 @@ describe('limits quota freshness', () => {
   });
 
   it('falls back to the heartbeat timestamp when sampled_at is missing', () => {
-    const now = 10_000_000;
+    const now = nowMs;
     const heartbeatAt = now - 120_000;
     const quota = enrichQuota({
       supported: true,
@@ -37,8 +39,22 @@ describe('limits quota freshness', () => {
     expect(quota.freshness.status).toBe('fresh');
   });
 
+  it('normalizes second-epoch sampled_at values to milliseconds', () => {
+    const now = nowMs;
+    const sampledAtSec = Math.floor((now - 60_000) / 1000);
+    const quota = enrichQuota({
+      supported: true,
+      sampled_at: sampledAtSec,
+      primary: { used_percent: 12 },
+    }, null, now);
+
+    expect(quota.sampled_at).toBe(sampledAtSec * 1000);
+    expect(quota.freshness.status).toBe('fresh');
+    expect(quota.freshness.age_ms).toBe(now - sampledAtSec * 1000);
+  });
+
   it('marks old supported quota as stale', () => {
-    const now = 10_000_000;
+    const now = nowMs;
     const sampledAt = now - QUOTA_STALE_MS - 1;
     const quota = enrichQuota({
       supported: true,
@@ -51,4 +67,3 @@ describe('limits quota freshness', () => {
     expect(quota.freshness.age_ms).toBe(QUOTA_STALE_MS + 1);
   });
 });
-

@@ -5,7 +5,9 @@ const router = Router();
 const QUOTA_STALE_MS = 10 * 60 * 1000;
 
 function normalizeTimestamp(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 0 && value < 1e12 ? value * 1000 : value;
+  }
   if (typeof value === 'string') {
     const numeric = Number(value);
     if (Number.isFinite(numeric)) return numeric > 0 && numeric < 1e12 ? numeric * 1000 : numeric;
