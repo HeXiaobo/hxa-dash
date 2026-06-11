@@ -33,6 +33,26 @@ The bridge should turn explicit Feishu messages into GitHub issues or comments, 
 - Do not bypass GitHub review by applying code changes directly from Feishu.
 - Do not require the first version to create Codex desktop threads automatically.
 
+## Blocking Decision: Feishu Bot Ownership
+
+Implementation must not start until the bridge owner is chosen.
+
+The current Zylos Feishu bot already consumes `im.message.receive_v1` through the existing message dispatcher. Starting a second bridge worker on the same bot/app would risk duplicate or competing event consumption.
+
+There are two acceptable paths:
+
+1. **Dedicated bridge bot/app**
+   - Uses a separate Feishu app id.
+   - Physically isolates bridge events from the existing Claude/C4 message path.
+   - Best when bridge operations need different permissions, logs, and deployment ownership.
+
+2. **Existing comm-bridge command handler**
+   - Adds `/issue`, `/comment`, and `/codex` as interceptors inside the current dispatcher.
+   - Matching commands route to the bridge; non-matching messages continue to Claude/C4.
+   - Best when the current bot should remain the only user-facing entry point.
+
+This decision answers who owns the bridge. Without it, the implementation can conflict with the live Feishu message pipeline.
+
 ## Trigger Model
 
 The bridge only acts on explicit triggers visible to the bridge bot.
@@ -41,9 +61,9 @@ Supported MVP triggers:
 
 | Trigger | Action |
 |---|---|
-| `/issue <title/body>` | Create a GitHub issue in `HeXiaobo/hxa-dash` |
+| `/issue <title>\n<body>` | Create a GitHub issue in `HeXiaobo/hxa-dash`; first line is title, remaining lines are body |
 | `/comment #<issue> <body>` | Append a GitHub issue comment |
-| `/codex <title/body>` | Create a GitHub issue with a `codex-ready` label |
+| `/codex <title>\n<body>` | Create a GitHub issue with a `codex-ready` label and Codex handoff template |
 | `/bridge help` | Reply with supported commands |
 
 Optional later triggers:
@@ -61,7 +81,9 @@ Default policy:
 - Process messages sent to the bridge bot in P2P chats.
 - Process group messages only when the bot is mentioned or the message starts with a bridge command.
 - Allowlist chat ids and sender ids in configuration before enabling production writes.
+- Apply command-level sender allowlists. `/codex` and `/issue` should start with a very small trusted sender set, even inside an allowlisted chat.
 - Store only the triggered message and required metadata, not full surrounding chat history.
+- Keep `HeXiaobo/hxa-dash` private because source blocks include internal Feishu ids.
 
 ## Architecture
 
@@ -165,6 +187,27 @@ MVP handoff is GitHub-native:
 
 Future automation can add a Codex adapter that creates or wakes a Codex desktop thread when a `codex-ready` issue appears. This should remain optional because Codex desktop thread management depends on local app state and permissions.
 
+`/codex` issues should use this body template:
+
+```md
+## Problem
+
+<what needs to be solved>
+
+## Scope
+
+<files, product area, or system boundary if known>
+
+## Acceptance Criteria
+
+- <observable outcome>
+
+## Source Links
+
+- Feishu message: <link>
+- Related issue/PR/doc: <link>
+```
+
 ## Configuration
 
 Add a non-committed config file, for example `config/bridge.json`:
@@ -181,7 +224,12 @@ Add a non-committed config file, for example `config/bridge.json`:
   "feishu": {
     "mode": "lark-cli",
     "allowed_chat_ids": [],
-    "allowed_sender_ids": []
+    "allowed_sender_ids": [],
+    "command_allowed_sender_ids": {
+      "issue": [],
+      "comment": [],
+      "codex": []
+    }
   },
   "commands": {
     "issue": true,
@@ -221,6 +269,14 @@ Statuses:
 - `created_comment`
 - `ignored`
 - `failed`
+
+## Token And Deployment Rules
+
+- Use a fine-grained GitHub token limited to `issues:write` on `HeXiaobo/hxa-dash`.
+- Read the token from the configured environment variable only.
+- Never embed GitHub tokens in git remotes, URLs, logs, config files, issue bodies, or source code.
+- Deploy the bridge from a pinned Git commit, following the reproducibility work tracked in #4.
+- Do not run production bridge code from an uncommitted working tree.
 
 ## Feishu Acknowledgement
 
@@ -267,8 +323,12 @@ Acknowledgements should avoid leaking secrets or raw stack traces.
 ## Open Questions
 
 - Which Feishu bot/app should own the bridge?
+  - Blocking decision: choose dedicated bridge bot or existing comm-bridge command handler before implementation.
 - Which chats and senders should be allowlisted first?
+  - Proposed MVP: a single private chat plus a very small trusted sender set.
 - Should `/codex` create a new Codex desktop thread immediately, or should GitHub `codex-ready` remain the handoff contract for v1?
+  - Decision for v1: GitHub `codex-ready` remains the contract; desktop-thread automation is deferred.
 - Should bridge-created issues use a dedicated project board or labels only?
+  - Proposed MVP: labels only.
 - Who owns production deployment and token rotation?
-
+  - Proposed owner should align with #4 production deployment cleanup.
