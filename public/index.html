@@ -361,7 +361,17 @@
       </div>
 
       <section class="section">
-        <div class="section-header"><h2>Agent 消耗排行</h2></div>
+        <div class="section-header">
+          <h2>消耗排行</h2>
+          <div class="section-tools">
+            <div class="btn-group">
+              <button data-token-view="agent" class="btn-toggle active">按虾</button>
+              <button data-token-view="business_line" class="btn-toggle">按业务线</button>
+              <button data-token-view="division" class="btn-toggle">海外vs国内</button>
+              <button data-token-view="human" class="btn-toggle">按人</button>
+            </div>
+          </div>
+        </div>
         <div id="token-agent-table" class="token-table-container"></div>
       </section>
     </div>
@@ -534,7 +544,7 @@
   <script src="js/components/pipeline.js?v=3"></script>
   <script src="js/components/mr-board.js?v=3"></script>
   <script src="js/components/limits-dashboard.js?v=4"></script>
-  <script src="js/components/token-dashboard.js?v=6"></script>
+  <script src="js/components/token-dashboard.js?v=7"></script>
   <script src="js/components/time-estimates.js?v=3"></script>
   <script src="js/components/health-diagnostics.js?v=3"></script>
   <script src="js/components/projects.js?v=3"></script>

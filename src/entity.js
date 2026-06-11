@@ -69,7 +69,9 @@ function loadFromConfig(entityConfigs) {
       role: cfg.role || '',
       bio: cfg.bio || '',
       kind: cfg.kind || '',
-      skills: cfg.skills || []
+      skills: cfg.skills || [],
+      business_line: cfg.business_line || null,
+      human_associate: cfg.human_associate || null
     });
   }
 }

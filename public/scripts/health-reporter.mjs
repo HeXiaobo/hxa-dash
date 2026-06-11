@@ -1589,11 +1589,11 @@ function collectBackupStatus(botName) {
   const summary = summarizeBackupRepos(repos);
   const repoStatus = summary.critical > 0 ? 'critical'
     : summary.warning > 0 ? 'warning'
-      : repos.length > 0 ? 'ok' : 'critical';
+      : repos.length > 0 ? 'ok' : 'unsupported';
   const cronStatus = cron.supported ? cron.status : 'unsupported';
   const status = combineBackupStatuses([repoStatus, cronStatus]);
   const reason = repos.length === 0
-    ? 'no_github_backup_repo'
+    ? (cron.supported && cron.status === 'ok' ? null : 'no_github_backup_repo')
     : (cron.supported && cron.status !== 'ok' ? cron.reason : null);
 
   return {

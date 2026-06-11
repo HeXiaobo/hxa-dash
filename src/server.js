@@ -1,8 +1,10 @@
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
+const cookieParser = require('cookie-parser');
 
 const db = require('./db');
 const ws = require('./ws');
@@ -108,21 +110,20 @@ gitlabFetcher.init(config);
 
 // Express app
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 // Body parsing (needed for webhook/report endpoints)
 app.use(express.json({ limit: '1mb' }));
 
-// Serve static files
-app.use(express.static(path.join(__dirname, '..', 'public'), {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
-      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-    }
-  }
-}));
+// Cookie parsing (needed for auth token)
+app.use(cookieParser());
 
-// API routes
+// Auth routes (mounted BEFORE auth middleware so login/callback can be accessed)
+const authRoutes = require('./routes/auth');
+app.use('/auth', authRoutes);
+
+// API routes (NEVER protected - bots need these)
 app.use('/api/team', teamRoutes);
 app.use('/api/board', boardRoutes);
 app.use('/api/timeline', timelineRoutes);
@@ -223,6 +224,19 @@ app.get('/api/graph', (req, res) => {
     res.json(graph);
   }
 });
+
+// Auth middleware: Protect all non-API routes (including HTML pages and static assets)
+const authMiddleware = require('./auth/middleware');
+app.use(authMiddleware);
+
+// Serve static files (after auth middleware, so they are protected)
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  }
+}));
 
 
 // Init report routes (needs ws + config)
