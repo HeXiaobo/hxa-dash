@@ -46,7 +46,7 @@ Public routes:
 | `/api/agent-health/:name` | POST | health reporter ingest | shared `X-API-Key` ingest guard |
 | `/api/report` | POST | legacy agent heartbeat ingest | shared `X-API-Key` ingest guard |
 | `/api/report/activity` | POST | external activity ingest | shared `X-API-Key` ingest guard |
-| `/api/webhook/connect` | POST | Connect callbacks | shared `X-API-Key` ingest guard |
+| `/api/webhook/connect` | POST | Connect callbacks | shared `X-API-Key` ingest guard by default; temporary `HXA_CONNECT_WEBHOOK_PUBLIC=true` fallback if the central Connect producer cannot add a key before flip |
 
 All other `/api/*`, HTML, JS, CSS, and static assets require a valid `hxa_token` browser cookie.
 
@@ -171,3 +171,4 @@ If auth config is wrong but the code is healthy, rollback may also be done by re
 - Post-review deployment boundary: set `HXA_INGEST_API_KEY` to the existing `HEALTH_API_KEY` value for the first rollout, patch the previously open activity/report/connect producers to send `X-API-Key`, and configure GitLab with `webhooks.gitlab_secret` plus `X-GitLab-Token`.
 - Production runbook: see `docs/auth-production-runbook.md`.
 - Final runbook review added two rollout gates: the OpenClaw activity reporter variant must be distributed with the same key behavior, and per-bot reporter copies plus the central HXA Connect producer must be updated before `HXA_AUTH_ENABLED=true`.
+- Later gate review found the central Connect producer is platform-owned. If it cannot send the ingest key before the auth flip, production may temporarily set `HXA_CONNECT_WEBHOOK_PUBLIC=true` so online/offline callbacks keep working while the platform header support is scheduled.

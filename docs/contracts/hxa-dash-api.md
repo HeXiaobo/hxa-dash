@@ -92,7 +92,7 @@
 | 40 | GET | `/api/scopes` | 无 | 管理域列表 |
 | 41 | GET | `/api/graph` | 无 | 协作关系图谱 |
 | 42 | GET | `/api/health-watchdog/alerts` | 无 | 健康看门狗告警 |
-| 43 | POST | `/api/webhook/connect` | `X-API-Key` when auth enabled | HxA Connect 回调 |
+| 43 | POST | `/api/webhook/connect` | `X-API-Key` when auth enabled, unless `HXA_CONNECT_WEBHOOK_PUBLIC=true` | HxA Connect 回调 |
 | 44 | POST | `/api/webhook/gitlab`（report） | GitLab secret | GitLab 群组 webhook |
 | 45 | POST | `/api/webhook/gitlab`（webhook） | GitLab secret | GitLab 依赖触发 webhook |
 
@@ -118,6 +118,7 @@
 
 - `HEALTH_API_KEY` 通过环境变量配置，未配置时写操作返回 403（fail-closed）
 - `HXA_INGEST_API_KEY` 用于 `/api/report`、`/api/report/activity`、`/api/webhook/connect` 等机器上报入口；首次生产 rollout 可设为现有 `HEALTH_API_KEY` 值
+- `HXA_CONNECT_WEBHOOK_PUBLIC=true` 是 `/api/webhook/connect` 的临时生产兜底；仅在 HxA Connect 中枢暂时无法带 ingest key 时使用，默认关闭
 - GitLab webhook secret 在 `config/sources.json` 的 `webhooks.gitlab_secret` 配置；生产 auth 开启后未配置 secret 时不会裸放
 - Feishu auth 生产上线 checklist 见 `docs/auth-production-runbook.md`
 
@@ -1807,7 +1808,7 @@ Agent 上报自身系统指标（磁盘、内存、CPU、PM2）。**需要认证
 接收 HxA Connect 的 Agent 上下线回调。
 
 - **路由**: 在 `report.js` 中注册
-- **认证**: `HXA_AUTH_ENABLED=true` 时需要 `X-API-Key` 或 Bearer token，值为 `HXA_INGEST_API_KEY` 或 `HEALTH_API_KEY`
+- **认证**: `HXA_AUTH_ENABLED=true` 时默认需要 `X-API-Key` 或 Bearer token，值为 `HXA_INGEST_API_KEY` 或 `HEALTH_API_KEY`。若生产临时设置 `HXA_CONNECT_WEBHOOK_PUBLIC=true`，该回调可不带 key，用于等待中枢平台补齐出站 header。
 - **请求体**:
 
 ```json

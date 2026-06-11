@@ -1,4 +1,4 @@
-const { isAuthEnabled } = require('./config');
+const { envFlag, isAuthEnabled } = require('./config');
 
 function extractApiKey(req) {
   const authHeader = req.headers?.authorization;
@@ -30,9 +30,17 @@ function requireIngestAuth(req, res, next) {
   return next();
 }
 
+function requireIngestAuthUnlessEnvFlag(flagName) {
+  return (req, res, next) => {
+    if (envFlag(flagName, false)) return next();
+    return requireIngestAuth(req, res, next);
+  };
+}
+
 module.exports = {
   acceptedIngestKeys,
   extractApiKey,
   hasApiKey,
   requireIngestAuth,
+  requireIngestAuthUnlessEnvFlag,
 };

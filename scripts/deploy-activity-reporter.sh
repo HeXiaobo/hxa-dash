@@ -10,8 +10,6 @@ HXA_SEND="$HOME/zylos/.claude/skills/hxa-connect/scripts/send.js"
 DASHBOARD_URL="${HXA_DASH_URL:-https://hxa.zhiw.ai}"
 REPORTER_URL="${DASHBOARD_URL}/scripts/activity-reporter.mjs"
 OPENCLAW_REPORTER_URL="${DASHBOARD_URL}/scripts/activity-reporter-openclaw.mjs"
-REPORTER_DIR="\$HOME/hxa-dash/scripts"
-HEALTH_ENV_FILE="\$HOME/hxa-dash/scripts/health-reporter.env"
 DRY_RUN=false
 
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -23,68 +21,132 @@ fi
 # metadata is source-controlled.
 BOTS=(afu aqi chengzi hongdou hongshu kele kimi lingling linlin siyue ss veda wanyanshu wenwen xiaochuaner xiaodao xiaolv xiaonuo xiaoyou xiaoz xiaozhang xinghang yaya zhugeliang)
 
+MSG_TEMPLATE=$(cat <<'MSG_EOF'
+HxA Dash activity reporter auth update (#4)
+
+Before hxa-dash flips HXA_AUTH_ENABLED=true, every bot must replace the old activity reporter code. Some hosts already pass --api-key, but old reporter copies ignore that argument and still post without X-API-Key.
+
+Step 1: discover the reporter file paths this host actually runs, then replace those files in place.
+
+```bash
+set -euo pipefail
+
+REPORTER_URL="__REPORTER_URL__"
+OPENCLAW_REPORTER_URL="__OPENCLAW_REPORTER_URL__"
+
+find_reporter_paths() {
+  {
+    crontab -l 2>/dev/null || true
+    pm2 jlist 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", d => s += d); process.stdin.on("end", () => { try { for (const p of JSON.parse(s)) { const e = p.pm2_env || {}; console.log([e.pm_exec_path, e.script, e.cwd, e.args, e.node_args].flat().filter(Boolean).join(" ")); } } catch {} });' || true
+    pgrep -af "activity-reporter" || true
+  } | tr ' ' '\n' | sed -n 's#.*\(/[^[:space:]]*activity-reporter\(-openclaw\)\?\.mjs\).*#\1#p'
+
+  local candidates=(
+    "$HOME/hxa-dash/scripts/activity-reporter.mjs"
+    "$HOME/hxa-dash/scripts/activity-reporter-openclaw.mjs"
+    "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter.mjs"
+    "$HOME/zylos/workspace/hxa-dash/scripts/activity-reporter-openclaw.mjs"
+    "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter.mjs"
+    "$HOME/zylos/workspace/hxa-dash-reporter/activity-reporter-openclaw.mjs"
+  )
+
+  for candidate in "${candidates[@]}"
+  do
+    [ -f "$candidate" ] && printf '%s\n' "$candidate"
+  done
+}
+
+REPORTER_PATHS="$(find_reporter_paths | awk '!seen[$0]++')"
+if [ -z "$REPORTER_PATHS" ]; then
+  echo "No existing activity reporter path found. Stop here and reply with your current launch command/path."
+  exit 1
+fi
+
+echo "Reporter paths to update:"
+printf '%s\n' "$REPORTER_PATHS"
+
+while IFS= read -r path; do
+  case "$path" in
+    *activity-reporter-openclaw.mjs) url="$OPENCLAW_REPORTER_URL" ;;
+    *) url="$REPORTER_URL" ;;
+  esac
+
+  mkdir -p "$(dirname "$path")"
+  tmp="${path}.tmp.$$"
+  if ! curl -fsSL -o "$tmp" "$url"; then
+    wget -q -O "$tmp" "$url"
+  fi
+  mv "$tmp" "$path"
+  chmod 755 "$path"
+done <<EOF
+$REPORTER_PATHS
+EOF
+
+NORMAL_REPORTER="$(printf '%s\n' "$REPORTER_PATHS" | grep '/activity-reporter\.mjs$' | head -n 1 || true)"
+OPENCLAW_REPORTER="$(printf '%s\n' "$REPORTER_PATHS" | grep '/activity-reporter-openclaw\.mjs$' | head -n 1 || true)"
+
+echo "Updated normal reporter: ${NORMAL_REPORTER:-none}"
+echo "Updated OpenClaw reporter: ${OPENCLAW_REPORTER:-none}"
+```
+
+Step 2: reuse the existing health reporter key for the test when an env file exists.
+
+Run this in the same shell after Step 1:
+
+```bash
+HEALTH_ENV_FILE=""
+health_env_candidates=(
+  "$(dirname "${NORMAL_REPORTER:-$HOME/hxa-dash/scripts/activity-reporter.mjs}")/health-reporter.env"
+  "$HOME/hxa-dash/scripts/health-reporter.env"
+  "$HOME/zylos/workspace/hxa-dash/scripts/health-reporter.env"
+  "$HOME/zylos/workspace/hxa-dash-reporter/health-reporter.env"
+)
+
+for candidate in "${health_env_candidates[@]}"
+do
+  if [ -f "$candidate" ] && grep -q '^HEALTH_API_KEY=' "$candidate"; then
+    HEALTH_ENV_FILE="$candidate"
+    break
+  fi
+done
+
+if [ -n "$HEALTH_ENV_FILE" ]; then
+  set -a; . "$HEALTH_ENV_FILE"; set +a
+fi
+
+if [ -z "${HXA_INGEST_API_KEY:-${HEALTH_API_KEY:-}}" ]; then
+  echo "No HEALTH_API_KEY/HXA_INGEST_API_KEY found in this shell."
+  echo "Use the same secure --api-key source as the scheduler, or add --api-key to the scheduler command before auth flips."
+  echo "Do not paste the key into chat."
+  exit 1
+fi
+
+if [ -n "${NORMAL_REPORTER:-}" ]; then
+  node "$NORMAL_REPORTER" --name __BOT__
+fi
+
+if [ -n "${OPENCLAW_REPORTER:-}" ]; then
+  node "$OPENCLAW_REPORTER" --name __BOT__
+fi
+```
+
+If no health env file is found, keep the local --api-key source that your current cron, PM2 loop, or C5 interval command already uses. For C5 interval tasks with no key in env and no `--api-key` argument, add `--api-key` from the secure local key source before the hxa-dash auth flip. Do not paste the key into chat.
+
+Step 3: keep the existing scheduler pointed at the same path.
+
+If your current cron or PM2 loop already runs one of the paths printed in Step 1, do not change the schedule; the file was replaced in place. If Step 1 stopped because no path was found, reply with your current launch command/path and wait for the Codex rollout coordinator.
+
+Reply when the updated reporter is installed and the test command succeeds. Do not change hxa-dash production auth yourself; Codex owns the flip.
+MSG_EOF
+)
+
 SENT=0
 FAILED=0
 
 for BOT in "${BOTS[@]}"; do
-  MSG="HxA Dash activity reporter auth update (#4)
-
-Before hxa-dash flips HXA_AUTH_ENABLED=true, every bot must replace old activity reporter copies. Old copies ignore --api-key and will keep posting without X-API-Key.
-
-Step 1: download the current reporters
-\`\`\`
-mkdir -p ${REPORTER_DIR}
-curl -fsSL -o ${REPORTER_DIR}/activity-reporter.mjs ${REPORTER_URL}
-curl -fsSL -o ${REPORTER_DIR}/activity-reporter-openclaw.mjs ${OPENCLAW_REPORTER_URL}
-chmod 700 ${REPORTER_DIR}
-chmod 755 ${REPORTER_DIR}/activity-reporter.mjs ${REPORTER_DIR}/activity-reporter-openclaw.mjs
-\`\`\`
-
-If curl fails, use wget:
-\`\`\`
-mkdir -p ${REPORTER_DIR}
-wget -q -O ${REPORTER_DIR}/activity-reporter.mjs ${REPORTER_URL}
-wget -q -O ${REPORTER_DIR}/activity-reporter-openclaw.mjs ${OPENCLAW_REPORTER_URL}
-chmod 700 ${REPORTER_DIR}
-chmod 755 ${REPORTER_DIR}/activity-reporter.mjs ${REPORTER_DIR}/activity-reporter-openclaw.mjs
-\`\`\`
-
-Step 2: reuse the existing health reporter key
-
-The new activity reporter reads HXA_INGEST_API_KEY first, then HEALTH_API_KEY. If health-reporter is already working, load the same env file in the activity reporter cron:
-\`\`\`
-test -f ${HEALTH_ENV_FILE} && grep -q '^HEALTH_API_KEY=' ${HEALTH_ENV_FILE}
-\`\`\`
-
-If the health key is missing, get the shared hxa-dash reporter key through the secure channel before continuing.
-
-Step 3: test the normal reporter
-\`\`\`
-set -a; . ${HEALTH_ENV_FILE}; set +a
-node ${REPORTER_DIR}/activity-reporter.mjs --name ${BOT}
-\`\`\`
-
-OpenClaw hosts that currently run activity-reporter-openclaw.mjs should also test:
-\`\`\`
-set -a; . ${HEALTH_ENV_FILE}; set +a
-node ${REPORTER_DIR}/activity-reporter-openclaw.mjs --name ${BOT}
-\`\`\`
-
-Step 4: update existing cron or launchd commands
-
-Keep your current schedule, but make sure the command loads ${HEALTH_ENV_FILE} before running the reporter. Example cron:
-\`\`\`
-NODE_PATH=\$(which node)
-(crontab -l 2>/dev/null | grep -Ev 'activity-reporter(-openclaw)?\\.mjs'; echo \"*/10 * * * * . ${HEALTH_ENV_FILE}; \${NODE_PATH} ${REPORTER_DIR}/activity-reporter.mjs --name ${BOT} >> ${REPORTER_DIR}/activity-reporter.log 2>&1\") | crontab -
-\`\`\`
-
-If this host currently runs the OpenClaw variant, keep that entrypoint:
-\`\`\`
-NODE_PATH=\$(which node)
-(crontab -l 2>/dev/null | grep -Ev 'activity-reporter(-openclaw)?\\.mjs'; echo \"*/10 * * * * . ${HEALTH_ENV_FILE}; \${NODE_PATH} ${REPORTER_DIR}/activity-reporter-openclaw.mjs --name ${BOT} >> ${REPORTER_DIR}/activity-reporter-openclaw.log 2>&1\") | crontab -
-\`\`\`
-
-Reply when the updated reporter is installed and the test command succeeds. Do not change hxa-dash production auth yourself; Codex owns the flip."
+  MSG="${MSG_TEMPLATE//__BOT__/${BOT}}"
+  MSG="${MSG//__REPORTER_URL__/${REPORTER_URL}}"
+  MSG="${MSG//__OPENCLAW_REPORTER_URL__/${OPENCLAW_REPORTER_URL}}"
 
   if $DRY_RUN; then
     echo "=== Would send to: ${BOT} ==="
