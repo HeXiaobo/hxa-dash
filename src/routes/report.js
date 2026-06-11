@@ -11,7 +11,11 @@ const db = require('../db');
 const collab = require('../analyzers/collab');
 const { buildAgents } = require('./team');
 const { computeMetrics } = require('./metrics');
-const { hasApiKey, requireIngestAuth } = require('../auth/api-key');
+const {
+  hasApiKey,
+  requireIngestAuth,
+  requireIngestAuthUnlessEnvFlag,
+} = require('../auth/api-key');
 const { isAuthEnabled } = require('../auth/config');
 
 let ws = null;
@@ -23,6 +27,7 @@ function init(wsModule, cfg) {
 }
 
 const router = Router();
+const requireConnectWebhookAuth = requireIngestAuthUnlessEnvFlag('HXA_CONNECT_WEBHOOK_PUBLIC');
 
 function verifyGitlabWebhook(req) {
   const secret = config?.webhooks?.gitlab_secret;
@@ -80,7 +85,7 @@ router.post('/report', requireIngestAuth, (req, res) => {
 // POST /api/webhook/connect — HxA Connect online/offline callbacks
 // Body: { event: 'bot.online'|'bot.offline', bot: { name, role, bio, tags } }
 // ---------------------------------------------------------------------------
-router.post('/webhook/connect', requireIngestAuth, (req, res) => {
+router.post('/webhook/connect', requireConnectWebhookAuth, (req, res) => {
   const { event, bot } = req.body || {};
   if (!event || !bot?.name) return res.status(400).json({ error: 'event and bot.name required' });
 

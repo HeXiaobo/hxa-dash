@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const { requireIngestAuth } = require('../src/auth/api-key.js');
+const {
+  requireIngestAuth,
+  requireIngestAuthUnlessEnvFlag,
+} = require('../src/auth/api-key.js');
 const authMiddleware = require('../src/auth/middleware.js');
 const { authenticateRequest } = authMiddleware;
 const { isPublicRequest } = require('../src/auth/policy.js');
@@ -193,6 +196,20 @@ describe('machine ingest API key guard', () => {
       path: '/api/report',
       headers: { 'x-api-key': 'ingest-secret' },
     }));
+    expect(allowed.nextCalled).toBe(true);
+  });
+
+  it('allows an explicit temporary public ingest flag', () => {
+    enableAuth();
+    process.env.HXA_INGEST_API_KEY = 'ingest-secret';
+    const middleware = requireIngestAuthUnlessEnvFlag('HXA_CONNECT_WEBHOOK_PUBLIC');
+
+    const denied = runMiddleware(middleware, req({ method: 'POST', path: '/api/webhook/connect' }));
+    expect(denied.nextCalled).toBe(false);
+    expect(denied.response.statusCode).toBe(401);
+
+    process.env.HXA_CONNECT_WEBHOOK_PUBLIC = 'true';
+    const allowed = runMiddleware(middleware, req({ method: 'POST', path: '/api/webhook/connect' }));
     expect(allowed.nextCalled).toBe(true);
   });
 });
