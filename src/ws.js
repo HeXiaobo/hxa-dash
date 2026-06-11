@@ -1,4 +1,5 @@
 const { WebSocketServer } = require('ws');
+const { authenticateRequest } = require('./auth/middleware');
 
 let wss = null;
 const clients = new Set();
@@ -6,7 +7,16 @@ let snapshotProvider = null;
 
 function init(server, getSnapshot) {
   snapshotProvider = getSnapshot;
-  wss = new WebSocketServer({ server, path: '/ws' });
+  wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    verifyClient: (info, done) => {
+      const result = authenticateRequest(info.req);
+      if (result.ok) return done(true);
+      console.warn(`[WS] Rejected unauthenticated client: ${result.code || 'unauthorized'}`);
+      return done(false, result.status || 401, result.code || 'Unauthorized');
+    },
+  });
 
   wss.on('connection', (ws) => {
     clients.add(ws);

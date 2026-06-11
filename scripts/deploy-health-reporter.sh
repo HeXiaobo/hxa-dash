@@ -15,7 +15,7 @@ if [[ "$1" == "--dry-run" ]]; then
 fi
 
 # All online bots (excluding mylos which is already configured, and yueran who is on leave)
-BOTS=(afu aqi chengzi hongshu kimi lingling linlin siyue ss veda wanyanshu wenwen xiaochuaner xiaodao xiaolv xiaonuo xiaoyou xiaoz xiaozhang xinghang yaya zhugeliang)
+BOTS=(afu aqi chengzi hongdou hongshu kele kimi lingling linlin siyue ss veda wanyanshu wenwen xiaochuaner xiaodao xiaolv xiaonuo xiaoyou xiaoz xiaozhang xinghang yaya zhugeliang)
 
 SENT=0
 FAILED=0

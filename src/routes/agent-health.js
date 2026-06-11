@@ -4,30 +4,22 @@
 // GET  /api/agent-health/:name  — retrieve single agent health
 const { Router } = require('express');
 const db = require('../db');
+const { hasApiKey } = require('../auth/api-key');
 
 const router = Router();
 
 // Max age before health data is considered stale (10 minutes)
 const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
-// Shared secret for POST auth — set via HEALTH_API_KEY env var
-const HEALTH_API_KEY = process.env.HEALTH_API_KEY || null;
-
 // Auth middleware for POST — requires Bearer token or X-API-Key header
 function requireHealthAuth(req, res, next) {
-  if (!HEALTH_API_KEY) {
+  const keys = [process.env.HEALTH_API_KEY, process.env.HXA_INGEST_API_KEY].filter(Boolean);
+  if (keys.length === 0) {
     // No key configured = reject all writes (fail-closed)
     return res.status(403).json({ error: 'HEALTH_API_KEY not configured on server' });
   }
 
-  const authHeader = req.headers.authorization;
-  const apiKeyHeader = req.headers['x-api-key'];
-
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : apiKeyHeader || null;
-
-  if (!token || token !== HEALTH_API_KEY) {
+  if (!hasApiKey(req, keys)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();

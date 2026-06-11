@@ -6,13 +6,13 @@
 
 | 文件 | 内容 | 最后更新 |
 |------|------|----------|
-| [hxa-dash-api.md](./hxa-dash-api.md) | REST API + WebSocket 完整契约 | 2026-03-22 |
+| [hxa-dash-api.md](./hxa-dash-api.md) | REST API + WebSocket 完整契约 | 2026-06-11 |
 
 ## 概述
 
 - **基础地址**: `http://<host>:3479`
 - **WebSocket**: `ws://<host>:3479/ws`
-- **认证**: 大部分 GET 端点无需认证；写操作（POST）需要 `HEALTH_API_KEY` 或 GitLab webhook secret
+- **认证**: 生产 auth 模式下浏览器和读 API 需要 Feishu cookie；机器写入使用 `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` 或 GitLab webhook secret
 - **数据格式**: JSON（`Content-Type: application/json`）
 - **端点总数**: ~42 个 REST 端点 + 2 个 Webhook + 8 个 WebSocket 频道
 

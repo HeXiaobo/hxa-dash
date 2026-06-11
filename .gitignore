@@ -4,3 +4,5 @@ config/sources.json
 build/
 .env
 health.db
+health.db-shm
+health.db-wal

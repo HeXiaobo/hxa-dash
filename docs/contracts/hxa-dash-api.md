@@ -1,6 +1,6 @@
 # HxA Dash API 契约文档
 
-> 版本: 基于代码库实际实现（2026-03-22）
+> 版本: 基于代码库实际实现（2026-06-11）
 > 基础地址: `http://<host>:3479`
 > WebSocket: `ws://<host>:3479/ws`
 
@@ -63,7 +63,7 @@
 | 11 | GET | `/api/metrics` | 无 | 团队效率指标 |
 | 12 | GET | `/api/metrics/velocity` | 无 | Session 速度指标 |
 | 13 | GET | `/api/metrics/estimates` | 无 | 完成时间分析 |
-| 14 | POST | `/api/report` | 无 | Agent 心跳/状态上报 |
+| 14 | POST | `/api/report` | `X-API-Key` when auth enabled | Agent 心跳/状态上报 |
 | 15 | GET | `/api/report/summary` | 无 | 团队生产力摘要 |
 | 16 | GET | `/api/my/:name` | 无 | 个人待办视图 |
 | 17 | GET | `/api/live` | 无 | 实时工作面板 |
@@ -82,7 +82,7 @@
 | 30 | GET | `/api/auto-assign/recommend` | 无 | 推荐分配（不执行） |
 | 31 | GET | `/api/overview` | 无 | 聚合概览（JSON/文本） |
 | 32 | GET | `/api/diagnostics` | 无 | 系统健康诊断 |
-| 33 | POST | `/api/agent-health/:name` | HEALTH_API_KEY | Agent 上报系统指标 |
+| 33 | POST | `/api/agent-health/:name` | HEALTH_API_KEY / HXA_INGEST_API_KEY | Agent 上报系统指标 |
 | 34 | GET | `/api/agent-health` | 无 | 所有 Agent 系统健康 |
 | 35 | GET | `/api/agent-health/:name` | 无 | 单个 Agent 系统健康 |
 | 36 | GET | `/api/pm2/services` | 无 | PM2 服务列表 |
@@ -92,7 +92,7 @@
 | 40 | GET | `/api/scopes` | 无 | 管理域列表 |
 | 41 | GET | `/api/graph` | 无 | 协作关系图谱 |
 | 42 | GET | `/api/health-watchdog/alerts` | 无 | 健康看门狗告警 |
-| 43 | POST | `/api/webhook/connect` | 无 | HxA Connect 回调 |
+| 43 | POST | `/api/webhook/connect` | `X-API-Key` when auth enabled | HxA Connect 回调 |
 | 44 | POST | `/api/webhook/gitlab`（report） | GitLab secret | GitLab 群组 webhook |
 | 45 | POST | `/api/webhook/gitlab`（webhook） | GitLab secret | GitLab 依赖触发 webhook |
 
@@ -106,16 +106,20 @@
 
 ### 1.3 认证机制
 
-大部分端点无需认证。需要认证的端点使用以下方式之一：
+认证取决于部署模式。`HXA_AUTH_ENABLED=false` 时保持本地/开发兼容；`HXA_AUTH_ENABLED=true` 时，浏览器页面、静态资源、读 API、以及 WebSocket `/ws` 都要求 Feishu 登录 cookie，只有 `/auth/*`、`GET /api/health`、`GET /api/about` 和机器上报入口在该边界外。
+
+机器上报和管理写操作使用以下方式之一：
 
 | 方式 | Header | 说明 |
 |------|--------|------|
-| Bearer Token | `Authorization: Bearer <HEALTH_API_KEY>` | Agent Health / PM2 写操作 |
-| API Key Header | `X-API-Key: <HEALTH_API_KEY>` | 同上，替代方式 |
+| Bearer Token | `Authorization: Bearer <HEALTH_API_KEY>` 或 `Authorization: Bearer <HXA_INGEST_API_KEY>` | Agent Health / ingest 写操作 |
+| API Key Header | `X-API-Key: <HEALTH_API_KEY>` 或 `X-API-Key: <HXA_INGEST_API_KEY>` | 同上，替代方式 |
 | GitLab Secret | `X-GitLab-Token: <secret>` | GitLab webhook 验证 |
 
 - `HEALTH_API_KEY` 通过环境变量配置，未配置时写操作返回 403（fail-closed）
-- GitLab webhook secret 在 `config/sources.json` 的 `webhooks.gitlab_secret` 配置，未配置时接受所有请求
+- `HXA_INGEST_API_KEY` 用于 `/api/report`、`/api/report/activity`、`/api/webhook/connect` 等机器上报入口；首次生产 rollout 可设为现有 `HEALTH_API_KEY` 值
+- GitLab webhook secret 在 `config/sources.json` 的 `webhooks.gitlab_secret` 配置；生产 auth 开启后未配置 secret 时不会裸放
+- Feishu auth 生产上线 checklist 见 `docs/auth-production-runbook.md`
 
 ---
 
@@ -538,7 +542,7 @@ Agent 完成时间分析（基于历史数据）。
 
 Agent 心跳/状态上报。插入一条时间线事件，并广播 `team:update`。
 
-- **认证**: 无
+- **认证**: `HXA_AUTH_ENABLED=true` 时需要 `X-API-Key` 或 Bearer token，值为 `HXA_INGEST_API_KEY` 或 `HEALTH_API_KEY`
 - **请求体**:
 
 ```json
@@ -1803,7 +1807,7 @@ Agent 上报自身系统指标（磁盘、内存、CPU、PM2）。**需要认证
 接收 HxA Connect 的 Agent 上下线回调。
 
 - **路由**: 在 `report.js` 中注册
-- **认证**: 无
+- **认证**: `HXA_AUTH_ENABLED=true` 时需要 `X-API-Key` 或 Bearer token，值为 `HXA_INGEST_API_KEY` 或 `HEALTH_API_KEY`
 - **请求体**:
 
 ```json

@@ -41,6 +41,8 @@ const healthWatchdog = require('./health-watchdog');
 const pm2Routes = require('./routes/pm2-services');
 const backupRoutes = require('./routes/backups');
 const { buildBackupsPayload } = backupRoutes.__private;
+const authRoutes = require('./routes/auth');
+const authMiddleware = require('./auth/middleware');
 
 const PORT = process.env.PORT || 3479;
 
@@ -109,9 +111,14 @@ gitlabFetcher.init(config);
 // Express app
 const app = express();
 const server = http.createServer(app);
+app.set('trust proxy', true);
 
 // Body parsing (needed for webhook/report endpoints)
 app.use(express.json({ limit: '1mb' }));
+
+// Feishu auth routes stay public; auth middleware protects browser/API routes by policy.
+app.use('/auth', authRoutes);
+app.use(authMiddleware);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '..', 'public'), {
