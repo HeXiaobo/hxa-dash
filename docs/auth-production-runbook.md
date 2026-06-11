@@ -32,6 +32,10 @@ Set these on the PM2 service host before enabling auth:
 | `HXA_CONNECT_WEBHOOK_PUBLIC` | Optional temporary fallback. Default `false`; set `true` only if the central HXA Connect producer cannot send an ingest key before the auth flip. |
 | `webhooks.gitlab_secret` | GitLab webhook secret in `config/sources.json`. |
 
+`src/server.js` loads the app root `.env` at startup with override enabled, so
+the checked deployment directory's `.env` is the authoritative source when PM2
+or a parent shell contains stale or blank values for the same keys.
+
 In the Feishu developer console, register this redirect URI before the flip:
 
 ```text
