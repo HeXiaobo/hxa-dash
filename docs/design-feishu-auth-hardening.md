@@ -10,6 +10,7 @@ This design makes Feishu auth a reviewed, reproducible prerequisite for #4 befor
 
 - Keep the public dashboard behind Feishu login before switching production to a clean GitHub commit.
 - Protect dashboard JSON APIs, not just HTML/static files.
+- Protect WebSocket snapshots, since the initial socket payload contains the same sensitive dashboard data.
 - Preserve machine-to-machine ingest routes needed by reporters and webhooks.
 - Avoid adding runtime npm dependencies for auth.
 - Keep deployment reversible with a pinned previous commit and PM2 reload rollback.
@@ -42,6 +43,18 @@ Public routes:
 | `/api/webhook/connect` | POST | Connect callbacks | new shared ingest key before public use |
 
 All other `/api/*`, HTML, JS, CSS, and static assets require a valid `hxa_token` browser cookie.
+
+## WebSocket policy
+
+The current WebSocket server sends a full dashboard snapshot when a client connects. That makes WebSocket auth part of the same access boundary as HTML and JSON APIs.
+
+Proposed behavior:
+
+- Reject WebSocket upgrade/connection attempts without a valid `hxa_token` cookie when `HXA_AUTH_ENABLED=true`.
+- Reuse the same token verifier and tenant check as HTTP auth.
+- Do not accept tokens in query strings.
+- In local development/test, keep WebSocket auth disabled when `HXA_AUTH_ENABLED=false`.
+- Add a test that unauthenticated WebSocket clients do not receive the initial snapshot, while authenticated clients do.
 
 ## Token and OAuth design
 
@@ -89,13 +102,15 @@ Behavior:
    - static files
    - API routes
 4. Add API ingest key checks for legacy unauthenticated POST routes or gate them through the auth policy.
-5. Add tests for:
+5. Add WebSocket auth checks before sending snapshots.
+6. Add tests for:
    - route policy: protected API reads vs public health/about/webhook/ingest routes.
    - valid token allows protected pages and APIs.
    - missing/invalid token redirects HTML and returns 401 JSON for API.
    - tenant mismatch clears cookie and denies access.
    - signed OAuth state rejects tampering.
-6. Open a code PR linked to #4 after this design is reviewed.
+   - unauthenticated WebSocket clients are rejected before receiving snapshots.
+7. Open a code PR linked to #4 after this design is reviewed.
 
 ## Deployment plan
 
@@ -112,6 +127,7 @@ Behavior:
    - `GET /api/about` shows the pinned commit.
    - unauthenticated `/` redirects to `/auth/login`.
    - unauthenticated sensitive `/api/*` returns 401 JSON.
+   - unauthenticated WebSocket clients cannot receive the snapshot.
    - authenticated Feishu user can open `/#limits`.
    - reporter/webhook ingest still succeeds with its key.
 
@@ -131,3 +147,4 @@ If auth config is wrong but the code is healthy, rollback may also be done by re
 - Should `GET /api/health` stay public, or should it become a minimal liveness-only response when unauthenticated?
 - Which legacy ingest routes are still actively used: `/api/report`, `/api/report/activity`, `/api/webhook/connect`?
 - Is `HXA_INGEST_API_KEY` acceptable for those legacy machine routes, or should each source get its own scoped key?
+- Should WebSocket auth reject during HTTP upgrade or accept then immediately close with a policy code for better diagnostics?
