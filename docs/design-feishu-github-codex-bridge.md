@@ -2,7 +2,7 @@
 
 **Issue:** #3
 **Author:** Codex
-**Status:** Draft v2 - bot ownership decision resolved
+**Status:** Draft v3 - implementation baseline with Mylos review follow-ups
 
 ---
 
@@ -83,6 +83,8 @@ Default policy:
 - Process group messages only when the bot is mentioned or the message starts with a bridge command.
 - Allowlist chat ids and sender ids in configuration before enabling production writes.
 - Apply command-level sender allowlists. `/codex` and `/issue` should start with a very small trusted sender set, even inside an allowlisted chat.
+- Treat `/codex` as the strictest command because Feishu message content becomes Codex task input. Its sender allowlist should start with only the owner or an equally small trusted set.
+- Ignore messages sent by the bridge bot itself and ignore other app/bot senders. Bot-originated messages must not trigger acknowledgements, to avoid reply loops.
 - Store only the triggered message and required metadata, not full surrounding chat history.
 - Keep `HeXiaobo/hxa-dash` private because source blocks include internal Feishu ids.
 
@@ -134,6 +136,7 @@ Internal normalized event:
   "chat_id": "oc_xxx",
   "message_id": "om_xxx",
   "sender_id": "ou_xxx",
+  "sender_type": "user",
   "sender_name": "Name",
   "message_type": "text",
   "content": "/issue Title\\nBody",
@@ -150,8 +153,10 @@ Before writing to GitHub:
 - `dry_run` must be false for writes.
 - `chat_id` must be allowed, unless `allow_all_chats` is explicitly true.
 - `sender_id` must be allowed, unless `allow_all_senders` is explicitly true.
+- `sender_type` must represent a human user. Messages from apps, bots, or the bridge bot's own acknowledgement sender must be ignored before command parsing.
 - The command must be recognized.
-- The message id must not have been processed already.
+- The command sender must pass the command-specific allowlist. `/codex` should be the most restrictive command-specific allowlist.
+- The message id must not have been processed already. Dedupe must reserve the message id before any GitHub write.
 
 ### GitHub Writer
 
@@ -220,10 +225,12 @@ Add a non-committed config file, for example `config/bridge.json`:
   "github": {
     "owner": "HeXiaobo",
     "repo": "hxa-dash",
-    "token_env": "GITHUB_TOKEN"
+    "token_env": "HXA_BRIDGE_GITHUB_TOKEN"
   },
   "feishu": {
     "mode": "lark-cli",
+    "bridge_bot_sender_ids": [],
+    "ignored_sender_types": ["app", "bot"],
     "allowed_chat_ids": [],
     "allowed_sender_ids": [],
     "command_allowed_sender_ids": {
@@ -265,16 +272,27 @@ create table if not exists bridge_events (
 
 Statuses:
 
+- `processing`
 - `dry_run`
 - `created_issue`
 - `created_comment`
 - `ignored`
 - `failed`
 
+Write ordering:
+
+1. Normalize the Feishu event and reject self/app/bot messages before command parsing.
+2. Insert the `message_id` audit row with `status = 'processing'` before calling GitHub.
+3. If the insert conflicts, treat the event as a duplicate and return the existing result instead of writing to GitHub again.
+4. After the GitHub call, update the same row to `created_issue`, `created_comment`, `dry_run`, `ignored`, or `failed`.
+5. Stale `processing` rows should be considered retryable only through an explicit repair path so automatic restarts do not create duplicate issues.
+
 ## Token And Deployment Rules
 
 - Use a fine-grained GitHub token limited to `issues:write` on `HeXiaobo/hxa-dash`.
-- Read the token from the configured environment variable only.
+- Use a bridge-dedicated token and environment variable, for example `HXA_BRIDGE_GITHUB_TOKEN`. Do not reuse a shared fleet token or generic `GITHUB_TOKEN`.
+- Rotate the bridge token independently from other automation tokens.
+- Read the token from the configured bridge-specific environment variable only.
 - Keep GitHub and Codex/OpenAI credentials scoped to the dedicated bridge service environment.
 - Do not inject bridge credentials into comm-bridge, the C4 message path, or shared dispatcher config.
 - Never embed GitHub tokens in git remotes, URLs, logs, config files, issue bodies, or source code.
@@ -306,12 +324,13 @@ Acknowledgements should avoid leaking secrets or raw stack traces.
 1. Create `config/bridge.example.json`.
 2. Add bridge command parser tests.
 3. Add GitHub writer wrapper with dry-run support.
-4. Add SQLite audit/dedupe helpers.
-5. Add a dedicated bridge worker script for `lark-cli event consume im.message.receive_v1`.
-6. Add Feishu acknowledgement send path.
-7. Add independent PM2 service documentation.
-8. Test in dry-run mode with a private allowlisted chat.
-9. Enable GitHub writes for one allowlisted chat.
+4. Add SQLite audit/dedupe helpers with pre-GitHub `processing` reservation.
+5. Add self/app/bot sender filtering before command parsing.
+6. Add a dedicated bridge worker script for `lark-cli event consume im.message.receive_v1`.
+7. Add Feishu acknowledgement send path.
+8. Add independent PM2 service documentation.
+9. Test in dry-run mode with a private allowlisted chat.
+10. Enable GitHub writes for one allowlisted chat.
 
 ## Acceptance Criteria
 
@@ -323,11 +342,15 @@ Acknowledgements should avoid leaking secrets or raw stack traces.
 - Non-triggered messages are ignored.
 - Messages outside the allowlist are ignored or rejected.
 - Duplicate Feishu events do not create duplicate GitHub issues.
+- The bridge reserves `message_id` with `status = 'processing'` before GitHub writes.
+- Bridge acknowledgements and messages from other app/bot senders cannot trigger new bridge actions.
+- The default example config uses `HXA_BRIDGE_GITHUB_TOKEN`, not a shared `GITHUB_TOKEN`.
 
 ## Resolved Decisions
 
 - Feishu bot/app ownership: v1 uses a dedicated bridge bot/app and independent bridge service. It does not run inside the existing comm-bridge command handler.
 - Codex handoff for v1: GitHub `codex-ready` remains the contract; desktop-thread automation is deferred.
+- PR #5 v2 review outcome: Mylos confirmed the design can serve as the implementation baseline after adding dedicated-token, strict `/codex` allowlist, pre-write dedupe reservation, and bot-message filtering requirements.
 
 ## Open Questions
 
