@@ -8,7 +8,5 @@
     "veda": "https://github.com/with3ai/veda-workspace",
     "wanyanshu": "https://github.com/zhi-wai/maxiaozhuo-workspace"
   },
-  "exempt": {
-    "wenwen": "知外文化编制，当前不要求 GitHub 备份仓库"
-  }
+  "exempt": {}
 }
