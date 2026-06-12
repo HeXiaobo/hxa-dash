@@ -2,7 +2,7 @@
 
 **Issue:** #3
 **Author:** Codex
-**Status:** Draft v1
+**Status:** Draft v2 - bot ownership decision resolved
 
 ---
 
@@ -33,25 +33,26 @@ The bridge should turn explicit Feishu messages into GitHub issues or comments, 
 - Do not bypass GitHub review by applying code changes directly from Feishu.
 - Do not require the first version to create Codex desktop threads automatically.
 
-## Blocking Decision: Feishu Bot Ownership
+## Decision: Feishu Bot Ownership
 
-Implementation must not start until the bridge owner is chosen.
+Decision as of 2026-06-12: v1 uses a dedicated bridge bot/app running as an independent service. It must not be merged into the existing comm-bridge command handler.
 
 The current Zylos Feishu bot already consumes `im.message.receive_v1` through the existing message dispatcher. Starting a second bridge worker on the same bot/app would risk duplicate or competing event consumption.
 
-There are two acceptable paths:
+The bridge service can reuse the same Feishu event integration pattern as comm-bridge, but the runtime, credentials, logs, and restart lifecycle stay separate. The expected production shape is an independent PM2 process pinned to a Git commit.
 
-1. **Dedicated bridge bot/app**
-   - Uses a separate Feishu app id.
-   - Physically isolates bridge events from the existing Claude/C4 message path.
-   - Best when bridge operations need different permissions, logs, and deployment ownership.
+Chosen path:
 
-2. **Existing comm-bridge command handler**
-   - Adds `/issue`, `/comment`, and `/codex` as interceptors inside the current dispatcher.
-   - Matching commands route to the bridge; non-matching messages continue to Claude/C4.
-   - Best when the current bot should remain the only user-facing entry point.
+- Uses a separate Feishu app id or bot identity for bridge-specific event intake.
+- Physically isolates bridge events from the existing Claude/C4 message path.
+- Keeps GitHub token, Codex/OpenAI credentials, and bridge audit logs out of the critical comm-bridge path.
+- Allows bridge-specific deploy, restart, rollback, and rate-limit handling without risking team message delivery.
 
-This decision answers who owns the bridge. Without it, the implementation can conflict with the live Feishu message pipeline.
+Rejected path for v1:
+
+- Do not add `/issue`, `/comment`, or `/codex` as interceptors inside the current comm-bridge dispatcher.
+- Do not let GitHub API calls, Codex handoff work, or long-running code tasks block the message dispatch pipeline.
+- Revisit tighter integration only after the dedicated bridge service has run safely in production.
 
 ## Trigger Model
 
@@ -118,7 +119,7 @@ MVP adapter options:
 
 1. `lark-cli event consume im.message.receive_v1 --as bot`
    - Fastest to validate with the current toolchain.
-   - Runs as a PM2 sidecar worker.
+   - Runs as the dedicated bridge PM2 worker, not inside comm-bridge.
    - Emits NDJSON that the worker normalizes.
 
 2. Feishu Open Platform event delivery
@@ -274,7 +275,10 @@ Statuses:
 
 - Use a fine-grained GitHub token limited to `issues:write` on `HeXiaobo/hxa-dash`.
 - Read the token from the configured environment variable only.
+- Keep GitHub and Codex/OpenAI credentials scoped to the dedicated bridge service environment.
+- Do not inject bridge credentials into comm-bridge, the C4 message path, or shared dispatcher config.
 - Never embed GitHub tokens in git remotes, URLs, logs, config files, issue bodies, or source code.
+- Run the bridge as an independent PM2 service so it can be restarted, rolled back, or disabled without interrupting comm-bridge.
 - Deploy the bridge from a pinned Git commit, following the reproducibility work tracked in #4.
 - Do not run production bridge code from an uncommitted working tree.
 
@@ -303,9 +307,9 @@ Acknowledgements should avoid leaking secrets or raw stack traces.
 2. Add bridge command parser tests.
 3. Add GitHub writer wrapper with dry-run support.
 4. Add SQLite audit/dedupe helpers.
-5. Add a worker script for `lark-cli event consume im.message.receive_v1`.
+5. Add a dedicated bridge worker script for `lark-cli event consume im.message.receive_v1`.
 6. Add Feishu acknowledgement send path.
-7. Add PM2 service documentation.
+7. Add independent PM2 service documentation.
 8. Test in dry-run mode with a private allowlisted chat.
 9. Enable GitHub writes for one allowlisted chat.
 
@@ -320,14 +324,15 @@ Acknowledgements should avoid leaking secrets or raw stack traces.
 - Messages outside the allowlist are ignored or rejected.
 - Duplicate Feishu events do not create duplicate GitHub issues.
 
+## Resolved Decisions
+
+- Feishu bot/app ownership: v1 uses a dedicated bridge bot/app and independent bridge service. It does not run inside the existing comm-bridge command handler.
+- Codex handoff for v1: GitHub `codex-ready` remains the contract; desktop-thread automation is deferred.
+
 ## Open Questions
 
-- Which Feishu bot/app should own the bridge?
-  - Blocking decision: choose dedicated bridge bot or existing comm-bridge command handler before implementation.
 - Which chats and senders should be allowlisted first?
   - Proposed MVP: a single private chat plus a very small trusted sender set.
-- Should `/codex` create a new Codex desktop thread immediately, or should GitHub `codex-ready` remain the handoff contract for v1?
-  - Decision for v1: GitHub `codex-ready` remains the contract; desktop-thread automation is deferred.
 - Should bridge-created issues use a dedicated project board or labels only?
   - Proposed MVP: labels only.
 - Who owns production deployment and token rotation?
