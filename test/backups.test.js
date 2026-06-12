@@ -90,6 +90,45 @@ describe('backup health helpers', () => {
     expect(summary.reason).toBe('backup_success_too_old');
   });
 
+  it('warns when the last successful backup is past the freshness window', () => {
+    const now = Date.parse('2026-06-12T01:20:00.000Z');
+    const summary = buildBackupSummary({
+      supported: true,
+      cron: {
+        supported: true,
+        status: 'ok',
+        last_success_at: '2026-06-10T09:19:00.000Z',
+      },
+      repos: [
+        { remote: 'https://github.com/acme/clean.git', ahead: 0, behind: 0, dirty: 0, untracked: 0 },
+      ],
+    }, null, undefined, now);
+
+    expect(summary.status).toBe('warning');
+    expect(summary.reason).toBe('backup_success_stale');
+    expect(summary.cron_status).toBe('warning');
+  });
+
+  it('marks stale successful backups unhealthy even when the reporter still says ok', () => {
+    const now = Date.parse('2026-06-12T01:20:00.000Z');
+    const summary = buildBackupSummary({
+      supported: true,
+      cron: {
+        supported: true,
+        status: 'ok',
+        last_success_at: '2026-06-08T01:19:00.000Z',
+      },
+      repos: [
+        { remote: 'https://github.com/acme/clean.git', ahead: 0, behind: 0, dirty: 0, untracked: 0 },
+      ],
+    }, null, undefined, now);
+
+    expect(summary.status).toBe('critical');
+    expect(summary.reason).toBe('backup_success_too_old');
+    expect(summary.cron_status).toBe('critical');
+    expect(summary.ok).toBe(1);
+  });
+
   it('uses explicit expected backup repo aliases', () => {
     expect(expectedBackupRepo('mylos').url).toBe('https://github.com/with3ai/zylos-workspace');
     expect(expectedBackupRepo('wanyanshu').url).toBe('https://github.com/zhi-wai/maxiaozhuo-workspace');

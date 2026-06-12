@@ -13,6 +13,10 @@ const STATUS_RANK = {
   unknown: 4,
 };
 
+const HOUR_MS = 60 * 60 * 1000;
+const BACKUP_WARN_MS = 36 * HOUR_MS;
+const BACKUP_CRITICAL_MS = 72 * HOUR_MS;
+
 const EXPECTED_BACKUP_REPOS_PATH = path.join(__dirname, '..', '..', 'config', 'expected-backup-repos.json');
 
 function loadExpectedBackupRepos() {
@@ -135,6 +139,30 @@ function statusFromCron(cron) {
   return 'warning';
 }
 
+function timestampMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function cronFreshnessStatus(cron, nowMs = Date.now()) {
+  if (!cron || typeof cron !== 'object' || cron.supported === false) return null;
+  const lastSuccessMs = timestampMs(cron.last_success_at);
+  if (!lastSuccessMs) return null;
+
+  const ageMs = nowMs - lastSuccessMs;
+  if (!Number.isFinite(ageMs) || ageMs <= BACKUP_WARN_MS) return null;
+  if (ageMs > BACKUP_CRITICAL_MS) {
+    return { status: 'critical', reason: 'backup_success_too_old' };
+  }
+  return { status: 'warning', reason: 'backup_success_stale' };
+}
+
 function combineStatuses(statuses) {
   const real = statuses.filter(status => status && status !== 'unsupported');
   if (real.includes('critical')) return 'critical';
@@ -143,12 +171,17 @@ function combineStatuses(statuses) {
   return 'unsupported';
 }
 
-function normalizeCron(cron) {
+function normalizeCron(cron, nowMs = Date.now()) {
   if (!cron || typeof cron !== 'object') return null;
+  const reportedStatus = statusFromCron(cron);
+  const freshness = cronFreshnessStatus(cron, nowMs);
+  const freshnessIsWorse = freshness && (STATUS_RANK[freshness.status] ?? 9) < (STATUS_RANK[reportedStatus] ?? 9);
+  const freshnessExplainsStatus = freshness && freshness.status === reportedStatus && !cron.reason;
+  const status = freshnessIsWorse ? freshness.status : reportedStatus;
   return {
     supported: !!cron.supported,
-    status: statusFromCron(cron),
-    reason: cron.reason || null,
+    status,
+    reason: freshnessIsWorse || freshnessExplainsStatus ? freshness.reason : (cron.reason || null),
     log_path: cron.log_path || null,
     last_success_at: cron.last_success_at || null,
     last_run_at: cron.last_run_at || null,
@@ -156,7 +189,7 @@ function normalizeCron(cron) {
   };
 }
 
-function buildBackupSummary(backup, agentName = null, registry = loadExpectedBackupRepos()) {
+function buildBackupSummary(backup, agentName = null, registry = loadExpectedBackupRepos(), nowMs = Date.now()) {
   const expected = expectedBackupRepo(agentName, registry);
   const expectedFields = {
     backup_required: expected.required,
@@ -213,7 +246,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     };
   }
 
-  const cron = normalizeCron(backup.cron);
+  const cron = normalizeCron(backup.cron, nowMs);
   const repos = dedupeBackupRepos(backup.repos, expected);
 
   if ((backup.supported === false || backup.status === 'unsupported') && !cron?.supported && repos.length === 0 && backup.reason === 'not_reported') {
@@ -299,7 +332,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
   return summary;
 }
 
-function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos()) {
+function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos(), nowMs = Date.now()) {
   const backup = health?.backup || null;
   const expected = expectedBackupRepo(agent.name, registry);
   const rawRepos = Array.isArray(backup?.repos) ? backup.repos : [];
@@ -307,7 +340,7 @@ function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos()) {
   const anyExpectedMatch = expected.url
     ? dedupedRepos.some(repo => repoMatchesExpected(repo, expected))
     : null;
-  const summary = buildBackupSummary(backup, agent.name, registry);
+  const summary = buildBackupSummary(backup, agent.name, registry, nowMs);
   const repos = dedupedRepos.length
     ? dedupedRepos
         .map(repo => {
@@ -328,10 +361,10 @@ function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos()) {
   };
 }
 
-function buildBackupsPayload(agents, allHealth) {
+function buildBackupsPayload(agents, allHealth, nowMs = Date.now()) {
   const registry = loadExpectedBackupRepos();
   const items = agents
-    .map(agent => buildBackupAgent(agent, allHealth[agent.name], registry))
+    .map(agent => buildBackupAgent(agent, allHealth[agent.name], registry, nowMs))
     .sort((a, b) => (STATUS_RANK[a.summary.status] ?? 9) - (STATUS_RANK[b.summary.status] ?? 9) || a.name.localeCompare(b.name));
 
   const summary = {
@@ -350,7 +383,7 @@ function buildBackupsPayload(agents, allHealth) {
   return {
     summary,
     agents: items,
-    timestamp: Date.now(),
+    timestamp: nowMs,
   };
 }
 
