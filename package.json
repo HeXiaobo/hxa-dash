@@ -7,6 +7,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "vitest run",
+    "bridge": "node scripts/feishu-github-bridge.mjs",
+    "check:bridge": "node --check scripts/feishu-github-bridge.mjs",
     "sync:activity-reporter": "cp scripts/activity-reporter.mjs public/scripts/activity-reporter.mjs && cp scripts/activity-reporter-openclaw.mjs public/scripts/activity-reporter-openclaw.mjs",
     "check:activity-reporter": "cmp -s scripts/activity-reporter.mjs public/scripts/activity-reporter.mjs && cmp -s scripts/activity-reporter-openclaw.mjs public/scripts/activity-reporter-openclaw.mjs",
     "sync:health-reporter": "cp scripts/health-reporter.mjs public/scripts/health-reporter.mjs",

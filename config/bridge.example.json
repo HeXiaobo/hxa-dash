@@ -1,0 +1,26 @@
+{
+  "enabled": false,
+  "dry_run": true,
+  "github": {
+    "owner": "HeXiaobo",
+    "repo": "hxa-dash",
+    "token_env": "HXA_BRIDGE_GITHUB_TOKEN"
+  },
+  "feishu": {
+    "mode": "lark-cli",
+    "bridge_bot_sender_ids": [],
+    "ignored_sender_types": ["app", "bot"],
+    "allowed_chat_ids": [],
+    "allowed_sender_ids": [],
+    "command_allowed_sender_ids": {
+      "issue": [],
+      "comment": [],
+      "codex": []
+    }
+  },
+  "commands": {
+    "issue": true,
+    "comment": true,
+    "codex": true
+  }
+}

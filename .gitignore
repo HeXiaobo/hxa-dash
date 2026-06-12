@@ -1,8 +1,12 @@
 node_modules/
 data/
 config/sources.json
+config/bridge.json
 build/
 .env
 health.db
 health.db-shm
 health.db-wal
+bridge.db
+bridge.db-shm
+bridge.db-wal
