@@ -27,6 +27,10 @@ function isPublicRequest(req) {
   const path = requestPath(req);
   if (path.startsWith('/auth/')) return true;
   if (method === 'GET' && (path === '/api/about' || path === '/api/health')) return true;
+  // Self-service reporter download: open-source script, contains no secrets
+  // (the HEALTH_API_KEY is configured per-machine from a separate secure channel).
+  // Agents fetch this to install/upgrade their health-reporter, so it must stay reachable without login.
+  if (method === 'GET' && path === '/scripts/health-reporter.mjs') return true;
   return isMachineIngestRequest(req);
 }
 
