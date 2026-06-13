@@ -114,7 +114,7 @@ const LimitsDashboard = {
       return `
         <tr>
           <td class="metrics-agent-name">${esc(agent.name)}</td>
-          <td>${esc(runtimeText)}</td>
+          <td class="metrics-runtime-name" title="运行时：${esc(runtimeText)}">${esc(runtimeText)}</td>
           <td>${esc(workText)}</td>
           <td>${esc(quotaText)}</td>
           <td><span class="quota-freshness ${freshness.cls}" title="${esc(freshness.title)}">${esc(freshness.label)}</span></td>
@@ -131,7 +131,7 @@ const LimitsDashboard = {
           <thead>
             <tr>
               <th>成员</th>
-              <th>Runtime</th>
+              <th>运行时</th>
               <th>状态</th>
               <th>限额用量</th>
               <th>采样时间</th>

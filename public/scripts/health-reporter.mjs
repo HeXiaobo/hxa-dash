@@ -58,6 +58,18 @@ const runtimeVersionOverride = getArg('--runtime-version', process.env.HEALTH_RU
 const runtimeStatusOverride = normalizeRuntimeStatus(
   getArg('--runtime-status', process.env.HEALTH_RUNTIME_STATUS || null)
 );
+const GENERIC_RUNTIME_AGENT_NAMES = new Set([
+  'claude',
+  'claude_code',
+  'claude-code',
+  'claude code',
+  'claude-code-cli',
+  'codex',
+  'codex-cli',
+  'codex cli',
+  'openclaw',
+  'open-claw',
+]);
 const RUNTIME_CONFIG_CANDIDATES = [
   path.join(ZYLOS_DIR, 'runtime.json'),
   path.join(ZYLOS_DIR, '.runtime.json'),
@@ -66,17 +78,41 @@ const RUNTIME_CONFIG_CANDIDATES = [
   path.join(os.homedir(), '.hxa-runtime.json'),
 ];
 
+function normalizeAgentName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isGenericRuntimeAgentName(value) {
+  return GENERIC_RUNTIME_AGENT_NAMES.has(normalizeAgentName(value));
+}
+
+function extractIdentityBotName(content) {
+  const text = String(content || '').slice(0, 500);
+  const explicitPatterns = [
+    /(?:HXA ID|agent(?:_name)?|bot(?:_name)?)[\s:=：]+([a-z0-9_-]+)/ig,
+    /\bI am\s+([a-z0-9_-]+)/ig,
+  ];
+
+  for (const pattern of explicitPatterns) {
+    for (const match of text.matchAll(pattern)) {
+      const candidate = normalizeAgentName(match[1]);
+      if (candidate && !isGenericRuntimeAgentName(candidate)) return candidate;
+    }
+  }
+
+  return null;
+}
+
 function detectBotName() {
-  if (overrideName) return String(overrideName).trim().toLowerCase();
+  if (overrideName) return normalizeAgentName(overrideName);
   try {
     const idPath = path.join(ZYLOS_DIR, 'memory', 'identity.md');
     if (fs.existsSync(idPath)) {
-      const content = fs.readFileSync(idPath, 'utf8').slice(0, 500);
-      const match = content.match(/(?:I am|HXA ID|agent(?:_name)?|bot(?:_name)?)[\s:=：]+([a-z0-9_-]+)/i);
-      if (match) return match[1].toLowerCase();
+      const name = extractIdentityBotName(fs.readFileSync(idPath, 'utf8'));
+      if (name) return name;
     }
   } catch {}
-  return String(os.userInfo().username || os.hostname()).trim().toLowerCase();
+  return normalizeAgentName(os.userInfo().username || os.hostname());
 }
 
 function normalizeRuntimeType(value) {
@@ -1763,6 +1799,13 @@ function collectRoster() {
 
 async function main() {
   const botName = detectBotName();
+  if (isGenericRuntimeAgentName(botName)) {
+    console.error(
+      `[health-reporter] ERROR — detected generic runtime name "${botName}" as the agent name. ` +
+      'Set --name/HXA_AGENT_NAME to the real HxA member name, for example "wenwen".'
+    );
+    process.exit(1);
+  }
 
   if (!apiKey) {
     console.error(`[health-reporter] ${botName}: ERROR — no API key. Use --api-key or set HEALTH_API_KEY env var.`);
@@ -1838,3 +1881,11 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
+
+export {
+  detectBotName,
+  extractIdentityBotName,
+  isGenericRuntimeAgentName,
+  normalizeAgentName,
+  normalizeRuntimeType,
+};

@@ -1545,7 +1545,15 @@ main {
   vertical-align: middle;
 }
 .metrics-table tr:hover td { background: rgba(255,255,255,.03); }
-.metrics-agent-name { font-weight: 500; }
+.metrics-agent-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.metrics-runtime-name {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .metrics-num, .metrics-num-header { text-align: center; }
 .metrics-num { font-variant-numeric: tabular-nums; }
 .metrics-empty { text-align: center; color: var(--text-secondary); padding: 18px; }
