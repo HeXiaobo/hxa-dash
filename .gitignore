@@ -6,3 +6,5 @@ build/
 health.db
 health.db-shm
 health.db-wal
+hxa.db
+*.bak
