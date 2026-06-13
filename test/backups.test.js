@@ -134,7 +134,10 @@ describe('backup health helpers', () => {
     expect(expectedBackupRepo('wanyanshu').url).toBe('https://github.com/zhi-wai/maxiaozhuo-workspace');
     expect(expectedBackupRepo('hongshu').url).toBe('https://github.com/with3ai/hongshu-workspace');
     expect(expectedBackupRepo('veda').url).toBe('https://github.com/with3ai/veda-workspace');
-    expect(expectedBackupRepo('wenwen').required).toBe(false);
+    expect(expectedBackupRepo('wenwen')).toMatchObject({
+      required: true,
+      url: 'https://github.com/zhi-wai/wenwen-workspace',
+    });
     expect(githubSlug('git@github.com:with3ai/zylos-workspace.git')).toBe('with3ai/zylos-workspace');
   });
 
@@ -152,12 +155,13 @@ describe('backup health helpers', () => {
     expect(summary.expected_match).toBe(false);
   });
 
-  it('treats exempt non-AI staff as not requiring a backup repo', () => {
+  it('requires wenwen backup reporting through the default expected repo', () => {
     const summary = buildBackupSummary(null, 'wenwen');
 
-    expect(summary.status).toBe('ok');
-    expect(summary.reason).toBe('backup_not_required');
-    expect(summary.backup_required).toBe(false);
+    expect(summary.status).toBe('unsupported');
+    expect(summary.reason).toBe('not_reported');
+    expect(summary.backup_required).toBe(true);
+    expect(summary.expected_remote).toBe('https://github.com/zhi-wai/wenwen-workspace');
   });
 
   it('deduplicates multiple local clones of the same expected GitHub repo', () => {
