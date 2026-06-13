@@ -103,15 +103,20 @@ function extractIdentityBotName(content) {
   return null;
 }
 
+// Tracks how the agent name was resolved, so main() can warn on weak resolution.
+// 'explicit' = --name/env override, 'identity' = matched memory/identity.md,
+// 'host_fallback' = guessed from username/hostname (low confidence — likely wrong on shared boxes).
+let botNameSource = 'unknown';
 function detectBotName() {
-  if (overrideName) return normalizeAgentName(overrideName);
+  if (overrideName) { botNameSource = 'explicit'; return normalizeAgentName(overrideName); }
   try {
     const idPath = path.join(ZYLOS_DIR, 'memory', 'identity.md');
     if (fs.existsSync(idPath)) {
       const name = extractIdentityBotName(fs.readFileSync(idPath, 'utf8'));
-      if (name) return name;
+      if (name) { botNameSource = 'identity'; return name; }
     }
   } catch {}
+  botNameSource = 'host_fallback';
   return normalizeAgentName(os.userInfo().username || os.hostname());
 }
 
@@ -1797,6 +1802,30 @@ function collectRoster() {
   };
 }
 
+// Pin the runtime to a canonical runtime.json when detection is strong and no file exists yet,
+// so future runs don't fall back to ambiguous profile/binary guessing (the wenwen "codex" mis-detect).
+// When detection is weak/ambiguous, do NOT guess a file — warn loudly so an operator sets it.
+function maybePersistRuntimeCanonical(runtimeProbe) {
+  const type = runtimeProbe?.type;
+  const source = runtimeProbe?.source;
+  const primaryPath = RUNTIME_CONFIG_CANDIDATES[0]; // ~/zylos/runtime.json
+  const anyExists = RUNTIME_CONFIG_CANDIDATES.some(p => { try { return fs.existsSync(p); } catch { return false; } });
+  if (anyExists) return;
+  if (type && type !== 'unknown' && isStrongDetectionSource(source)) {
+    try {
+      fs.writeFileSync(primaryPath, JSON.stringify({ runtime: { type } }, null, 2) + '\n');
+      console.log(`[health-reporter] wrote canonical runtime.json (${type}) at ${primaryPath} from strong detection (source=${source}). A runtime switch must update this file.`);
+    } catch (e) {
+      console.warn(`[health-reporter] could not write runtime.json: ${e.message}`);
+    }
+  } else {
+    console.warn(
+      `[health-reporter] WARNING — runtime resolved as "${type}" via weak/ambiguous source "${source}". ` +
+      `To pin it reliably, create ${primaryPath} with {"runtime":{"type":"claude_code"}} (or codex/openclaw).`
+    );
+  }
+}
+
 async function main() {
   const botName = detectBotName();
   if (isGenericRuntimeAgentName(botName)) {
@@ -1805,6 +1834,16 @@ async function main() {
       'Set --name/HXA_AGENT_NAME to the real HxA member name, for example "wenwen".'
     );
     process.exit(1);
+  }
+
+  // Reporting under a username/hostname guess silently mis-identifies the agent on the dashboard
+  // (it shows up offline / as the wrong row). Still report, but warn loudly so it gets fixed.
+  if (botNameSource === 'host_fallback') {
+    console.warn(
+      `[health-reporter] WARNING — agent name "${botName}" was resolved via username/hostname fallback ` +
+      `(no --name/HXA_AGENT_NAME and no match in memory/identity.md). This likely mis-identifies the agent ` +
+      `on the dashboard. Set --name/HXA_AGENT_NAME to the real HxA member name to fix.`
+    );
   }
 
   if (!apiKey) {
@@ -1818,6 +1857,7 @@ async function main() {
   const pm2 = getPm2Info();
   const runtimeType = probeRuntimeType();
   const runtime = probeRuntimeDetails(runtimeType);
+  maybePersistRuntimeCanonical(runtimeType);
   const quota = {
     claude_code: collectClaudeQuota(),
     codex: await collectCodexQuota(),
@@ -1833,6 +1873,7 @@ async function main() {
   const roster = collectRoster();
   const payload = {
     hostname: os.hostname(),
+    name_source: botNameSource,
     disk,
     memory,
     cpu,
