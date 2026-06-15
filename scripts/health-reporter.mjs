@@ -86,17 +86,36 @@ function isGenericRuntimeAgentName(value) {
   return GENERIC_RUNTIME_AGENT_NAMES.has(normalizeAgentName(value));
 }
 
+// Common prose words that must never be treated as an agent name. Guards against
+// greedy matches like "a distinct agent from Mylos" leaking "from". (2026-06-15)
+const IDENTITY_STOPWORDS = new Set([
+  'from', 'the', 'a', 'an', 'and', 'or', 'not', 'this', 'that', 'here', 'there',
+  'now', 'ready', 'just', 'one', 'distinct', 'also', 'still', 'only', 'really',
+  'actually', 'built', 'designed', 'your', 'my', 'our', 'is', 'am', 'are', 'to', 'of', 'as',
+]);
+
 function extractIdentityBotName(content) {
   const text = String(content || '').slice(0, 500);
-  const explicitPatterns = [
-    /(?:HXA ID|agent(?:_name)?|bot(?:_name)?)[\s:=：]+([a-z0-9_-]+)/ig,
-    /\bI am\s+([a-z0-9_-]+)/ig,
-  ];
 
-  for (const pattern of explicitPatterns) {
-    for (const match of text.matchAll(pattern)) {
-      const candidate = normalizeAgentName(match[1]);
-      if (candidate && !isGenericRuntimeAgentName(candidate)) return candidate;
+  // Structured "key: value" identity declarations. Require an ACTUAL delimiter
+  // (: = ：) after the key — never bare whitespace — so prose like
+  // "a distinct agent from Mylos" cannot leak "from" (there is no delimiter
+  // after "agent"). Root-cause fix for the greedy-regex 404 (yaya, 2026-06-15).
+  const keyValuePattern =
+    /(?:HXA[\s_-]?ID|agent(?:[\s_-]?name)?|bot(?:[\s_-]?name)?)\s*[:=：]\s*([a-z0-9_-]+)/ig;
+  for (const match of text.matchAll(keyValuePattern)) {
+    const candidate = normalizeAgentName(match[1]);
+    if (candidate && !isGenericRuntimeAgentName(candidate) && !IDENTITY_STOPWORDS.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  // "I am X" prose fallback — reject runtime names and stopwords so phrasings
+  // like "I am not just a tool" don't resolve to "not".
+  for (const match of text.matchAll(/\bI am\s+([A-Za-z][a-z0-9_-]*)/g)) {
+    const candidate = normalizeAgentName(match[1]);
+    if (candidate && !isGenericRuntimeAgentName(candidate) && !IDENTITY_STOPWORDS.has(candidate)) {
+      return candidate;
     }
   }
 
