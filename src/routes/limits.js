@@ -58,6 +58,7 @@ router.get('/', (req, res) => {
     const quota = enrichQuota(agent.quota, agent.last_heartbeat_at, now);
     return {
       name: agent.name,
+      display_name: agent.display_name || agent.name,
       role: agent.role || '',
       work_state: agent.work_state,
       runtime_status: agent.runtime_status,

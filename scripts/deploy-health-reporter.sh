@@ -14,13 +14,27 @@ if [[ "$1" == "--dry-run" ]]; then
   echo "[DRY RUN] Will print messages without sending"
 fi
 
-# All online bots (excluding mylos which is already configured, and yueran who is on leave)
-BOTS=(afu aqi chengzi hongdou hongshu kele kimi lingling linlin siyue ss veda wanyanshu wenwen xiaochuaner xiaodao xiaolv xiaonuo xiaoyou xiaoz xiaozhang xinghang yaya zhugeliang)
+# All online bots (excluding mylos which is already configured).
+BOTS=(afu aqi chengzi hongdou hongshu kele kimi lingling linlin siyue ss veda wanyanshu wenwen xiaochuaner xiaodao xiaolv xiaonuo xiaoyou xiaoz xiaozhang xinghang yaya yueran zhugeliang)
+
+runtime_override_for() {
+  case "$1" in
+    wenwen|xiaochuaner) printf '%s\n' 'claude_code' ;;
+    yueran) printf '%s\n' 'codex' ;;
+  esac
+}
 
 SENT=0
 FAILED=0
 
 for BOT in "${BOTS[@]}"; do
+  RUNTIME_TYPE="$(runtime_override_for "$BOT")"
+  RUNTIME_ENV_LINE=""
+  RUNTIME_ARGS=""
+  if [[ -n "$RUNTIME_TYPE" ]]; then
+    RUNTIME_ENV_LINE="HEALTH_RUNTIME_TYPE=${RUNTIME_TYPE}"
+    RUNTIME_ARGS=" --runtime-type ${RUNTIME_TYPE}"
+  fi
   MSG="📋 系统健康上报脚本部署（波总要求）
 
 请按以下步骤配置 health-reporter，每10分钟自动上报系统健康状态到 hxa-dash 看板：
@@ -41,13 +55,15 @@ mkdir -p ~/hxa-dash/scripts && wget -q -O ~/hxa-dash/scripts/health-reporter.mjs
 mkdir -p ~/hxa-dash/scripts
 chmod 700 ~/hxa-dash/scripts
 printf 'HEALTH_API_KEY=%s\n' '<从安全渠道获取的 key>' > ~/hxa-dash/scripts/health-reporter.env
+printf 'HEALTH_AGENT_NAME=%s\n' '${BOT}' >> ~/hxa-dash/scripts/health-reporter.env
+${RUNTIME_ENV_LINE:+printf 'HEALTH_RUNTIME_TYPE=%s\n' '${RUNTIME_TYPE}' >> ~/hxa-dash/scripts/health-reporter.env}
 chmod 600 ~/hxa-dash/scripts/health-reporter.env
 \`\`\`
 
 **Step 3: 测试运行**
 \`\`\`
 set -a; . ${ENV_FILE}; set +a
-node ~/hxa-dash/scripts/health-reporter.mjs --name ${BOT}
+node ~/hxa-dash/scripts/health-reporter.mjs --name ${BOT}${RUNTIME_ARGS}
 \`\`\`
 应该看到类似输出：\`[health-reporter] ${BOT}: disk=XX% mem=XX% cpu=XX% — reported OK\`
 
@@ -55,7 +71,7 @@ node ~/hxa-dash/scripts/health-reporter.mjs --name ${BOT}
 用你系统上的 node 绝对路径，每10分钟运行：
 \`\`\`
 NODE_PATH=\$(which node)
-(crontab -l 2>/dev/null; echo \"*/10 * * * * . ${ENV_FILE}; \${NODE_PATH} \$HOME/hxa-dash/scripts/health-reporter.mjs --name ${BOT} >> \$HOME/hxa-dash/scripts/health-reporter.log 2>&1\") | crontab -
+(crontab -l 2>/dev/null | grep -v 'hxa-dash/scripts/health-reporter.mjs'; echo \"*/10 * * * * . ${ENV_FILE}; \${NODE_PATH} \$HOME/hxa-dash/scripts/health-reporter.mjs --name ${BOT}${RUNTIME_ARGS} >> \$HOME/hxa-dash/scripts/health-reporter.log 2>&1\") | crontab -
 \`\`\`
 
 macOS 用户如果没有 crontab，可用 launchd（参考你之前 activity-reporter 的配置方式）。
