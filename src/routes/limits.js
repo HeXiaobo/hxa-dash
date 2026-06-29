@@ -2,6 +2,18 @@ const { Router } = require('express');
 const { buildAgents } = require('./team');
 
 const router = Router();
+
+// Resolve display_name from canonical entities config — robust against the activity
+// ingest path (report.js) re-upserting agent records without display_name (#16).
+const _displayNameByName = {};
+try {
+  const entCfg = require('../../config/entities.json');
+  for (const e of (entCfg.entities || [])) {
+    if (!e.display_name) continue;
+    if (e.id) _displayNameByName[e.id] = e.display_name;
+    if (e.identities && e.identities.connect) _displayNameByName[e.identities.connect] = e.display_name;
+  }
+} catch (_) { /* entities config optional */ }
 const QUOTA_STALE_MS = 10 * 60 * 1000;
 
 function normalizeTimestamp(value) {
@@ -58,7 +70,7 @@ router.get('/', (req, res) => {
     const quota = enrichQuota(agent.quota, agent.last_heartbeat_at, now);
     return {
       name: agent.name,
-      display_name: agent.display_name || agent.name,
+      display_name: _displayNameByName[agent.name] || agent.display_name || agent.name,
       role: agent.role || '',
       work_state: agent.work_state,
       runtime_status: agent.runtime_status,
