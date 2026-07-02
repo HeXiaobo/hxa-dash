@@ -63,7 +63,19 @@ const getAllAgents = () => {
   });
 };
 
-const getAgent = (name) => store.agents.get(name) || null;
+const getAgent = (name) => {
+  if (name == null) return null;
+  const exact = store.agents.get(name);
+  if (exact) return exact;
+  // Case-insensitive fallback: reporters lowercase the agent name (e.g. "Max" -> "max"),
+  // while the connect poll stores the HxA-Connect name verbatim. Match tolerantly so a
+  // capital-cased registered name still resolves for health ingest/lookup.
+  const lower = String(name).toLowerCase();
+  for (const [k, v] of store.agents) {
+    if (String(k).toLowerCase() === lower) return v;
+  }
+  return null;
+};
 
 const removeAgent = (name) => store.agents.delete(name);
 
