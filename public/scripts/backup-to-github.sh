@@ -22,8 +22,9 @@ ASSISTANT_NAME="${ASSISTANT_NAME:-zylos}"
 SOURCE_BASE="${SOURCE_BASE:-${HOME}/zylos}"
 GIT_TOKEN="${GIT_TOKEN:-}"
 GIT_USERNAME="${GIT_USERNAME:-x-access-token}"
-# ① Parameterized workspace allowlist (space/newline separated). If empty, workspace/ is backed
-#    up with a denylist (runtime/caches/clones excluded) instead of an allowlist.
+# ① Parameterized workspace allowlist (space-separated subdirs of $SOURCE_BASE/workspace).
+#    REQUIRED — validated up front in the Validate block (no default; a misconfig fails closed
+#    before any network/filesystem side-effect). Explicit allowlist only — no implicit default.
 WORKSPACE_BACKUP_DIRS="${WORKSPACE_BACKUP_DIRS:-}"
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
@@ -45,6 +46,14 @@ for cmd in git rsync mktemp; do require_cmd "$cmd"; done   # ③ rg NOT hard-req
 [[ "$BACKUP_DIR" != /tmp/* && "$BACKUP_DIR" != /tmp && "$BACKUP_DIR" != /var/tmp/* && "$BACKUP_DIR" != /dev/shm/* ]] || fail "BACKUP_DIR must not be on a volatile/tmp filesystem (lost on reboot)"
 [[ "$BACKUP_DIR" == "$SOURCE_BASE"/workspace/* ]] || fail "BACKUP_DIR must stay under SOURCE_BASE/workspace"
 [[ "$BACKUP_DIR" != "$SOURCE_BASE" && "$BACKUP_DIR" != "${HOME}" && "$BACKUP_DIR" != "/" ]] || fail "unsafe BACKUP_DIR"
+# Workspace allowlist: validate UP FRONT (before any network/filesystem side-effect) so a
+# misconfig (unset, or a bad entry) aborts with zero clone/reset/rsync impact. [yueran review]
+[[ -n "${WORKSPACE_BACKUP_DIRS// }" ]] || fail "WORKSPACE_BACKUP_DIRS must be set (explicit allowlist of workspace subdirs); refusing a broad default backup surface"
+for rel in $WORKSPACE_BACKUP_DIRS; do
+  case "$rel" in
+    ""|/*|*..*|*'*'*|*'?'*|*'['*|*']'*) fail "invalid WORKSPACE_BACKUP_DIRS entry '$rel' (no empty, absolute, '..', or glob-metacharacter entries)" ;;
+  esac
+done
 
 # --- Auth: token via ephemeral GIT_ASKPASS, never persisted in .git/config [yueran] ---
 export GIT_TERMINAL_PROMPT=0
@@ -111,16 +120,9 @@ for skill_dir in "$SOURCE_BASE/.claude/skills"/*/; do
   [[ -f "$skill_dir/CHANGELOG.md" ]] && cp "$skill_dir/CHANGELOG.md" "$BACKUP_DIR/skills/$skill_name/"
 done
 
-# Workspace deliverables/sedimentation — EXPLICIT allowlist ONLY (fail-closed; no broad default).
-# A denylist default could sweep in business-private material that no secret regex would catch,
-# so every bot must declare exactly which workspace subdirs to back up. [yueran review]
-[[ -n "${WORKSPACE_BACKUP_DIRS// }" ]] || fail "WORKSPACE_BACKUP_DIRS must be set (explicit allowlist of workspace subdirs to back up); refusing a broad default backup surface"
+# Workspace deliverables/sedimentation — explicit allowlist (already validated up front).
 rm -rf "$BACKUP_DIR/workspace"; mkdir -p "$BACKUP_DIR/workspace"
 for rel in $WORKSPACE_BACKUP_DIRS; do
-  # Reject absolute paths, parent-traversal, and glob metacharacters (config-typo hardening).
-  case "$rel" in
-    ""|/*|*..*|*'*'*|*'?'*|*'['*|*']'*) fail "invalid WORKSPACE_BACKUP_DIRS entry '$rel' (no empty, absolute, '..', or glob-metacharacter entries)" ;;
-  esac
   src="$SOURCE_BASE/workspace/$rel"
   [[ -d "$src" ]] || continue
   mkdir -p "$BACKUP_DIR/workspace/$rel"
