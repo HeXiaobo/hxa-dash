@@ -242,12 +242,18 @@ fi
 #   3) otherwise -> SURVIVOR
 while IFS= read -r _line; do
   [[ -n "$_line" ]] || continue
-  # 1) DANGER FIRST: a secret/password/api_key with a literal value. Acquit ONLY if THAT key's own
-  #    value is benign (env ref / fn call / placeholder); otherwise it is a survivor. No other word
-  #    on the line can rescue it.
+  # 1) DANGER FIRST, PER-OCCURRENCE: for EACH secret/password/api_key=value match on the line, that
+  #    match's OWN value must be benign; if ANY danger occurrence has a non-benign value the line is a
+  #    survivor. Adjudicating per-occurrence (not per-line) means two danger keys on one line cannot
+  #    co-acquit — a benign one no longer rescues a real literal sibling. Scanner error -> block (safe).
   if printf '%s' "$_line" | grep -qiE -e "$_t2_danger"; then
-    if printf '%s' "$_line" | grep -qiE -e "$_t2_danger_ok"; then continue; fi
-    printf '%s\n' "$_line" >>"$secret_matches"; continue
+    _dsurv=no
+    while IFS= read -r _m; do
+      [[ -n "$_m" ]] || continue
+      if ! printf '%s' "$_m" | grep -qiE -e "$_t2_danger_ok"; then _dsurv=yes; break; fi
+    done < <(printf '%s' "$_line" | grep -oiE -e "$_t2_danger")
+    if [[ "$_dsurv" == yes ]]; then printf '%s\n' "$_line" >>"$secret_matches"; fi
+    continue
   fi
   # 2) token-family line: acquit if its own value is benign, or the key is a Feishu resource-id.
   if printf '%s' "$_line" | grep -qiE -e "$_t2_tok_ok"; then continue; fi
