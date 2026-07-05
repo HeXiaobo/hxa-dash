@@ -36,6 +36,9 @@ for cmd in git rsync mktemp; do require_cmd "$cmd"; done   # ③ rg NOT hard-req
 
 # --- Validate (fail-closed) ---
 [[ -n "$BACKUP_REPO_URL" ]] || fail "BACKUP_REPO_URL must be set"
+# Reject credentials embedded in the URL (e.g. https://token@host): `git clone` / `git remote
+# set-url` would persist them into .git/config. Token must arrive ONLY via GIT_TOKEN/askpass. [yueran #1]
+[[ "$BACKUP_REPO_URL" != *"@"* ]] || fail "BACKUP_REPO_URL must NOT embed credentials (no 'user:token@host'); pass the token via GIT_TOKEN only"
 [[ -n "$GIT_TOKEN" ]] || fail "GIT_TOKEN must be set"
 [[ -n "$BACKUP_DIR" ]] || fail "BACKUP_DIR must be set to an explicit persistent path (no default; /tmp is volatile)"
 [[ -d "$SOURCE_BASE" ]] || fail "SOURCE_BASE does not exist: $SOURCE_BASE"
@@ -108,21 +111,21 @@ for skill_dir in "$SOURCE_BASE/.claude/skills"/*/; do
   [[ -f "$skill_dir/CHANGELOG.md" ]] && cp "$skill_dir/CHANGELOG.md" "$BACKUP_DIR/skills/$skill_name/"
 done
 
-# Workspace deliverables/sedimentation.
+# Workspace deliverables/sedimentation — EXPLICIT allowlist ONLY (fail-closed; no broad default).
+# A denylist default could sweep in business-private material that no secret regex would catch,
+# so every bot must declare exactly which workspace subdirs to back up. [yueran review]
+[[ -n "${WORKSPACE_BACKUP_DIRS// }" ]] || fail "WORKSPACE_BACKUP_DIRS must be set (explicit allowlist of workspace subdirs to back up); refusing a broad default backup surface"
 rm -rf "$BACKUP_DIR/workspace"; mkdir -p "$BACKUP_DIR/workspace"
-if [[ -n "${WORKSPACE_BACKUP_DIRS// }" ]]; then
-  # ① allowlist mode (per-bot, parameterized)
-  for rel in $WORKSPACE_BACKUP_DIRS; do
-    src="$SOURCE_BASE/workspace/$rel"
-    [[ -d "$src" ]] || continue
-    mkdir -p "$BACKUP_DIR/workspace/$rel"
-    rsync "${rsync_common[@]}" "$src/" "$BACKUP_DIR/workspace/$rel/"
-  done
-else
-  # denylist mode (default): back up workspace/ minus runtime/caches/cloned repos.
-  rsync "${rsync_common[@]}" --exclude='repos/' --exclude='*-workspace/' \
-    "$SOURCE_BASE/workspace/" "$BACKUP_DIR/workspace/"
-fi
+for rel in $WORKSPACE_BACKUP_DIRS; do
+  # Reject absolute paths, parent-traversal, and glob metacharacters (config-typo hardening).
+  case "$rel" in
+    ""|/*|*..*|*'*'*|*'?'*|*'['*|*']'*) fail "invalid WORKSPACE_BACKUP_DIRS entry '$rel' (no empty, absolute, '..', or glob-metacharacter entries)" ;;
+  esac
+  src="$SOURCE_BASE/workspace/$rel"
+  [[ -d "$src" ]] || continue
+  mkdir -p "$BACKUP_DIR/workspace/$rel"
+  rsync "${rsync_common[@]}" "$src/" "$BACKUP_DIR/workspace/$rel/"
+done
 
 # ② Include this backup script itself for operational review (self-path, no hardcoded assumption).
 SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -140,30 +143,43 @@ MANIFEST
 
 cd "$BACKUP_DIR"
 
-# --- Pre-commit secret scan (fail-closed) — rg preferred, grep fallback [③] ---
+# --- Pre-commit secret scan (fail-closed on MATCH and on SCANNER ERROR) [yueran review #4/#5] ---
+# Exit-code contract (never swallowed with `|| true`):
+#   0 = credential match found     -> abort
+#   1 = no match                   -> continue
+#  >1 = scanner failed (bad regex / perms / missing flag) -> abort fail-closed (NOT "clean")
+_secret_patterns=(
+  -e 'sk-[A-Za-z0-9_-]{20,}'
+  -e 'gh[pousr]_[A-Za-z0-9_]{20,}'
+  -e 'xox[baprs]-[A-Za-z0-9-]+'
+  -e 'AKIA[0-9A-Z]{16}'
+)
+_secret_kv='(api[_-]?key|token|secret|password)[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9_./+=-]{16,}'
 secret_matches="$(mktemp "${TMPDIR:-/tmp}/backup-secret-scan.XXXXXX")"
+scan_rc=0
 if command -v rg >/dev/null 2>&1; then
-  rg -I -l --hidden --glob '!.git/**' \
-    -e 'sk-[A-Za-z0-9_-]{20,}' \
-    -e 'gh[pousr]_[A-Za-z0-9_]{20,}' \
-    -e 'xox[baprs]-[A-Za-z0-9-]+' \
-    -e 'AKIA[0-9A-Z]{16}' \
-    -e '(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*["'\'']?[A-Za-z0-9_./+=-]{16,}' \
-    . >"$secret_matches" || true
+  rg -I -l --hidden --glob '!.git/**' "${_secret_patterns[@]}" \
+     -e '(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*["'\'']?[A-Za-z0-9_./+=-]{16,}' \
+     . >"$secret_matches" || scan_rc=$?
 else
-  # grep fallback (case-insensitive; excludes .git); POSIX ERE approximations of the rg patterns.
-  grep -rIlE -i --exclude-dir='.git' \
-    -e 'sk-[A-Za-z0-9_-]{20,}' \
-    -e 'gh[pousr]_[A-Za-z0-9_]{20,}' \
-    -e 'xox[baprs]-[A-Za-z0-9-]+' \
-    -e 'AKIA[0-9A-Z]{16}' \
-    -e '(api[_-]?key|token|secret|password)[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9_./+=-]{16,}' \
-    . >"$secret_matches" || true
+  # busybox/non-GNU compatible: prune .git via `find` (no GNU-only --exclude-dir), grep each
+  # file individually so we keep clean per-scan exit codes (xargs would remap grep's rc).
+  scan_rc=1
+  while IFS= read -r -d '' f; do
+    if grep -IqE -i "${_secret_patterns[@]}" -e "$_secret_kv" -- "$f" 2>/dev/null; then
+      printf '%s\n' "$f" >>"$secret_matches"; scan_rc=0
+    else
+      grc=$?
+      if [[ $grc -gt 1 ]]; then scan_rc=$grc; break; fi
+    fi
+  done < <(find . -name .git -prune -o -type f -print0)
 fi
-if [[ -s "$secret_matches" ]]; then
-  sed 's#^\./##' "$secret_matches" >&2
-  rm -f "$secret_matches"
+if [[ $scan_rc -eq 0 ]]; then
+  sed 's#^\./##' "$secret_matches" >&2; rm -f "$secret_matches"
   fail "secret scan found potential credentials; backup aborted before commit"
+elif [[ $scan_rc -gt 1 ]]; then
+  rm -f "$secret_matches"
+  fail "secret scan FAILED to run (rc=$scan_rc) — aborting fail-closed (not treating as clean)"
 fi
 rm -f "$secret_matches"
 
