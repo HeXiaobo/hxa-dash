@@ -49,10 +49,20 @@ for cmd in git rsync mktemp; do require_cmd "$cmd"; done   # ③ rg NOT hard-req
 # Workspace allowlist: validate UP FRONT (before any network/filesystem side-effect) so a
 # misconfig (unset, or a bad entry) aborts with zero clone/reset/rsync impact. [yueran review]
 [[ -n "${WORKSPACE_BACKUP_DIRS// }" ]] || fail "WORKSPACE_BACKUP_DIRS must be set (explicit allowlist of workspace subdirs); refusing a broad default backup surface"
+_ws_real="$(readlink -f "$SOURCE_BASE/workspace" 2>/dev/null || true)"
+[[ -n "$_ws_real" ]] || fail "cannot resolve $SOURCE_BASE/workspace"
 for rel in $WORKSPACE_BACKUP_DIRS; do
   case "$rel" in
     ""|/*|*..*|*'*'*|*'?'*|*'['*|*']'*) fail "invalid WORKSPACE_BACKUP_DIRS entry '$rel' (no empty, absolute, '..', or glob-metacharacter entries)" ;;
   esac
+  # Symlink-escape guard: if the entry exists, its PHYSICAL path must stay under workspace —
+  # else `rsync "$src/"` would follow a symlink out and pull external private content in. [yueran]
+  src="$SOURCE_BASE/workspace/$rel"
+  if [[ -e "$src" ]]; then
+    _rel_real="$(readlink -f "$src" 2>/dev/null || true)"
+    [[ -n "$_rel_real" && ( "$_rel_real" == "$_ws_real" || "$_rel_real" == "$_ws_real"/* ) ]] \
+      || fail "WORKSPACE_BACKUP_DIRS entry '$rel' resolves outside workspace (symlink escape) -> ${_rel_real:-unresolved}"
+  fi
 done
 
 # --- Auth: token via ephemeral GIT_ASKPASS, never persisted in .git/config [yueran] ---
@@ -100,7 +110,7 @@ git config user.name "$ASSISTANT_NAME"
 # Reset backup tree to the current allowlist (history stays recoverable in Git).
 find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
 
-rsync_common=(-a --delete --exclude='.git' --exclude='.DS_Store' --exclude='node_modules'
+rsync_common=(-a --safe-links --delete --exclude='.git' --exclude='.DS_Store' --exclude='node_modules'
   --exclude='.cache' --exclude='*.log' --exclude='*.tmp' --exclude='tmp/'
   --exclude='.env' --exclude='.env.*' --exclude='*.pem' --exclude='*.key'
   --exclude='id_rsa*' --exclude='id_ed25519*' --exclude='*.token'
