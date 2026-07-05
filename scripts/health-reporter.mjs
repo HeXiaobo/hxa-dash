@@ -1313,12 +1313,17 @@ function scanGitRepos(rootDir, maxDepth) {
 function findGitRepos(botName) {
   const repos = new Set();
   const scan = parseBackupScanDirs(botName);
-  for (const root of uniqueExistingDirs(scan.dirs)) {
+  const existingDirs = uniqueExistingDirs(scan.dirs);
+  for (const root of existingDirs) {
     const maxDepth = scan.explicit ? 5 : 2;
     for (const repo of scanGitRepos(root, maxDepth)) repos.add(repo);
   }
   return {
     explicit: scan.explicit,
+    // Distinguish "the configured scan path(s) don't exist" (misconfig, e.g. a stale
+    // /tmp path wiped on reboot) from "scanned valid dirs but found no backup repo".
+    // Only meaningful for an explicit HXA_BACKUP_SCAN_DIRS override.
+    scanDirsMissing: scan.explicit && existingDirs.length === 0,
     repos: [...repos].sort().slice(0, BACKUP_MAX_REPOS),
   };
 }
@@ -1655,7 +1660,13 @@ function collectBackupStatus(botName) {
     };
   }
 
-  const found = gitProbe.ok ? findGitRepos(botName) : { explicit: false, repos: [] };
+  const found = gitProbe.ok ? findGitRepos(botName) : { explicit: false, scanDirsMissing: false, repos: [] };
+  if (found.scanDirsMissing) {
+    // Loud, not silent: a configured scan path that doesn't exist (e.g. a stale /tmp
+    // path wiped on reboot) is a MISCONFIG, not "no backup". Surface it distinctly so
+    // it isn't mistaken for a real backup failure.
+    console.warn(`[health-reporter] ${botName}: WARN — HXA_BACKUP_SCAN_DIRS is set but none of the configured paths exist (reason=scan_dir_missing). Fix the path; this is a misconfig, not a real backup loss.`);
+  }
   const repos = found.repos
     .map(repo => collectGitRepoBackup(repo))
     .filter(repo => isLikelyBackupRepo(repo, botName, found.explicit));
@@ -1666,7 +1677,7 @@ function collectBackupStatus(botName) {
   const cronStatus = cron.supported ? cron.status : 'unsupported';
   const status = combineBackupStatuses([repoStatus, cronStatus]);
   const reason = repos.length === 0
-    ? 'no_github_backup_repo'
+    ? (found.scanDirsMissing ? 'scan_dir_missing' : 'no_github_backup_repo')
     : (cron.supported && cron.status !== 'ok' ? cron.reason : null);
 
   return {
