@@ -41,6 +41,7 @@ const projectRoutes = require('./routes/projects');
 const { buildProjects } = projectRoutes;
 const overviewRoutes = require('./routes/overview');
 const agentHealthRoutes = require('./routes/agent-health');
+const agentStateRoutes = require('./routes/agent-state');
 const healthWatchdog = require('./health-watchdog');
 const pm2Routes = require('./routes/pm2-services');
 const backupRoutes = require('./routes/backups');
@@ -154,6 +155,7 @@ app.use('/api/mr-board', mrBoardRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use('/api/agent-health', agentHealthRoutes);
+app.use('/api/agent-state', agentStateRoutes);
 app.use('/api/pm2', pm2Routes);
 app.use('/api/backups', backupRoutes);
 

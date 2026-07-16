@@ -25,6 +25,14 @@ healthDb.exec(`
 healthDb.exec(`
   CREATE INDEX IF NOT EXISTS idx_ahh_reported ON agent_health_history (reported_at)
 `);
+healthDb.exec(`
+  CREATE TABLE IF NOT EXISTS agent_dashboard_state (
+    name TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    observed_at INTEGER,
+    received_at INTEGER NOT NULL
+  )
+`);
 const _healthUpsertStmt = healthDb.prepare(
   'INSERT OR REPLACE INTO agent_health (name, data, reported_at) VALUES (?, ?, ?)'
 );
@@ -32,6 +40,22 @@ const _healthHistoryInsertStmt = healthDb.prepare(
   'INSERT INTO agent_health_history (name, reported_at, data) VALUES (?, ?, ?)'
 );
 const _healthAllStmt = healthDb.prepare('SELECT name, data, reported_at FROM agent_health');
+const _dashboardStateUpsertStmt = healthDb.prepare(`
+  INSERT INTO agent_dashboard_state (name, data, observed_at, received_at)
+  VALUES (?, ?, ?, ?)
+  ON CONFLICT(name) DO UPDATE SET
+    data = excluded.data,
+    observed_at = excluded.observed_at,
+    received_at = excluded.received_at
+  WHERE COALESCE(excluded.observed_at, excluded.received_at)
+    >= COALESCE(agent_dashboard_state.observed_at, agent_dashboard_state.received_at)
+`);
+const _dashboardStateGetStmt = healthDb.prepare(
+  'SELECT name, data, observed_at, received_at FROM agent_dashboard_state WHERE name = ?'
+);
+const _dashboardStateAllStmt = healthDb.prepare(
+  'SELECT name, data, observed_at, received_at FROM agent_dashboard_state ORDER BY name'
+);
 
 // In-memory data store (cache layer — all real data comes from Connect + GitLab)
 const store = {
@@ -764,6 +788,24 @@ const getAllAgentHealth = () => {
   return result;
 };
 
+const decodeAgentDashboardState = (row) => {
+  if (!row) return null;
+  return {
+    name: row.name,
+    ...JSON.parse(row.data),
+    observed_at: row.observed_at,
+    received_at: row.received_at,
+  };
+};
+
+const upsertAgentDashboardState = (name, state, observedAt, receivedAt = Date.now()) => {
+  _dashboardStateUpsertStmt.run(name, JSON.stringify(state), observedAt, receivedAt);
+};
+
+const getAgentDashboardState = (name) => decodeAgentDashboardState(_dashboardStateGetStmt.get(name));
+
+const getAllAgentDashboardStates = () => _dashboardStateAllStmt.all().map(decodeAgentDashboardState);
+
 const _healthHistoryQueryStmt = healthDb.prepare(
   'SELECT name, data, reported_at FROM agent_health_history WHERE reported_at >= ? ORDER BY reported_at DESC'
 );
@@ -846,6 +888,7 @@ module.exports = {
   getUnassignedIssues,
   getSessionVelocity, getSessionSummary, getCompletionStats,
   upsertAgentHealth, getAgentHealth, getAllAgentHealth,
+  upsertAgentDashboardState, getAgentDashboardState, getAllAgentDashboardStates,
   getHealthHistory, getHealthHistoryByName, getHealthHistoryBetween, iterHealthHistoryBetween, pruneHealthHistory, getLatestHealthPerAgent,
   getAgentDailyOutput, getAgentSparkline7d,
   ESTIMATE_SESSIONS, ESTIMATE_MINUTES,

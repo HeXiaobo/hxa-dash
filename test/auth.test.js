@@ -124,6 +124,7 @@ describe('auth route policy', () => {
     expect(isPublicRequest(req({ method: 'POST', path: '/api/webhook/connect' }))).toBe(true);
     expect(isPublicRequest(req({ method: 'POST', path: '/api/webhook/gitlab' }))).toBe(true);
     expect(isPublicRequest(req({ method: 'POST', path: '/api/agent-health/mylos' }))).toBe(true);
+    expect(isPublicRequest(req({ method: 'POST', path: '/api/agent-state/yueran' }))).toBe(true);
   });
 
   it('protects browser-facing APIs and report summary reads', () => {
