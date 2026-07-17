@@ -19,6 +19,7 @@ function isMachineIngestRequest(req) {
     || path === '/api/report/activity'
     || path === '/api/webhook/connect'
     || path === '/api/webhook/gitlab'
+    || /^\/api\/agent-state\/[^/]+$/.test(path)
     || /^\/api\/agent-health\/[^/]+$/.test(path);
 }
 
