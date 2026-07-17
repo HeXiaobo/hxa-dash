@@ -142,6 +142,31 @@ describe('Agent state HTTP interface', () => {
     }
   });
 
+  it('rejects a case-variant identity even when its URL, key binding, envelope, and payload agree', async () => {
+    const canonicalName = `dashboard-state-case-${process.pid}-${Date.now()}`;
+    const caseVariant = canonicalName.toUpperCase();
+    const key = 'dashboard-state-case-variant-key';
+    configureIngestKeys({ [caseVariant]: key });
+    entity.register(canonicalName, { connect: canonicalName });
+    db.upsertAgent({ name: canonicalName, online: true });
+    const api = await startApi();
+
+    try {
+      const response = await fetch(`${api.baseUrl}/api/agent-state/${caseVariant}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+        body: JSON.stringify(freshSnapshot(caseVariant)),
+      });
+      expect(response.status).toBe(404);
+
+      const canonical = await fetch(`${api.baseUrl}/api/agent-state/${canonicalName}`);
+      expect((await canonical.json()).state).toBeNull();
+    } finally {
+      clearIngestKeys();
+      await api.close();
+    }
+  });
+
   it('binds each ingest key to one canonical agent identity', async () => {
     const agentA = `dashboard-state-key-a-${process.pid}-${Date.now()}`;
     const agentB = `dashboard-state-key-b-${process.pid}-${Date.now()}`;
@@ -434,7 +459,7 @@ describe('Agent state HTTP interface', () => {
     }
   });
 
-  it('accepts an authenticated fresh snapshot and makes it readable', async () => {
+  it('accepts an authenticated fresh snapshot without granting node-controlled routing eligibility', async () => {
     const name = 'dashboard-state-tracer';
     const key = 'dashboard-state-test-key';
     configureIngestKey(name, key);
@@ -496,7 +521,7 @@ describe('Agent state HTTP interface', () => {
       expect(body.state).toMatchObject({
         source: 'dashboard_api',
         status: 'fresh',
-        used_for_routing: true,
+        used_for_routing: false,
         stale: false,
         degraded: false,
         payload: {
@@ -556,7 +581,7 @@ describe('Agent state HTTP interface', () => {
       });
       expect(body.states[1].state).toMatchObject({
         source: 'dashboard_api',
-        used_for_routing: true,
+        used_for_routing: false,
         freshness_ms: 1_000,
       });
     } finally {

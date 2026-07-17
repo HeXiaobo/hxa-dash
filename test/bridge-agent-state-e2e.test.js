@@ -117,6 +117,7 @@ describe('Dashboard bridge to central agent-state contract', () => {
         source: 'dashboard_api',
         status: 'fresh',
       });
+      expect(stored.used_for_routing).toBe(false);
 
       const response = await fetch(`${central.baseUrl}/api/agent-state/${agentName}`);
       expect(response.status).toBe(200);
@@ -124,7 +125,7 @@ describe('Dashboard bridge to central agent-state contract', () => {
       expect(body.state).toMatchObject({
         source: 'dashboard_api',
         status: 'fresh',
-        used_for_routing: true,
+        used_for_routing: false,
         freshness_ms: 5_000,
         payload: {
           agent: { name: agentName, state: 'BUSY', confidence: 'HIGH' },

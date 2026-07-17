@@ -48,6 +48,7 @@ const backupRoutes = require('./routes/backups');
 const { buildBackupsPayload } = backupRoutes.__private;
 const authRoutes = require('./routes/auth');
 const authMiddleware = require('./auth/middleware');
+const { buildFrontendDocumentResponse } = require('./frontend-document');
 
 const PORT = process.env.PORT || 3479;
 
@@ -125,8 +126,20 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/auth', authRoutes);
 app.use(authMiddleware);
 
+const publicDir = path.join(__dirname, '..', 'public');
+
+app.get(['/', '/index.html', '/workbench', '/workbench.html', '/classic'], (req, res, next) => {
+  const response = buildFrontendDocumentResponse(
+    req.path,
+    documentName => fs.readFileSync(path.join(publicDir, documentName), 'utf8')
+  );
+  if (!response) return next();
+  res.setHeader('Cache-Control', response.cacheControl);
+  return res.type('html').send(response.body);
+});
+
 // Serve static files
-app.use(express.static(path.join(__dirname, '..', 'public'), {
+app.use(express.static(publicDir, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
