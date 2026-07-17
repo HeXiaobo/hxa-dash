@@ -49,6 +49,7 @@ async function fetchAgents() {
       const prev = db.getAgent(bot.name);
       const agent = {
         name: bot.name,
+        display_name: ent?.display_name || bot.name,
         role: bot.role || entMeta.role || '',
         bio: bot.bio || entMeta.bio || '',
         tags: JSON.stringify(bot.tags || []),
@@ -107,6 +108,7 @@ function create(connectConfig, scopeId) {
         const prev = db.getAgent(bot.name);
         const agent = {
           name: bot.name,
+          display_name: ent?.display_name || bot.name,
           role: bot.role || entMeta.role || '',
           bio: bot.bio || entMeta.bio || '',
           tags: JSON.stringify(bot.tags || []),

@@ -61,7 +61,9 @@ function requireAgentStateAuth(req, res, next) {
 }
 
 function isCanonicalAgent(name, stateDb = db, entityStore = entity) {
-  return !!entityStore.get(name) || !!stateDb.getAgent(name);
+  if (entityStore.get(name)) return true;
+  const rosterAgent = stateDb.getAgent(name);
+  return !!rosterAgent && rosterAgent.name === name;
 }
 
 function sanitizeString(value, maxLength = 64) {
@@ -200,7 +202,9 @@ function presentState(stored, now = Date.now()) {
   return {
     source: stored.source,
     status: centrallyStale ? 'stale' : stored.status,
-    used_for_routing: centrallyStale ? false : stored.used_for_routing,
+    // Stored legacy records and current node claims are visibility evidence
+    // only; routing eligibility must come from an independent central policy.
+    used_for_routing: false,
     observed_at: stored.observed_at == null ? null : new Date(stored.observed_at).toISOString(),
     received_at: new Date(stored.received_at).toISOString(),
     freshness_ms: freshnessMs,
@@ -247,7 +251,9 @@ router.post('/:name', requireAgentStateAuth, (req, res) => {
       state = {
         source: 'dashboard_api',
         status: 'fresh',
-        used_for_routing: true,
+        // A node may report freshness, but only a future independent central
+        // policy may grant routing eligibility.
+        used_for_routing: false,
         freshness_ms: Math.max(0, freshnessMs),
         degraded: false,
         payload,

@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="zh-CN" data-base-path="__BASE_PATH__">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#F8FAFC">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDQ0IDQ0Ij48cmVjdCB4PSI0IiB5PSIyNSIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEzIiByeD0iMi41IiBmaWxsPSIjMEQ5NDg4IiBvcGFjaXR5PSIwLjI1Ii8+PHJlY3QgeD0iMTciIHk9IjE3IiB3aWR0aD0iMTAiIGhlaWdodD0iMjEiIHJ4PSIyLjUiIGZpbGw9IiMwRDk0ODgiIG9wYWNpdHk9IjAuNTUiLz48cmVjdCB4PSIzMCIgeT0iNiIgd2lkdGg9IjEwIiBoZWlnaHQ9IjMyIiByeD0iMi41IiBmaWxsPSIjMEQ5NDg4Ii8+PC9zdmc+">
+  <title>AI 员工工作台 · 三个智能</title>
+  <style>
+    :root {
+      --primary: #0D9488;
+      --primary-dark: #0F766E;
+      --primary-bright: #5EEAD4;
+      --primary-soft: #CCFBF1;
+      --ink: #0F172A;
+      --muted: #475569;
+      --muted-light: #94A3B8;
+      --line: #E2E8F0;
+      --background: #F8FAFC;
+      --surface: #FFFFFF;
+      --warning: #B45309;
+      --warning-soft: #FEF3C7;
+      --danger: #B42318;
+      --danger-soft: #FEE2E2;
+      --primary-border: rgb(13 148 136 / 0.18);
+      --primary-note-border: rgb(13 148 136 / 0.24);
+      --focus-ring: var(--primary-dark);
+      --shadow: 0 22px 55px rgb(15 23 42 / 0.08);
+      --shadow-light: 0 14px 34px rgb(15 23 42 / 0.05);
+      --radius-xs: 4px;
+      --radius-sm: 7px;
+      --radius-md: 8px;
+      --radius-lg: 14px;
+      --radius-pill: 999px;
+      --font-sans: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --type-body-size: 1rem;
+      --type-body-line: 1.68;
+      --type-panel-size: 1.28rem;
+      --type-panel-weight: 850;
+      --type-panel-line: 1.24;
+      --type-label-size: .82rem;
+      --type-label-weight: 850;
+      --type-label-line: 1;
+      --content-max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--background);
+      font-family: var(--font-sans);
+      font-size: var(--type-body-size);
+      line-height: var(--type-body-line);
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, tr:focus-visible {
+      outline: 3px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+
+    .app { min-height: 100vh; display: grid; grid-template-columns: 244px minmax(0, 1fr); }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 20px 16px;
+      background: var(--surface);
+      color: var(--ink);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+    }
+    .brand { padding: 0 8px 20px; border-bottom: 1px solid var(--line); }
+    .global-lockup { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+    .brand-mark-frame {
+      flex: 0 0 44px;
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--primary-border);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+    .brand-mark { display: block; width: 30px; height: 30px; }
+    .brand-wordmark { font-size: var(--type-panel-size); font-weight: var(--type-panel-weight); line-height: var(--type-panel-line); }
+    .menu-button {
+      display: none;
+      min-height: 40px;
+      margin-left: auto;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      color: var(--primary-dark);
+      font-size: var(--type-label-size);
+      font-weight: var(--type-label-weight);
+      cursor: pointer;
+    }
+    .brand-project { margin-top: 16px; }
+    .brand-project strong { display: block; font-size: 17px; line-height: 1.24; }
+    .brand-project p { margin: 5px 0 0; color: var(--muted); font-size: var(--type-label-size); }
+
+    .nav { display: grid; gap: 7px; margin-top: 22px; }
+    .nav button {
+      appearance: none;
+      width: 100%;
+      border: 0;
+      border-radius: var(--radius-md);
+      padding: 11px 12px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      cursor: pointer;
+      transition: background .16s ease, color .16s ease;
+    }
+    .nav button:hover { color: var(--primary-dark); background: var(--background); }
+    .nav button.active { color: var(--primary-dark); background: var(--primary-soft); font-weight: 850; }
+    .nav-index { display: inline-block; width: 28px; opacity: .72; font-variant-numeric: tabular-nums; }
+
+    .sidebar-foot { margin-top: auto; padding: 16px 8px 0; border-top: 1px solid var(--line); }
+    .readonly-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border: 0;
+      border-radius: var(--radius-pill);
+      color: var(--primary-dark);
+      background: var(--primary-soft);
+      font-size: var(--type-label-size);
+      font-weight: 700;
+    }
+    .sidebar-foot p { margin: 9px 0 0; color: var(--muted); font-size: var(--type-label-size); }
+
+    .workspace { min-width: 0; }
+    .topbar {
+      min-height: 72px;
+      padding: 14px 30px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .topbar-title h2 { margin: 0; font-size: var(--type-panel-size); font-weight: var(--type-panel-weight); line-height: var(--type-panel-line); letter-spacing: 0; }
+    .topbar-title p { margin: 3px 0 0; color: var(--muted); font-size: var(--type-label-size); }
+    .topbar-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+    .meta-chip { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--background); color: var(--muted); font-size: var(--type-label-size); }
+    .meta-chip strong { color: var(--ink); }
+    a.meta-chip { text-decoration: none; }
+    a.meta-chip:hover { color: var(--primary-dark); border-color: var(--primary-note-border); }
+    .logout-form { margin: 0; }
+    .logout-button { cursor: pointer; }
+    .live-status[data-state="ready"] { color: var(--primary-dark); border-color: var(--primary-note-border); background: var(--primary-soft); }
+    .live-status[data-state="degraded"] { color: var(--warning); border-color: var(--warning-soft); background: var(--warning-soft); }
+
+    main { width: min(var(--content-max), calc(100% - 60px)); margin: 0 auto; padding: 28px 0 70px; }
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .prototype-note {
+      margin-bottom: 20px;
+      padding: 12px 14px;
+      border: 1px solid var(--primary-note-border);
+      border-radius: var(--radius-md);
+      background: var(--primary-soft);
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .prototype-note strong { color: var(--primary-dark); }
+    .prototype-note small { white-space: nowrap; color: var(--muted); font-size: var(--type-label-size); }
+
+    .page-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+    .page-intro h3 { margin: 0; font-size: var(--type-panel-size); font-weight: var(--type-panel-weight); line-height: var(--type-panel-line); letter-spacing: 0; }
+    .page-intro p { margin: 5px 0 0; color: var(--muted); }
+    .page-intro .page-count { color: var(--muted); font-size: var(--type-label-size); }
+
+    .grid { display: grid; gap: 18px; }
+    .home-primary { grid-template-columns: minmax(0, 1.35fr) minmax(390px, .85fr); }
+    .home-secondary { grid-template-columns: minmax(0, 1.25fr) minmax(360px, .75fr); margin-top: 18px; }
+    .home-roster { grid-template-columns: minmax(0, 1.35fr) minmax(330px, .65fr); margin-top: 18px; }
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .panel-head { padding: 18px 20px 13px; display: flex; align-items: start; justify-content: space-between; gap: 14px; }
+    .panel-head h4 { margin: 0; font-size: var(--type-panel-size); font-weight: var(--type-panel-weight); line-height: var(--type-panel-line); letter-spacing: 0; }
+    .panel-head p { margin: 4px 0 0; color: var(--muted); font-size: var(--type-label-size); }
+    .panel-link {
+      appearance: none;
+      border: 0;
+      padding: 5px 0;
+      background: transparent;
+      color: var(--primary-dark);
+      font-size: var(--type-label-size);
+      font-weight: 850;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .panel-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .panel-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .panel-body { padding: 0 20px 20px; }
+
+    .status { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: var(--radius-pill); font-size: var(--type-label-size); font-weight: var(--type-label-weight); line-height: var(--type-label-line); white-space: nowrap; }
+    .status.doing, .status.done, .status.ok { color: var(--primary-dark); background: var(--primary-soft); }
+    .status.waiting { color: var(--warning); background: var(--warning-soft); }
+    .status.idle, .status.unavailable { color: var(--muted); background: var(--background); }
+    .status.stopped { color: var(--danger); background: var(--danger-soft); }
+
+    .task-list { display: grid; border-top: 1px solid var(--line); }
+    .task-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.35fr) 110px 130px minmax(140px, .8fr);
+      gap: 14px;
+      align-items: center;
+      min-height: 70px;
+      padding: 11px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+    .task-row:last-child { border-bottom: 0; }
+    .task-title { font-weight: 700; }
+    .task-sub { margin-top: 3px; color: var(--muted); font-size: var(--type-label-size); }
+    .task-owner, .task-next { color: var(--muted); font-size: var(--type-label-size); }
+    .task-next strong { display: block; color: var(--ink); font-weight: 600; }
+
+    .quota-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+    .mini-stat { padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--background); }
+    .mini-stat strong { display: block; font-size: 20px; line-height: 1.1; }
+    .mini-stat span { color: var(--muted); font-size: var(--type-label-size); }
+    .quota-list { display: grid; gap: 11px; }
+    .quota-row { display: grid; grid-template-columns: 86px 1fr 1fr 68px; gap: 10px; align-items: center; }
+    .quota-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+    .quota-meter small { display: flex; justify-content: space-between; color: var(--muted); font-size: var(--type-label-size); }
+    .track { height: 6px; margin-top: 4px; border-radius: var(--radius-pill); background: var(--line); overflow: hidden; }
+    .fill { height: 100%; border-radius: inherit; background: var(--primary); }
+    .fill.warn { background: var(--warning); }
+    .fill.danger { background: var(--danger); }
+    .fill-zero { width: 0; }
+    .fill-eleven { width: 11%; }
+    .quota-risk { text-align: right; font-size: var(--type-label-size); font-weight: 850; }
+    .quota-risk.low { color: var(--primary-dark); }
+    .quota-risk.mid { color: var(--warning); }
+    .quota-risk.high { color: var(--danger); }
+    .quota-unavailable { grid-column: 2 / 4; color: var(--muted); font-size: var(--type-label-size); }
+
+    .leaderboard { display: grid; gap: 13px; }
+    .rank-row { display: grid; grid-template-columns: 28px 92px minmax(100px, 1fr) 96px; gap: 10px; align-items: center; }
+    .rank-number { color: var(--muted); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .rank-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+    .rank-track { height: 10px; border-radius: var(--radius-pill); background: var(--line); overflow: hidden; }
+    .rank-track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+    .rank-bar-full { width: 100%; }
+    .rank-bar-empty { width: 0; }
+    .rank-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+    .scope-note { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--type-label-size); }
+    .task-source { margin: 0 20px 16px; }
+
+    .backup-hero { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start; padding: 14px; border: 1px solid var(--primary-note-border); border-radius: var(--radius-md); background: var(--primary-soft); }
+    .backup-hero strong { display: block; color: var(--primary-dark); font-size: 18px; }
+    .backup-hero p { margin: 5px 0 0; color: var(--muted); font-size: var(--type-label-size); }
+    .backup-time { color: var(--primary-dark); font-weight: 850; white-space: nowrap; }
+    .backup-facts { display: grid; gap: 0; margin-top: 12px; border-top: 1px solid var(--line); }
+    .fact-row { min-height: 44px; padding: 9px 2px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 18px; }
+    .fact-row span { color: var(--muted); }
+    .fact-row strong { text-align: right; font-size: var(--type-label-size); }
+    .fact-row:last-child { border-bottom: 0; }
+    .fact-row .needs-check { color: var(--warning); }
+
+    .compact-roster { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+    .employee-chip {
+      appearance: none;
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      text-align: left;
+      cursor: pointer;
+    }
+    .employee-chip:hover { border-color: var(--primary); background: var(--primary-soft); }
+    .employee-chip strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .employee-chip span { display: block; margin-top: 2px; color: var(--muted); font-size: var(--type-label-size); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .upgrade-list { display: grid; gap: 9px; }
+    .upgrade-card { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--background); }
+    .upgrade-card strong { display: block; }
+    .upgrade-card p { margin: 4px 0 8px; color: var(--muted); font-size: var(--type-label-size); }
+    .upgrade-card button { appearance: none; border: 0; padding: 0; background: transparent; color: var(--primary-dark); font-size: var(--type-label-size); font-weight: 850; cursor: pointer; }
+    .upgrade-card button:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .no-home-action { margin-top: 11px; color: var(--muted); font-size: var(--type-label-size); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+    table { width: 100%; border-collapse: collapse; min-width: 980px; }
+    th { padding: 11px 14px; background: var(--background); color: var(--muted); text-align: left; font-size: var(--type-label-size); font-weight: 850; white-space: nowrap; }
+    td { padding: 12px 14px; border-top: 1px solid var(--line); vertical-align: middle; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--primary-soft); }
+    .cell-name strong { display: block; }
+    .cell-name span { color: var(--muted); font-size: var(--type-label-size); }
+    .muted { color: var(--muted); }
+    .nowrap { white-space: nowrap; }
+
+    .task-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+    .task-column { padding: 15px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+    .task-column h4 { margin: 0 0 12px; display: flex; justify-content: space-between; }
+    .task-column h4 span { color: var(--muted); font-size: var(--type-label-size); }
+    .board-card { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--background); margin-bottom: 9px; }
+    .board-card:last-child { margin-bottom: 0; }
+    .board-card strong { display: block; }
+    .board-card p { margin: 5px 0 8px; color: var(--muted); font-size: var(--type-label-size); }
+    .board-card small { color: var(--muted); font-size: var(--type-label-size); }
+
+    .backup-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .backup-card { padding: 17px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+    .backup-card h4 { margin: 0 0 7px; }
+    .backup-card p { margin: 0; color: var(--muted); font-size: var(--type-label-size); }
+    .backup-card .big { margin: 12px 0 4px; font-size: 28px; font-weight: 850; letter-spacing: 0; }
+    .panel-spaced { margin-top: 18px; }
+
+    .detail-shell { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, .6fr); gap: 18px; }
+    .back-link { appearance: none; border: 0; padding: 0; margin-bottom: 12px; background: transparent; color: var(--primary-dark); font-weight: 850; cursor: pointer; }
+    .back-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .detail-hero { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+    .detail-name-row { display: flex; justify-content: space-between; gap: 18px; align-items: start; }
+    .detail-name-row h3 { margin: 0; font-size: var(--type-panel-size); font-weight: var(--type-panel-weight); line-height: var(--type-panel-line); letter-spacing: 0; }
+    .detail-role { margin-top: 4px; color: var(--muted); }
+    .detail-task { margin-top: 20px; padding: 15px; border-left: 4px solid var(--primary); background: var(--primary-soft); }
+    .detail-task small { color: var(--muted); font-size: var(--type-label-size); }
+    .detail-task strong { display: block; margin-top: 4px; font-size: 17px; }
+    .detail-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+    .detail-metric { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+    .detail-metric span { display: block; color: var(--muted); font-size: var(--type-label-size); }
+    .detail-metric strong { display: block; margin-top: 5px; }
+    .detail-side { display: grid; gap: 18px; align-content: start; }
+    .side-card { padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+    .side-card h4 { margin: 0 0 12px; font-size: var(--type-panel-size); font-weight: var(--type-panel-weight); line-height: var(--type-panel-line); }
+    .primary-button {
+      width: 100%;
+      margin-top: 12px;
+      min-height: 46px;
+      padding: 0 20px;
+      border: 1px solid var(--primary-dark);
+      border-radius: var(--radius-md);
+      background: var(--primary-dark);
+      color: var(--surface);
+      font-weight: 850;
+      cursor: pointer;
+    }
+    .primary-button:hover { background: var(--primary-dark); }
+    .button-caption { margin-top: 7px; color: var(--muted); font-size: var(--type-label-size); }
+
+    dialog { width: min(720px, calc(100vw - 32px)); border: 0; border-radius: var(--radius-lg); padding: 0; color: var(--ink); box-shadow: var(--shadow); }
+    dialog::backdrop { background: rgb(15 23 42 / 0.54); }
+    .dialog-head { padding: 20px 22px 15px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 18px; }
+    .dialog-head h3 { margin: 0; }
+    .dialog-head p { margin: 4px 0 0; color: var(--muted); font-size: var(--type-label-size); }
+    .dialog-close { appearance: none; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); color: var(--primary-dark); font-weight: 850; cursor: pointer; }
+    .steps { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; padding: 16px 22px 0; }
+    .step { padding: 7px 4px; border-radius: var(--radius-md); background: var(--background); color: var(--muted); text-align: center; font-size: var(--type-label-size); }
+    .step.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 850; }
+    .dialog-body { padding: 20px 22px; }
+    .gate-box { padding: 15px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--background); }
+    .gate-box h4 { margin: 0 0 7px; }
+    .gate-box p { margin: 0; color: var(--muted); }
+    .gate-list { margin: 13px 0 0; padding-left: 20px; color: var(--muted); }
+    .gate-list li { margin: 6px 0; }
+    .dialog-actions { padding: 14px 22px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 9px; }
+    .secondary-button, .next-button {
+      min-height: 46px;
+      padding: 0 20px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-weight: 850;
+    }
+    .secondary-button { border: 1px solid var(--line); background: var(--surface); color: var(--primary-dark); }
+    .next-button { border: 1px solid var(--primary-dark); background: var(--primary-dark); color: var(--surface); }
+    .next-button:disabled { border-color: var(--line); background: var(--background); color: var(--muted-light); cursor: not-allowed; }
+
+    .footer-note { margin-top: 24px; color: var(--muted); font-size: var(--type-label-size); text-align: center; }
+
+    @media (max-width: 1180px) {
+      .home-primary, .home-secondary, .home-roster, .detail-shell { grid-template-columns: 1fr; }
+      .compact-roster { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .backup-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .app { display: block; }
+      .sidebar { position: static; width: 100%; height: auto; padding: 14px 16px; }
+      .brand { padding: 0; border-bottom: 0; }
+      .brand-project { display: none; }
+      .menu-button { display: inline-flex; align-items: center; justify-content: center; }
+      .nav { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+      .nav[data-open="true"] { display: grid; }
+      .nav button { width: 100%; min-width: 0; }
+      .nav-index { display: inline-block; }
+      .sidebar-foot { display: none; }
+      .topbar { position: static; padding: 14px 18px; }
+      main { width: auto; padding: 20px 18px 54px; }
+      .task-row { grid-template-columns: 1fr 110px; }
+      .task-next { grid-column: 1 / -1; }
+      .task-board { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .topbar { display: block; }
+      .topbar-meta { margin-top: 9px; justify-content: flex-start; }
+      .prototype-note { align-items: flex-start; flex-direction: column; }
+      .prototype-note small { white-space: normal; }
+      .page-intro { align-items: flex-start; flex-direction: column; }
+      .quota-row { grid-template-columns: 72px 1fr 58px; }
+      .quota-row .quota-meter:nth-of-type(2) { grid-column: 2 / 3; }
+      .quota-unavailable { grid-column: 2 / 3; }
+      .rank-row { grid-template-columns: 24px 70px minmax(80px, 1fr) 80px; }
+      .compact-roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .detail-metrics { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header class="brand">
+        <div class="global-lockup" aria-label="三个智能">
+          <span class="brand-mark-frame">
+            <img class="brand-mark" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDQ0IDQ0Ij48cmVjdCB4PSI0IiB5PSIyNSIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEzIiByeD0iMi41IiBmaWxsPSIjMEQ5NDg4IiBvcGFjaXR5PSIwLjI1Ii8+PHJlY3QgeD0iMTciIHk9IjE3IiB3aWR0aD0iMTAiIGhlaWdodD0iMjEiIHJ4PSIyLjUiIGZpbGw9IiMwRDk0ODgiIG9wYWNpdHk9IjAuNTUiLz48cmVjdCB4PSIzMCIgeT0iNiIgd2lkdGg9IjEwIiBoZWlnaHQ9IjMyIiByeD0iMi41IiBmaWxsPSIjMEQ5NDg4Ii8+PC9zdmc+" alt="">
+          </span>
+          <span class="brand-wordmark">三个智能</span>
+          <button class="menu-button" id="menu-toggle" type="button" aria-controls="primary-nav" aria-expanded="false">菜单</button>
+        </div>
+        <div class="brand-project">
+          <strong>AI 员工工作台</strong>
+          <p>看业务、看额度、看产出、看恢复能力</p>
+        </div>
+      </header>
+      <nav class="nav" id="primary-nav" data-open="false" aria-label="主导航">
+        <button class="active" data-nav="home" aria-current="page"><span class="nav-index">01</span>首页</button>
+        <button data-nav="employees"><span class="nav-index">02</span>所有 AI 员工</button>
+        <button data-nav="tasks"><span class="nav-index">03</span>业务任务</button>
+        <button data-nav="quota"><span class="nav-index">04</span>额度消耗</button>
+        <button data-nav="tokens"><span class="nav-index">05</span>Token 消耗</button>
+        <button data-nav="backups"><span class="nav-index">06</span>备份与恢复</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="readonly-badge">实时只读</span>
+        <p>认证后访问 · 不执行升级、部署或恢复操作</p>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h2 id="topbar-title">首页</h2>
+          <p id="topbar-subtitle">经营优先：业务任务、额度消耗、Token 消耗、备份状态</p>
+        </div>
+        <div class="topbar-meta">
+          <span class="meta-chip"><strong>范围</strong> 全部 AI 员工</span>
+          <span class="meta-chip"><strong>更新</strong> <span id="workbench-updated">正在读取</span></span>
+          <span class="meta-chip live-status" id="workbench-live-status" data-state="loading"><strong>状态</strong> 正在连接</span>
+          <a class="meta-chip" href="__BASE_PATH__/classic">技术详情</a>
+          <form class="logout-form" method="get" action="__BASE_PATH__/auth/logout"><button class="meta-chip logout-button" type="submit">退出</button></form>
+        </div>
+      </header>
+
+      <main>
+        <section class="view active" data-view="home">
+          <div class="prototype-note" id="workbench-live-message">
+            <span><strong>正在读取 Dashboard 实时数据。</strong> 未接入或不具备同口径证据的字段会明确显示“暂不可用”。</span>
+            <small>只读页面，不执行升级或恢复</small>
+          </div>
+
+          <div class="grid home-primary">
+            <section class="panel">
+              <div class="panel-head">
+                <div><h4>业务任务</h4><p>只显示直接产生客户、内容、销售或交付结果的事项；内部维护不计入</p></div>
+                <button class="panel-link" data-go="tasks">查看全部业务任务</button>
+              </div>
+              <div class="task-list">
+                <article class="task-row" id="business-task-empty">
+                  <div><div class="task-title">业务任务源待接入</div><div class="task-sub">Dashboard 当前只提供运行状态和技术活动，不能把系统维护误写成业务任务。</div></div>
+                  <div><span class="status waiting">暂不可用</span></div>
+                  <div class="task-owner">负责人：待归属</div>
+                  <div class="task-next"><strong>下一步</strong>接入现有业务任务看板</div>
+                </article>
+              </div>
+              <div class="scope-note task-source">数据来源：现有业务任务看板，不另建任务系统；当前未接入的业务任务会明确显示“暂不可用”。</div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div><h4>AI 员工模型额度</h4><p>同时看 5 小时与 7 天额度、重置时间和数据更新时间</p></div>
+                <button class="panel-link" data-go="quota">查看额度明细</button>
+              </div>
+              <div class="panel-body">
+                <div class="quota-summary">
+                  <div class="mini-stat"><strong id="home-quota-risk">0</strong><span>接近上限</span></div>
+                  <div class="mini-stat"><strong id="home-quota-covered">0</strong><span>当前可查看</span></div>
+                  <div class="mini-stat"><strong id="home-quota-missing">22</strong><span>待汇总</span></div>
+                </div>
+                <div class="quota-list" id="home-quota-list">
+                  <div class="quota-row"><span class="quota-name">全部 AI 员工</span><span class="quota-unavailable">正在读取 5 小时 / 7 天额度</span><span class="quota-risk mid">连接中</span></div>
+                </div>
+                <div class="scope-note">数据来源：从每位 AI 员工本机读取 5 小时和 7 天额度，再汇总到工作台；没有新鲜记录的字段一律显示“暂不可用”。</div>
+              </div>
+            </section>
+          </div>
+
+          <div class="grid home-secondary">
+            <section class="panel">
+              <div class="panel-head">
+                <div><h4>Token 消耗排行</h4><p>按可比的原始 Token 数排名；数据不可比时不生成名次</p></div>
+                <div class="panel-actions">
+                  <span class="status waiting" id="home-token-coverage">可比员工 0 / 22</span>
+                  <button class="panel-link" data-go="tokens">查看 Token 明细</button>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="leaderboard" id="home-token-list">
+                  <div class="rank-row"><span class="rank-number">—</span><span class="rank-name">全部 AI 员工</span><div class="rank-track"><span class="rank-bar-empty"></span></div><span class="rank-value">正在读取</span></div>
+                </div>
+                <div class="scope-note"><span id="home-token-period">统计时段暂不可用</span>。数据来源：各 AI 员工本机的原始 Token 用量。成本金额不能换算成 Token；没有可比数据的员工不参与排行，并明确标出覆盖人数与更新时间。</div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div><h4>备份状态</h4><p>先看能不能恢复，再看细节</p></div>
+                <button class="panel-link" data-go="backups">查看详情</button>
+              </div>
+              <div class="panel-body">
+                <div class="backup-hero">
+                  <div><strong id="backup-home-title">备份证据尚未接入</strong><p id="backup-home-summary">在规范化读取任务结果、远端一致性和恢复演练凭证前，不推断恢复能力</p></div>
+                  <span class="backup-time" id="backup-home-time">暂不可用</span>
+                </div>
+                <div class="backup-facts">
+                  <div class="fact-row"><span>覆盖情况</span><strong id="backup-home-covered">暂不可用</strong></div>
+                  <div class="fact-row"><span>同步状态</span><strong id="backup-home-sync">暂不可用</strong></div>
+                  <div class="fact-row"><span>健康记录</span><strong id="backup-home-healthy">暂不可用</strong></div>
+                  <div class="fact-row"><span>恢复演练</span><strong class="needs-check" id="backup-home-restore">暂无可核验凭证</strong></div>
+                </div>
+                <div class="scope-note">数据来源：备份任务结果、本地与远端最新版本对比、恢复演练凭证。三项分别判断，不能用“备份成功”代替“可以恢复”。</div>
+              </div>
+            </section>
+          </div>
+
+          <div class="grid home-roster">
+            <section class="panel">
+              <div class="panel-head">
+                <div><h4>AI 员工快捷入口</h4><p>首页显示 12 名；完整名单与状态在员工列表和详情页</p></div>
+                <button class="panel-link" data-go="employees">查看完整清单</button>
+              </div>
+              <div class="panel-body"><div class="compact-roster" id="compact-roster"></div></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div><h4>待升级 AI 员工</h4><p>独立清单，只路由到详情页</p></div>
+                <span class="status waiting" id="upgrade-count">待检查</span>
+              </div>
+              <div class="panel-body">
+                <div class="upgrade-list" id="upgrade-list">
+                  <article class="upgrade-card">
+                    <strong>正在读取待升级记录</strong>
+                    <p>只有具备实时更新信号的 AI 员工才会进入清单。</p>
+                  </article>
+                </div>
+                <div class="no-home-action">首页不提供“立即升级”。所有升级必须进入详情页，核对影响、目标与备份后再确认。</div>
+              </div>
+            </section>
+          </div>
+          <p class="footer-note">实时只读工作台 · 版本、服务、日志与趋势保留在技术详情</p>
+        </section>
+
+        <section class="view" data-view="employees">
+          <div class="page-intro">
+            <div><h3>所有 AI 员工</h3><p>一处查看状态、业务任务、模型额度、Token 消耗排行、版本与升级提示。</p></div>
+            <span class="page-count" id="employee-count">权威名册 22 名 · 实时状态按可用数据覆盖</span>
+          </div>
+          <div class="prototype-note">
+            <span><strong>列表不截断。</strong> 没有观测证据的字段显示“暂不可用”，不会因为无数据被误判为离线或零消耗。</span>
+            <small>点击任一行进入详情</small>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">所有 AI 员工的状态、业务任务、模型额度、Token 消耗、版本和升级提示</caption>
+              <thead><tr><th>AI 员工</th><th>状态</th><th>当前业务任务</th><th>5 小时 / 7 天额度</th><th>Token 消耗排行</th><th>当前版本</th><th>升级</th></tr></thead>
+              <tbody id="employee-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" data-view="tasks">
+          <div class="page-intro">
+            <div><h3>业务任务</h3><p>只纳入对客户、内容、销售、交付有直接结果的工作。</p></div>
+            <span class="page-count">系统任务、健康检查、备份与维护均排除</span>
+          </div>
+          <div class="task-board">
+            <section class="task-column">
+              <h4>进行中 <span>0</span></h4>
+              <article class="board-card"><strong>业务任务源待接入</strong><p>只有直接产生客户、内容、销售或交付结果的事项才进入这里。</p><small>内部维护与自动化任务不计入</small></article>
+            </section>
+            <section class="task-column">
+              <h4>等待确认 <span>0</span></h4>
+              <article class="board-card"><strong>暂不可用</strong><p>未接入现有业务任务看板前，不从技术活动推断业务状态。</p><small>等待只读数据接入</small></article>
+            </section>
+            <section class="task-column">
+              <h4>已结束 <span>0</span></h4>
+              <article class="board-card"><strong>暂不可用</strong><p>历史业务结果将由同一权威任务源提供。</p><small>不在工作台另建任务系统</small></article>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view="quota">
+          <div class="page-intro">
+            <div><h3>额度消耗</h3><p>集中查看每位 AI 员工的 5 小时与 7 天额度、重置时间和数据更新时间。</p></div>
+            <span class="page-count" id="quota-page-count">当前可查看 0 / 22 · 其余待汇总</span>
+          </div>
+          <div class="prototype-note">
+            <span><strong>只展示原始额度记录。</strong> 没有新鲜数据时显示“暂不可用”，不把缺失值估算成零消耗。</span>
+            <small>5 小时与 7 天口径分开呈现</small>
+          </div>
+          <section class="panel">
+            <div class="panel-head">
+              <div><h4>全员额度概览</h4><p>优先识别接近上限的员工，再查看重置时间与数据新鲜度</p></div>
+              <span class="status waiting" id="quota-pending-status">待汇总 22 名</span>
+            </div>
+            <div class="panel-body">
+              <div class="quota-summary">
+                <div class="mini-stat"><strong id="quota-risk">0</strong><span>接近上限</span></div>
+                <div class="mini-stat"><strong id="quota-covered">0</strong><span>当前可查看</span></div>
+                <div class="mini-stat"><strong id="quota-missing">22</strong><span>待汇总</span></div>
+              </div>
+              <div class="quota-list" id="quota-list">
+                <div class="quota-row"><span class="quota-name">全部 AI 员工</span><span class="quota-unavailable">正在读取 5 小时 / 7 天额度</span><span class="quota-risk mid">连接中</span></div>
+              </div>
+              <div class="scope-note">数据来源：从每位 AI 员工本机读取 5 小时和 7 天额度，再汇总到工作台。额度消耗与 Token 消耗是不同口径，不能相互换算。</div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view="tokens">
+          <div class="page-intro">
+            <div><h3>Token 消耗</h3><p>只用同一统计口径下可比的原始 Token 数据生成排行。</p></div>
+            <span class="page-count" id="tokens-page-count">可比员工 0 / 22 · 当前不生成名次</span>
+          </div>
+          <div class="prototype-note">
+            <span><strong>成本金额不能换算成 Token。</strong> 只有一名员工有可比数据时展示覆盖情况，不制造没有意义的第一名。</span>
+            <small>页面同时显示统计时段与更新时间</small>
+          </div>
+          <section class="panel">
+            <div class="panel-head">
+              <div><h4>Token 消耗排行</h4><p>先看覆盖率，再看排名；数据不可比时不生成名次</p></div>
+              <span class="status waiting" id="tokens-coverage-status">可比员工 0 / 22</span>
+            </div>
+            <div class="panel-body">
+              <div class="leaderboard" id="tokens-list">
+                <div class="rank-row"><span class="rank-number">—</span><span class="rank-name">全部 AI 员工</span><div class="rank-track"><span class="rank-bar-empty"></span></div><span class="rank-value">正在读取</span></div>
+              </div>
+              <div class="scope-note"><span id="tokens-period">统计时段暂不可用</span>。数据来源：各 AI 员工本机的原始 Token 用量。页面标明统计时段、更新时间、已覆盖人数与缺失成员；没有可比数据的员工不参与排行。</div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view="backups">
+          <div class="page-intro">
+            <div><h3>备份与恢复</h3><p>把“备份成功”和“真正可恢复”分开呈现。</p></div>
+            <span class="page-count">只读 · 不提供恢复执行按钮</span>
+          </div>
+          <div class="backup-grid">
+            <article class="backup-card"><h4>最近备份</h4><p>来自中央备份证据汇总</p><div class="big" id="backup-page-latest">暂不可用</div><span class="status waiting" id="backup-page-latest-status">待接入</span></article>
+            <article class="backup-card"><h4>远端同步</h4><p>要求远端匹配且工作树无偏差</p><div class="big" id="backup-page-sync">暂不可用</div><span class="status waiting" id="backup-page-sync-status">待接入</span></article>
+            <article class="backup-card"><h4>恢复演练</h4><p>当前接口没有恢复演练凭证</p><div class="big" id="backup-page-restore">待验证</div><span class="status waiting">不可推断</span></article>
+          </div>
+          <div class="panel panel-spaced">
+            <div class="panel-head"><div><h4>恢复能力检查单</h4><p>只展示证据状态，不把“有备份”写成“可恢复”</p></div></div>
+            <div class="panel-body">
+              <div class="fact-row"><span>已覆盖 AI 员工</span><strong id="backup-page-covered">暂不可用</strong></div>
+              <div class="fact-row"><span>最近备份任务结果</span><strong id="backup-page-healthy">暂不可用</strong></div>
+              <div class="fact-row"><span>本地与远端最新版本一致</span><strong id="backup-page-synchronized">暂不可用</strong></div>
+              <div class="fact-row"><span>本期恢复演练凭证</span><strong class="needs-check" id="backup-page-restore-evidence">缺失</strong></div>
+              <div class="fact-row"><span>恢复入口</span><strong>需要单独授权；当前只读工作台不提供</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" data-view="detail">
+          <button class="back-link" data-go="employees">返回所有 AI 员工</button>
+          <div class="detail-shell">
+            <article class="detail-hero">
+              <div class="detail-name-row">
+                <div><h3 id="detail-name" tabindex="-1">AI 员工</h3><div class="detail-role" id="detail-role">信息暂不可用</div></div>
+                <span class="status unavailable" id="detail-status">暂不可用</span>
+              </div>
+              <div class="detail-task"><small>当前业务任务</small><strong id="detail-task">业务任务源待接入</strong></div>
+              <div class="detail-metrics">
+                <div class="detail-metric"><span>5 小时额度</span><strong id="detail-5h">暂不可用</strong></div>
+                <div class="detail-metric"><span>7 天额度</span><strong id="detail-7d">暂不可用</strong></div>
+                <div class="detail-metric"><span>Token 消耗排行</span><strong id="detail-rank">暂不可用</strong></div>
+                <div class="detail-metric"><span>备份</span><strong>证据源待接入</strong></div>
+                <div class="detail-metric"><span>数据更新时间</span><strong id="detail-updated">暂不可用</strong></div>
+                <div class="detail-metric"><span>业务阻塞</span><strong id="detail-blocker">暂不可用</strong></div>
+              </div>
+            </article>
+            <aside class="detail-side">
+              <section class="side-card">
+                <h4>版本与升级</h4>
+                <div class="fact-row"><span>升级对象</span><strong id="detail-component">暂不可用</strong></div>
+                <div class="fact-row"><span>当前版本</span><strong id="detail-version">暂不可用</strong></div>
+                <div class="fact-row"><span>目标版本</span><strong id="detail-target">暂不可用</strong></div>
+                <div class="fact-row"><span>备份检查</span><strong>证据源待接入</strong></div>
+                <button class="primary-button" id="open-upgrade" disabled>当前无可核验待升级版本</button>
+                <div class="button-caption" id="upgrade-caption">只有组件、当前版本和目标版本都可核验时，才能查看准备流程；当前工作台不执行升级。</div>
+              </section>
+              <section class="side-card">
+                <h4>技术详情</h4>
+                <div class="fact-row"><span>运行时</span><strong id="detail-runtime">暂不可用</strong></div>
+                <div class="fact-row"><span>采集状态</span><strong id="detail-collection">暂未观测</strong></div>
+                <div class="fact-row"><span>服务与日志</span><strong>下沉到此处</strong></div>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="upgrade-dialog">
+    <div class="dialog-head">
+      <div><h3>升级准备流程 · <span id="dialog-employee">AI 员工</span></h3><p>只读展示升级前后的检查顺序；不会执行真实升级。</p></div>
+      <button class="dialog-close" aria-label="关闭">关闭</button>
+    </div>
+    <div class="steps" aria-label="升级流程步骤">
+      <span class="step active">1 影响</span><span class="step">2 目标</span><span class="step">3 备份</span><span class="step">4 确认</span><span class="step">5 进度</span><span class="step">6 结果/恢复</span>
+    </div>
+    <div class="dialog-body">
+      <div class="gate-box" id="gate-content">
+        <h4>先说明会影响什么</h4>
+        <p>升级期间该 AI 员工可能短时不可用；若它正在处理业务任务，必须先确认影响。</p>
+        <ul class="gate-list"><li>影响范围必须具体到 AI 员工与服务</li><li>必须展示预计中断与当前业务风险</li><li>首页不得绕过这一步直接升级</li></ul>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="secondary-button" id="dialog-cancel">关闭</button>
+      <button class="next-button" id="dialog-next">下一步</button>
+    </div>
+  </dialog>
+
+  <script>
+    const employeeRoster = [
+      { id:'yueran', name:'玥然', role:'日常工作助理' },
+      { id:'mylos', name:'Mylos', role:'首席 AI 运营官' },
+      { id:'ss', name:'SS', role:'产品交付 / 销售物料' },
+      { id:'veda', name:'Veda', role:'内容运营' },
+      { id:'aqi', name:'阿七', role:'AI 专家' },
+      { id:'xinghang', name:'星航', role:'知乎项目部助理' },
+      { id:'xiaonuo', name:'小诺', role:'小红书运营部优化师' },
+      { id:'hongshu', name:'Hongshu', role:'内容团队 AI 员工' },
+      { id:'wanyanshu', name:'万言书', role:'GEO 业务 AI 员工' },
+      { id:'xiaoz', name:'小Z', role:'海外营销专家' },
+      { id:'linlin', name:'小霖', role:'商务助理' },
+      { id:'chengzi', name:'橙子', role:'商务助理' },
+      { id:'siyue', name:'四月', role:'小红书项目部客户执行' },
+      { id:'yaya', name:'芽芽', role:'小红书项目部客户执行' },
+      { id:'xiaochuaner', name:'小小串儿', role:'商务助理' },
+      { id:'xiaoyou', name:'小优', role:'人力资源 AI 员工' },
+      { id:'xiaodao', name:'小岛', role:'知乎项目部助理' },
+      { id:'kimi', name:'Kimi', role:'海外事业部 AI 员工' },
+      { id:'zhugeliang', name:'诸葛亮', role:'小红书项目部 AI 军师' },
+      { id:'xiaozhang', name:'小张', role:'小红书商务专员' },
+      { id:'lingling', name:'灵灵', role:'财务专员' },
+      { id:'xiaolv', name:'小律', role:'法务部助理' }
+    ];
+    let employees = employeeRoster.map(employee => ({
+      id: employee.id,
+      name: employee.name,
+      role: employee.role,
+      state: '暂不可用',
+      task: '业务任务源待接入',
+      q5: null,
+      q7: null,
+      tokens: null,
+      rank: null,
+      version: '—',
+      target: '—',
+      upgradeComponent: '—',
+      upgradeCurrent: '—',
+      upgradeTarget: '—',
+      runtime: '—',
+      upgrade: '无',
+      blocker: '业务任务源待接入',
+      updatedAt: null,
+      observed: false
+    }));
+
+    const viewMeta = {
+      home: ['首页', '经营优先：业务任务、额度消耗、Token 消耗、备份状态'],
+      employees: ['所有 AI 员工', '完整清单与员工详情入口'],
+      tasks: ['业务任务', '只看业务结果，不混入系统维护'],
+      quota: ['额度消耗', '查看 5 小时与 7 天额度、重置时间和数据新鲜度'],
+      tokens: ['Token 消耗', '只对可比的原始 Token 数据生成排行'],
+      backups: ['备份与恢复', '分开呈现备份成功与恢复能力'],
+      detail: ['AI 员工详情', '状态、业务、额度、版本与升级准备入口']
+    };
+
+    const menuToggle = document.getElementById('menu-toggle');
+    const primaryNav = document.getElementById('primary-nav');
+    function setMenuOpen(open) {
+      primaryNav.dataset.open = String(open);
+      menuToggle.setAttribute('aria-expanded', String(open));
+      menuToggle.textContent = open ? '收起' : '菜单';
+    }
+    menuToggle.addEventListener('click', () => {
+      setMenuOpen(menuToggle.getAttribute('aria-expanded') !== 'true');
+    });
+
+    function statusClass(state) {
+      if (state === '工作中') return 'doing';
+      if (state === '等待确认') return 'waiting';
+      if (state === '待命') return 'idle';
+      if (state === '离线') return 'stopped';
+      return 'unavailable';
+    }
+    function appendText(parent, tagName, text, className = '') {
+      const element = document.createElement(tagName);
+      if (className) element.className = className;
+      element.textContent = String(text ?? '');
+      parent.append(element);
+      return element;
+    }
+    const unavailableUpgradeFacts = new Set(['', '—', '暂不可用', '待检查']);
+    function upgradeFact(value) {
+      const fact = String(value ?? '').trim();
+      return unavailableUpgradeFacts.has(fact) ? null : fact;
+    }
+    function exactUpgradeEvidence(employee) {
+      const component = upgradeFact(employee?.upgradeComponent);
+      const current = upgradeFact(employee?.upgradeCurrent);
+      const target = upgradeFact(employee?.upgradeTarget);
+      if (!component || !current || !target || current === target) return null;
+      return { component, current, target };
+    }
+    function quotaText(a) {
+      const fiveHour = a.q5 == null ? '5 小时暂不可用' : `5 小时已用 ${a.q5}%`;
+      const sevenDay = a.q7 == null ? '7 天暂不可用' : `7 天已用 ${a.q7}%`;
+      return `${fiveHour} · ${sevenDay}`;
+    }
+    let currentView = 'home';
+    let activeDetailId = null;
+    function showView(name) {
+      currentView = name;
+      document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
+      document.querySelectorAll('.nav button').forEach(b => {
+        const active = b.dataset.nav === name;
+        b.classList.toggle('active', active);
+        if (active) b.setAttribute('aria-current', 'page');
+        else b.removeAttribute('aria-current');
+      });
+      const meta = viewMeta[name] || viewMeta.home;
+      document.getElementById('topbar-title').textContent = meta[0];
+      document.getElementById('topbar-subtitle').textContent = meta[1];
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    }
+    function openDetail(id, { focus = true } = {}) {
+      const a = employees.find(item => item.id === id) || employees[0];
+      const upgradeEvidence = exactUpgradeEvidence(a);
+      const canInspectUpgrade = a.upgrade === '待检查' && upgradeEvidence != null;
+      activeDetailId = a.id;
+      document.getElementById('detail-name').textContent = a.name;
+      document.getElementById('detail-role').textContent = a.role;
+      const status = document.getElementById('detail-status');
+      status.textContent = a.state;
+      status.className = `status ${statusClass(a.state)}`;
+      document.getElementById('detail-task').textContent = a.task;
+      document.getElementById('detail-5h').textContent = a.q5 == null ? '暂不可用' : `已用 ${a.q5}%`;
+      document.getElementById('detail-7d').textContent = a.q7 == null ? '暂不可用' : `已用 ${a.q7}%`;
+      document.getElementById('detail-rank').textContent = a.rank != null
+        ? `第 ${a.rank} 名`
+        : (a.tokens != null ? `${a.tokens.toLocaleString('zh-CN')} Token · 覆盖不足不排名` : '暂不可用');
+      document.getElementById('detail-blocker').textContent = a.blocker;
+      document.getElementById('detail-component').textContent = upgradeFact(a.upgradeComponent) || '暂不可用';
+      document.getElementById('detail-version').textContent = upgradeFact(a.upgradeCurrent) || '暂不可用';
+      document.getElementById('detail-target').textContent = upgradeFact(a.upgradeTarget) || '暂不可用';
+      document.getElementById('detail-runtime').textContent = a.runtime;
+      document.getElementById('detail-updated').textContent = a.updatedAt ? new Date(a.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '暂不可用';
+      document.getElementById('detail-collection').textContent = a.observed ? 'Dashboard 实时只读' : '暂未观测';
+      document.getElementById('dialog-employee').textContent = a.name;
+      const upgradeButton = document.getElementById('open-upgrade');
+      upgradeButton.disabled = !canInspectUpgrade;
+      upgradeButton.textContent = canInspectUpgrade
+        ? '查看升级准备流程'
+        : (a.upgrade === '待检查' ? '缺少完整版本证据' : '当前无可核验待升级版本');
+      document.getElementById('upgrade-caption').textContent = canInspectUpgrade
+        ? `已核验 ${upgradeEvidence.component} 的当前版本与目标版本；当前工作台只展示检查流程，不执行升级。`
+        : (a.upgrade === '待检查'
+          ? '检测到升级提示，但组件、当前版本或目标版本证据不完整，因此不能进入准备流程。'
+          : '只有组件、当前版本和目标版本都可核验时，才能查看准备流程；当前工作台不执行升级。');
+      showView('detail');
+      if (focus) document.getElementById('detail-name').focus({ preventScroll: true });
+    }
+
+    function renderUpgradeList() {
+      const pending = employees.filter(a => a.upgrade === '待检查');
+      const count = document.getElementById('upgrade-count');
+      const list = document.getElementById('upgrade-list');
+      count.textContent = `${pending.length} 名待检查`;
+      count.className = `status ${pending.length > 0 ? 'waiting' : 'idle'}`;
+      list.replaceChildren();
+      if (pending.length === 0) {
+        const card = document.createElement('article');
+        card.className = 'upgrade-card';
+        appendText(card, 'strong', '当前没有待检查员工');
+        appendText(card, 'p', '只有来自实时数据的升级提示才会进入此清单。');
+        list.append(card);
+        return;
+      }
+      for (const a of pending) {
+        const evidence = exactUpgradeEvidence(a);
+        const summary = evidence
+          ? `${evidence.component} · ${evidence.current} → ${evidence.target}`
+          : '升级提示存在，但组件、当前版本或目标版本证据不完整';
+        const card = document.createElement('article');
+        card.className = 'upgrade-card';
+        appendText(card, 'strong', a.name);
+        appendText(card, 'p', summary);
+        const button = appendText(card, 'button', '查看详情');
+        button.type = 'button';
+        button.dataset.detail = a.id;
+        button.setAttribute('aria-label', `查看 ${a.name} 的升级详情`);
+        list.append(card);
+      }
+    }
+
+    function renderEmployeeLists() {
+      const roster = document.getElementById('compact-roster');
+      roster.replaceChildren();
+      for (const a of employees.slice(0, 12)) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'employee-chip';
+        button.dataset.detail = a.id;
+        appendText(button, 'strong', a.name);
+        appendText(button, 'span', a.role);
+        roster.append(button);
+      }
+
+      const tableBody = document.getElementById('employee-table-body');
+      tableBody.replaceChildren();
+      for (const a of employees) {
+        const row = document.createElement('tr');
+        row.dataset.detail = a.id;
+        row.tabIndex = 0;
+        row.setAttribute('role', 'link');
+        row.setAttribute('aria-label', `查看 ${a.name} 的 AI 员工详情`);
+
+        const nameCell = document.createElement('td');
+        nameCell.className = 'cell-name';
+        appendText(nameCell, 'strong', a.name);
+        appendText(nameCell, 'span', a.role);
+        row.append(nameCell);
+
+        const stateCell = document.createElement('td');
+        appendText(stateCell, 'span', a.state, `status ${statusClass(a.state)}`);
+        row.append(stateCell);
+        appendText(row, 'td', a.task);
+        appendText(row, 'td', quotaText(a), 'nowrap');
+
+        const rankCell = document.createElement('td');
+        appendText(rankCell, 'span', a.rank == null ? '暂不可用' : `第 ${a.rank} 名`, a.rank == null ? 'muted' : '');
+        row.append(rankCell);
+        appendText(row, 'td', a.version);
+
+        const upgradeCell = document.createElement('td');
+        appendText(upgradeCell, 'span', a.upgrade === '无' ? '无' : '待检查', a.upgrade === '无' ? 'muted' : 'status waiting');
+        row.append(upgradeCell);
+        tableBody.append(row);
+      }
+      renderUpgradeList();
+    }
+    renderEmployeeLists();
+
+    window.workbenchView = {
+      updateEmployees(nextEmployees) {
+        if (!Array.isArray(nextEmployees) || nextEmployees.length === 0) return;
+        employees = nextEmployees;
+        renderEmployeeLists();
+        if (currentView === 'detail' && activeDetailId) openDetail(activeDetailId, { focus: false });
+      },
+      showView
+    };
+
+    document.addEventListener('click', event => {
+      const nav = event.target.closest('[data-nav]');
+      const go = event.target.closest('[data-go]');
+      const detail = event.target.closest('[data-detail]');
+      if (nav) {
+        showView(nav.dataset.nav);
+        if (window.matchMedia('(max-width: 900px)').matches) {
+          setMenuOpen(false);
+          menuToggle.focus();
+        }
+      }
+      if (go) showView(go.dataset.go);
+      if (detail) openDetail(detail.dataset.detail);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && menuToggle.getAttribute('aria-expanded') === 'true') {
+        setMenuOpen(false);
+        menuToggle.focus();
+      }
+      const detailRow = event.target.closest('tr[data-detail]');
+      if (detailRow && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        openDetail(detailRow.dataset.detail);
+      }
+    });
+
+    const dialog = document.getElementById('upgrade-dialog');
+    const steps = [...dialog.querySelectorAll('.step')];
+    const gate = document.getElementById('gate-content');
+    const next = document.getElementById('dialog-next');
+    let activeStep = 0;
+    let activeUpgradeContext = null;
+    function gateCopyFor(context) {
+      if (!context?.employee || !context?.evidence) return [];
+      const { employee, evidence } = context;
+      return [
+        ['先说明会影响什么', `升级 ${employee.name} 的 ${evidence.component} 期间，该 AI 员工可能短时不可用；若它正在处理业务任务，必须先确认影响。`, ['影响范围必须具体到 AI 员工与服务', '必须展示预计中断与当前业务风险', '首页不得绕过这一步直接升级']],
+        ['核对目标版本', `${evidence.component} 的当前版本与目标版本已从实时数据中取得，仍需核对变更说明与兼容风险。`, [`升级对象：${evidence.component}`, `当前：${evidence.current}`, `目标：${evidence.target}`]],
+        ['确认备份与恢复条件', `在把 ${employee.name} 的 ${evidence.component} 切换到 ${evidence.target} 前，必须确认备份和恢复证据。`, ['核验最近备份结果', '核验本地与远端一致性', '恢复演练凭证缺失时不得升级']],
+        ['人工确认', `执行 ${evidence.component} ${evidence.current} → ${evidence.target} 前，必须显示影响、目标、备份摘要并要求明确确认。`, ['确认人身份可追溯', '确认内容不可用模糊按钮替代', '当前只读工作台不产生真实确认记录']],
+        ['执行进度', `具备执行权限后，${employee.name} 的升级需逐步显示准备、下载、切换和验证进度，并允许安全中止。`, ['每一步有时间与结果', '失败时停止后续步骤', '不能用一直旋转的加载状态掩盖失败']],
+        ['结果与恢复', `成功后重新核对 ${evidence.component} ${evidence.target} 与运行状态；失败时恢复原版本并验证。`, ['成功：重新核对版本与运行状态', `失败：恢复到 ${evidence.current} 并验证`, '当前工作台的执行按钮始终禁用']]
+      ];
+    }
+    function renderGate() {
+      const gateCopy = gateCopyFor(activeUpgradeContext);
+      if (gateCopy.length === 0) return false;
+      steps.forEach((s, i) => s.classList.toggle('active', i === activeStep));
+      const [title, body, items] = gateCopy[activeStep];
+      gate.replaceChildren();
+      appendText(gate, 'h4', title);
+      appendText(gate, 'p', body);
+      const list = document.createElement('ul');
+      list.className = 'gate-list';
+      items.forEach(item => appendText(list, 'li', item));
+      gate.append(list);
+      if (activeStep === gateCopy.length - 1) {
+        next.textContent = '当前工作台不执行升级';
+        next.disabled = true;
+      } else {
+        next.textContent = '下一步';
+        next.disabled = false;
+      }
+      return true;
+    }
+    document.getElementById('open-upgrade').addEventListener('click', () => {
+      const employee = employees.find(item => item.id === activeDetailId);
+      const evidence = exactUpgradeEvidence(employee);
+      if (!employee || employee.upgrade !== '待检查' || !evidence) return;
+      activeUpgradeContext = { employee, evidence };
+      activeStep = 0;
+      if (!renderGate()) return;
+      dialog.showModal();
+    });
+    next.addEventListener('click', () => {
+      const gateCopy = gateCopyFor(activeUpgradeContext);
+      if (gateCopy.length === 0) return;
+      if (activeStep < gateCopy.length - 1) activeStep += 1;
+      renderGate();
+    });
+    document.querySelector('.dialog-close').addEventListener('click', () => dialog.close());
+    document.getElementById('dialog-cancel').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', event => {
+      const box = dialog.getBoundingClientRect();
+      const outside = event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+      if (outside) dialog.close();
+    });
+  </script>
+  <script type="module" src="__ASSET_ROOT__/js/workbench-live.js?v=1"></script>
+</body>
+</html>

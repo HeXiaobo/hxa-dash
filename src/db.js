@@ -1,38 +1,11 @@
 // Persistent SQLite store for health data (survives pm2 restart)
 const path = require('path');
 const Database = require('better-sqlite3');
+const { initializeHealthSchema } = require('./health-schema');
 const healthDbPath = path.join(__dirname, '..', 'health.db');
 const healthDb = new Database(healthDbPath);
 healthDb.pragma('journal_mode = WAL');
-healthDb.exec(`
-  CREATE TABLE IF NOT EXISTS agent_health (
-    name TEXT PRIMARY KEY,
-    data TEXT NOT NULL,
-    reported_at INTEGER NOT NULL
-  )
-`);
-healthDb.exec(`
-  CREATE TABLE IF NOT EXISTS agent_health_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    reported_at INTEGER NOT NULL,
-    data TEXT NOT NULL
-  )
-`);
-healthDb.exec(`
-  CREATE INDEX IF NOT EXISTS idx_ahh_name_reported ON agent_health_history (name, reported_at)
-`);
-healthDb.exec(`
-  CREATE INDEX IF NOT EXISTS idx_ahh_reported ON agent_health_history (reported_at)
-`);
-healthDb.exec(`
-  CREATE TABLE IF NOT EXISTS agent_dashboard_state (
-    name TEXT PRIMARY KEY,
-    data TEXT NOT NULL,
-    observed_at INTEGER,
-    received_at INTEGER NOT NULL
-  )
-`);
+initializeHealthSchema(healthDb);
 const _healthUpsertStmt = healthDb.prepare(
   'INSERT OR REPLACE INTO agent_health (name, data, reported_at) VALUES (?, ?, ?)'
 );
@@ -87,7 +60,19 @@ const getAllAgents = () => {
   });
 };
 
-const getAgent = (name) => store.agents.get(name) || null;
+const getAgent = (name) => {
+  if (name == null) return null;
+  const exact = store.agents.get(name);
+  if (exact) return exact;
+  // Case-insensitive fallback: reporters lowercase the agent name (e.g. "Max" -> "max"),
+  // while the connect poll stores the HxA-Connect name verbatim. Match tolerantly so a
+  // capital-cased registered name still resolves for health ingest/lookup.
+  const lower = String(name).toLowerCase();
+  for (const [k, v] of store.agents) {
+    if (String(k).toLowerCase() === lower) return v;
+  }
+  return null;
+};
 
 const removeAgent = (name) => store.agents.delete(name);
 

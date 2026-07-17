@@ -96,6 +96,8 @@ const LimitsDashboard = {
       const runtime = agent.runtime || {};
       const quota = agent.quota || {};
       const usage = agent.usage || {};
+      const displayName = agent.display_name || agent.displayName || agent.name;
+      const identityText = displayName && displayName !== agent.name ? `${displayName} / ${agent.name}` : agent.name;
       const usageTokens = usage.session_tokens || {};
       const primary = quota.primary || {};
       const secondary = quota.secondary || {};
@@ -113,7 +115,7 @@ const LimitsDashboard = {
 
       return `
         <tr>
-          <td class="metrics-agent-name">${esc(agent.name)}</td>
+          <td class="metrics-agent-name">${esc(identityText)}</td>
           <td class="metrics-runtime-name" title="运行时：${esc(runtimeText)}">${esc(runtimeText)}</td>
           <td>${esc(workText)}</td>
           <td>${esc(quotaText)}</td>

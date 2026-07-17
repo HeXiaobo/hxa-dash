@@ -23,11 +23,46 @@
       "identities": { "connect": "veda", "gitlab": "veda" }
     },
     {
+      "id": "yueran",
+      "display_name": "玥然",
+      "role": "AI助理",
+      "bio": "Codex runtime",
+      "identities": { "connect": "yueran", "gitlab": "yueran" }
+    },
+    {
+      "id": "wenwen",
+      "display_name": "问问",
+      "role": "AI助理",
+      "bio": "Claude Code runtime",
+      "identities": { "connect": "wenwen", "gitlab": "wenwen" }
+    },
+    {
       "id": "hongshu",
-      "display_name": "Hongshu",
+      "display_name": "红薯",
       "role": "内容团队AI助理",
       "bio": "小红书数据、OpenClaw平台、3AI实习兼编制",
       "identities": { "connect": "hongshu", "gitlab": "hongshu" }
+    },
+    {
+      "id": "afu",
+      "display_name": "阿福",
+      "role": "知乎商策助理",
+      "bio": "知外文化编制",
+      "identities": { "connect": "afu", "gitlab": "afu" }
+    },
+    {
+      "id": "hongdou",
+      "display_name": "红豆",
+      "role": "小红书项目部AE",
+      "bio": "知外文化编制",
+      "identities": { "connect": "hongdou", "gitlab": "hongdou" }
+    },
+    {
+      "id": "kele",
+      "display_name": "可乐",
+      "role": "知乎业务优化师",
+      "bio": "知外文化编制",
+      "identities": { "connect": "kele", "gitlab": "kele" }
     },
     {
       "id": "wanyanshu",

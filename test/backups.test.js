@@ -130,7 +130,7 @@ describe('backup health helpers', () => {
   });
 
   it('uses explicit expected backup repo aliases', () => {
-    expect(expectedBackupRepo('mylos').url).toBe('https://github.com/with3ai/zylos-workspace');
+    expect(expectedBackupRepo('mylos').url).toBe('https://github.com/with3ai/Mylos-workspace');
     expect(expectedBackupRepo('wanyanshu').url).toBe('https://github.com/zhi-wai/maxiaozhuo-workspace');
     expect(expectedBackupRepo('hongshu').url).toBe('https://github.com/with3ai/hongshu-workspace');
     expect(expectedBackupRepo('veda').url).toBe('https://github.com/with3ai/veda-workspace');
@@ -138,7 +138,7 @@ describe('backup health helpers', () => {
       required: true,
       url: 'https://github.com/zhi-wai/wenwen-workspace',
     });
-    expect(githubSlug('git@github.com:with3ai/zylos-workspace.git')).toBe('with3ai/zylos-workspace');
+    expect(githubSlug('git@github.com:with3ai/Mylos-workspace.git')).toBe('with3ai/mylos-workspace');
   });
 
   it('flags a repo that does not match the expected agent repository', () => {
@@ -151,7 +151,7 @@ describe('backup health helpers', () => {
 
     expect(summary.status).toBe('critical');
     expect(summary.reason).toBe('github_repo_mismatch');
-    expect(summary.expected_remote).toBe('https://github.com/with3ai/zylos-workspace');
+    expect(summary.expected_remote).toBe('https://github.com/with3ai/Mylos-workspace');
     expect(summary.expected_match).toBe(false);
   });
 

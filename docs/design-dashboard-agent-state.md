@@ -27,6 +27,7 @@ is part of this change set.
   messages, tool details, raw telemetry, API keys, or session tokens.
 - Keep source, status, observation time, freshness, and degradation explicit.
 - Recalculate freshness on read so old data cannot continue to look live.
+- Treat node-reported routing eligibility as non-authoritative visibility data.
 - Store Dashboard state separately from `agent_health` and its history.
 - Preserve the existing health reporter and its data unchanged.
 
@@ -59,7 +60,7 @@ global browser-auth policy, then protected by route-local API-key middleware.
 The central service reads `DASHBOARD_STATE_INGEST_KEYS_JSON`, a map of
 canonical agent name to dedicated key. Each key is accepted only on the route
 for its mapped agent and arrives through `Authorization: Bearer` or
-`X-API-Key`. This prevents one fleet node from submitting routing state for
+`X-API-Key`. This prevents one fleet node from submitting visibility state for
 another. A single-agent compatibility form requires both
 `DASHBOARD_STATE_INGEST_AGENT_NAME` and `DASHBOARD_STATE_INGEST_API_KEY`, and
 keeps the same route binding. The middleware fails closed:
@@ -74,8 +75,10 @@ the entity registry or current agent roster. The body must include
 `agent_name`, and it must equal the route parameter exactly. An authenticated
 Dashboard snapshot must also contain the same `payload.agent.name`.
 
-Aliases are not silently rewritten. A caller must post to the canonical name,
-which prevents two names from creating parallel records for one agent.
+Aliases and case variants are not silently rewritten. The configured key-map
+name, route parameter, body `agent_name`, payload `agent.name`, and canonical
+roster name must agree byte-for-byte. This prevents a case-insensitive roster
+lookup from creating a parallel record for one agent.
 
 ## Ingest contract
 
@@ -136,8 +139,10 @@ Accepted client degradation reasons are limited to the adapter's fixed codes:
 
 Invariants:
 
-- Only `dashboard_api` may report `status=fresh` and
-  `used_for_routing=true`.
+- For bridge compatibility, only `dashboard_api` with `status=fresh` may submit
+  `used_for_routing=true`. The central module never treats that claim as an
+  authorization decision: it persists and presents `used_for_routing=false`
+  until a separate central routing policy exists.
 - A fresh observation must be at most 30 seconds old at central receipt time.
 - Every non-fresh state must set `used_for_routing=false`, `degraded=true`, and
   a non-empty degradation reason.
@@ -189,6 +194,8 @@ Every read derives presentation fields using the central clock:
 - a stored `fresh` snapshot that has aged past 30 seconds is returned as
   `status=stale`, `used_for_routing=false`, `degraded=true`, and
   `degraded_reason=central_state_stale`
+- fresh Dashboard observations also return `used_for_routing=false`; freshness
+  is visibility evidence, not node-controlled routing authorization
 - an already degraded or unavailable state remains non-routing even when it
   was received recently
 
@@ -204,7 +211,7 @@ Single-agent response shape:
   "state": {
     "source": "dashboard_api",
     "status": "fresh",
-    "used_for_routing": true,
+    "used_for_routing": false,
     "observed_at": "2026-07-16T01:00:00.000Z",
     "received_at": "2026-07-16T01:00:05.000Z",
     "freshness_ms": 5000,
@@ -259,8 +266,8 @@ store:
 3. Unknown agents and identity mismatches are rejected without writes.
 4. Extra prompt, message, tool, token, and raw-telemetry fields never appear in
    the read response.
-5. A snapshot becomes visibly stale after 30 seconds and is excluded from
-   routing.
+5. A fresh node snapshot is persisted and presented as non-routing; it then
+   becomes visibly stale after 30 seconds.
 6. Health-only and unavailable snapshots can be stored for visibility but
    never become routing input.
 7. Inconsistent source/status/freshness combinations are rejected.
@@ -268,7 +275,8 @@ store:
    record.
 9. Existing auth, agent-health, router, and local Dashboard adapter tests stay
    green.
-10. A key bound to one agent cannot write another agent's route.
+10. A key bound to one agent cannot write another agent's route, and coordinated
+    case variants of URL, key binding, envelope, and payload are rejected.
 11. Delayed older observations do not overwrite newer state.
 12. Collection reads use the single-record shape, deterministic ordering, and
     canonical filtering, with structured JSON on storage failure.
@@ -297,6 +305,10 @@ The review added three controls before implementation:
 - degradation reasons are fixed codes, not arbitrary caller text;
 - free-form operational reason text is dropped unless it matches a known safe
   Dashboard form.
+
+The release hardening review added two more controls: node freshness claims
+cannot self-authorize routing, and canonical identity matching is case-exact
+across the complete ingest contract.
 
 No remaining blocker was found for local test-driven implementation. Live
 keys, service changes, deployment, production release, and fleet rollout remain
