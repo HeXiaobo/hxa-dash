@@ -16,6 +16,9 @@ const STATUS_RANK = {
 const HOUR_MS = 60 * 60 * 1000;
 const BACKUP_WARN_MS = 36 * HOUR_MS;
 const BACKUP_CRITICAL_MS = 72 * HOUR_MS;
+const HEALTH_REPORT_FRESH_MS = 10 * 60 * 1000;
+const HEALTH_REPORT_FUTURE_SKEW_MS = 5 * 1000;
+const BACKUP_COUNTER_FIELDS = ['ahead', 'behind', 'dirty', 'untracked'];
 
 const EXPECTED_BACKUP_REPOS_PATH = path.join(__dirname, '..', '..', 'config', 'expected-backup-repos.json');
 
@@ -55,6 +58,17 @@ function repoMatchesExpected(repo, expected) {
 
 function hasGithubRemote(repo) {
   return /(^|[/:@])github\.com[/:]/i.test(String(repo?.remote || ''));
+}
+
+function repoCountersComplete(repo) {
+  return BACKUP_COUNTER_FIELDS.every(field => Number.isSafeInteger(repo?.[field]) && repo[field] >= 0);
+}
+
+function repoCounterTotal(repos, field) {
+  const values = repos.map(repo => repo?.[field]);
+  return values.length > 0 && values.every(value => Number.isSafeInteger(value) && value >= 0)
+    ? values.reduce((sum, value) => sum + value, 0)
+    : null;
 }
 
 function repoDedupeKey(repo) {
@@ -150,10 +164,23 @@ function timestampMs(value) {
   return null;
 }
 
-function cronFreshnessStatus(cron, nowMs = Date.now()) {
+function healthReportFresh(value, nowMs = Date.now()) {
+  const reportedAt = timestampMs(value);
+  if (reportedAt == null) return false;
+  const age = nowMs - reportedAt;
+  return age >= -HEALTH_REPORT_FUTURE_SKEW_MS && Math.max(0, age) <= HEALTH_REPORT_FRESH_MS;
+}
+
+function cronFreshnessStatus(cron, nowMs = Date.now(), sampledAt = null) {
   if (!cron || typeof cron !== 'object' || cron.supported === false) return null;
   const lastSuccessMs = timestampMs(cron.last_success_at);
   if (!lastSuccessMs) return null;
+
+  const sampledAtMs = timestampMs(sampledAt);
+  if (lastSuccessMs > nowMs + HEALTH_REPORT_FUTURE_SKEW_MS
+    || (sampledAtMs != null && lastSuccessMs > sampledAtMs)) {
+    return { status: 'critical', reason: 'backup_success_in_future', invalid_last_success: true };
+  }
 
   const ageMs = nowMs - lastSuccessMs;
   if (!Number.isFinite(ageMs) || ageMs <= BACKUP_WARN_MS) return null;
@@ -171,10 +198,10 @@ function combineStatuses(statuses) {
   return 'unsupported';
 }
 
-function normalizeCron(cron, nowMs = Date.now()) {
+function normalizeCron(cron, nowMs = Date.now(), sampledAt = null) {
   if (!cron || typeof cron !== 'object') return null;
   const reportedStatus = statusFromCron(cron);
-  const freshness = cronFreshnessStatus(cron, nowMs);
+  const freshness = cronFreshnessStatus(cron, nowMs, sampledAt);
   const freshnessIsWorse = freshness && (STATUS_RANK[freshness.status] ?? 9) < (STATUS_RANK[reportedStatus] ?? 9);
   const freshnessExplainsStatus = freshness && freshness.status === reportedStatus && !cron.reason;
   const status = freshnessIsWorse ? freshness.status : reportedStatus;
@@ -183,7 +210,7 @@ function normalizeCron(cron, nowMs = Date.now()) {
     status,
     reason: freshnessIsWorse || freshnessExplainsStatus ? freshness.reason : (cron.reason || null),
     log_path: cron.log_path || null,
-    last_success_at: cron.last_success_at || null,
+    last_success_at: freshness?.invalid_last_success ? null : cron.last_success_at || null,
     last_run_at: cron.last_run_at || null,
     latest_line: cron.latest_line || null,
   };
@@ -195,6 +222,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     backup_required: expected.required,
     expected_remote: expected.url,
     expected_match: null,
+    counter_evidence_complete: false,
     expected_reason: expected.reason,
   };
 
@@ -208,10 +236,10 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
       warning: 0,
       critical: 0,
       unsupported: 0,
-      ahead: 0,
-      behind: 0,
-      dirty: 0,
-      untracked: 0,
+      ahead: null,
+      behind: null,
+      dirty: null,
+      untracked: null,
       github_remotes: 0,
       cron_status: null,
       last_success_at: null,
@@ -246,7 +274,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     };
   }
 
-  const cron = normalizeCron(backup.cron, nowMs);
+  const cron = normalizeCron(backup.cron, nowMs, backup.sampled_at);
   const repos = dedupeBackupRepos(backup.repos, expected);
 
   if ((backup.supported === false || backup.status === 'unsupported') && !cron?.supported && repos.length === 0 && backup.reason === 'not_reported') {
@@ -259,10 +287,10 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
       warning: 0,
       critical: 0,
       unsupported: 1,
-      ahead: 0,
-      behind: 0,
-      dirty: 0,
-      untracked: 0,
+      ahead: null,
+      behind: null,
+      dirty: null,
+      untracked: null,
       github_remotes: 0,
       cron_status: null,
       last_success_at: null,
@@ -274,6 +302,8 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
   }
 
   const anyExpectedMatch = expected.url ? repos.some(repo => repoMatchesExpected(repo, expected)) : null;
+  const counterEvidenceComplete = repos.length > 0
+    && repos.every(repoCountersComplete);
   const summary = {
     supported: true,
     status: 'ok',
@@ -283,10 +313,10 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     warning: 0,
     critical: 0,
     unsupported: 0,
-    ahead: 0,
-    behind: 0,
-    dirty: 0,
-    untracked: 0,
+    ahead: repoCounterTotal(repos, 'ahead'),
+    behind: repoCounterTotal(repos, 'behind'),
+    dirty: repoCounterTotal(repos, 'dirty'),
+    untracked: repoCounterTotal(repos, 'untracked'),
     github_remotes: 0,
     cron_status: cron?.status || null,
     last_success_at: cron?.last_success_at || null,
@@ -295,6 +325,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     sampled_at: backup.sampled_at || null,
     ...expectedFields,
     expected_match: anyExpectedMatch,
+    counter_evidence_complete: counterEvidenceComplete,
   };
 
   if (repos.length === 0) {
@@ -307,10 +338,6 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
   for (const repo of repos) {
     const status = statusFromRepo(repo, expected, anyExpectedMatch);
     summary[status] += 1;
-    summary.ahead += repo.ahead || 0;
-    summary.behind += repo.behind || 0;
-    summary.dirty += repo.dirty || 0;
-    summary.untracked += repo.untracked || 0;
     if (/(^|[/:@])github\.com[/:]/i.test(String(repo.remote || ''))) summary.github_remotes += 1;
   }
 
@@ -340,8 +367,38 @@ function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos(), n
   const anyExpectedMatch = expected.url
     ? dedupedRepos.some(repo => repoMatchesExpected(repo, expected))
     : null;
-  const summary = buildBackupSummary(backup, agent.name, registry, nowMs);
-  const repos = dedupedRepos.length
+  const rawSummary = buildBackupSummary(backup, agent.name, registry, nowMs);
+  const reportFresh = healthReportFresh(health?.reported_at, nowMs);
+  const backupSampleFresh = healthReportFresh(backup?.sampled_at, nowMs);
+  const evidenceFresh = reportFresh && backupSampleFresh;
+  const unavailableReason = health?.reported_at == null || backup?.sampled_at == null
+    ? 'sample_time_unavailable'
+    : 'stale_sample';
+  const summary = evidenceFresh
+    ? rawSummary
+    : {
+        ...rawSummary,
+        supported: false,
+        status: 'unsupported',
+        reason: unavailableReason,
+        expected_match: null,
+        counter_evidence_complete: false,
+        ahead: null,
+        behind: null,
+        dirty: null,
+        untracked: null,
+        cron_status: null,
+        last_success_at: null,
+        last_run_at: null,
+        log_path: null,
+        total: null,
+        ok: null,
+        warning: null,
+        critical: null,
+        unsupported: null,
+        github_remotes: null,
+      };
+  const repos = evidenceFresh && dedupedRepos.length
     ? dedupedRepos
         .map(repo => {
           const status = statusFromRepo(repo, expected, anyExpectedMatch);
@@ -355,8 +412,9 @@ function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos(), n
     online: !!agent.online,
     hostname: health?.hostname || null,
     reported_at: health?.reported_at || null,
+    stale: !evidenceFresh,
     summary,
-    cron: health?.backup?.cron || null,
+    cron: evidenceFresh ? normalizeCron(backup?.cron, nowMs, backup?.sampled_at) : null,
     repos,
   };
 }
@@ -367,17 +425,30 @@ function buildBackupsPayload(agents, allHealth, nowMs = Date.now()) {
     .map(agent => buildBackupAgent(agent, allHealth[agent.name], registry, nowMs))
     .sort((a, b) => (STATUS_RANK[a.summary.status] ?? 9) - (STATUS_RANK[b.summary.status] ?? 9) || a.name.localeCompare(b.name));
 
+  const requiredItems = items.filter(item => item.summary.backup_required !== false);
+  const counterEvidenceComplete = requiredItems.length > 0
+    && requiredItems.every(item => item.summary.counter_evidence_complete === true);
+  const aggregateCounter = field => counterEvidenceComplete
+    ? requiredItems.reduce((sum, item) => sum + item.summary[field], 0)
+    : null;
+  const repoEvidenceComplete = requiredItems.length > 0
+    && requiredItems.every(item => item.summary.supported === true
+      && Number.isSafeInteger(item.summary.total)
+      && item.summary.total >= 0);
   const summary = {
     total_agents: items.length,
     ok: items.filter(item => item.summary.status === 'ok').length,
     warning: items.filter(item => item.summary.status === 'warning').length,
     critical: items.filter(item => item.summary.status === 'critical').length,
     unsupported: items.filter(item => item.summary.status === 'unsupported').length,
-    repos: items.reduce((sum, item) => sum + item.summary.total, 0),
-    ahead: items.reduce((sum, item) => sum + item.summary.ahead, 0),
-    behind: items.reduce((sum, item) => sum + item.summary.behind, 0),
-    dirty: items.reduce((sum, item) => sum + item.summary.dirty, 0),
-    untracked: items.reduce((sum, item) => sum + item.summary.untracked, 0),
+    repos: repoEvidenceComplete
+      ? requiredItems.reduce((sum, item) => sum + item.summary.total, 0)
+      : null,
+    counter_evidence_complete: counterEvidenceComplete,
+    ahead: aggregateCounter('ahead'),
+    behind: aggregateCounter('behind'),
+    dirty: aggregateCounter('dirty'),
+    untracked: aggregateCounter('untracked'),
   };
 
   return {
@@ -392,4 +463,4 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
-module.exports.__private = { buildBackupSummary, buildBackupsPayload, statusFromRepo, expectedBackupRepo, githubSlug };
+module.exports.__private = { buildBackupAgent, buildBackupSummary, buildBackupsPayload, statusFromRepo, expectedBackupRepo, githubSlug };

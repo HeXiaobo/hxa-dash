@@ -1,13 +1,15 @@
 const { Router } = require('express');
 const db = require('../db');
 const collab = require('../analyzers/collab');
-const { buildBackupSummary } = require('./backups').__private;
+const { buildBackupAgent } = require('./backups').__private;
+const { buildAgentObservability, quotaForRead, usageForRead } = require('../agent-observability');
 
 const router = Router();
 
 // Default max concurrent tasks per agent (can be overridden per-agent in entities.json later)
 const DEFAULT_MAX_CAPACITY = 5;
 const HEALTH_STALE_MS = 10 * 60 * 1000;
+const HEALTH_FUTURE_SKEW_MS = 5 * 1000;
 const WORK_SIGNAL_WINDOW_MS = 60 * 60 * 1000;
 const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MESSAGE_ACTIONS = new Set(['sent_message', 'received_message', 'hxa_message']);
@@ -24,6 +26,21 @@ function normalizeTimestamp(value) {
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
+  return null;
+}
+
+function freshTimestamp(value, now) {
+  const timestamp = normalizeTimestamp(value);
+  if (timestamp == null) return false;
+  const age = now - timestamp;
+  return age >= -HEALTH_FUTURE_SKEW_MS && Math.max(0, age) <= HEALTH_STALE_MS;
+}
+
+function timestampReadReason(value, now) {
+  const timestamp = normalizeTimestamp(value);
+  if (timestamp == null) return 'sample_time_unavailable';
+  const age = now - timestamp;
+  if (age < -HEALTH_FUTURE_SKEW_MS || Math.max(0, age) > HEALTH_STALE_MS) return 'stale_sample';
   return null;
 }
 
@@ -55,20 +72,52 @@ function normalizeRuntimeStatus(value) {
 
 function normalizeQuotaWindow(window, fallbackLabel = null) {
   if (!window || typeof window !== 'object') return null;
-  const usedPercent = typeof window.used_percent === 'number'
+  const rawUsedPercent = typeof window.used_percent === 'number'
     ? window.used_percent
     : typeof window.used_percentage === 'number'
       ? window.used_percentage
       : null;
+  const usedPercent = typeof rawUsedPercent === 'number'
+    && Number.isFinite(rawUsedPercent)
+    && rawUsedPercent >= 0
+    && rawUsedPercent <= 100
+    ? Math.round(rawUsedPercent * 10) / 10
+    : null;
   const resetsAt = normalizeTimestamp(window.resets_at);
-  const windowMinutes = typeof window.window_minutes === 'number' ? window.window_minutes : null;
+  const windowMinutes = typeof window.window_minutes === 'number'
+    && Number.isFinite(window.window_minutes)
+    && window.window_minutes > 0
+    ? window.window_minutes
+    : null;
   if (usedPercent == null && !resetsAt && !windowMinutes) return null;
   return {
     label: window.label || fallbackLabel || null,
     window_minutes: windowMinutes,
-    used_percent: usedPercent == null ? null : Math.max(0, Math.min(100, Math.round(usedPercent * 10) / 10)),
+    used_percent: usedPercent,
     resets_at: resetsAt,
   };
+}
+
+function semanticEvidenceSource(value, runtimeType, field) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+
+  const direct = {
+    quota: new Set(['statusline', 'codex']),
+    usage: new Set(['transcript', 'statusline', 'codex']),
+    model: new Set(['transcript', 'statusline', 'codex']),
+    cost: new Set(['statusline', 'codex']),
+  };
+  if (direct[field]?.has(raw)) return raw;
+
+  if (runtimeType === 'codex') {
+    if (['rollout', 'sqlite', 'codex-api'].includes(raw) || raw.includes('/.codex/')) return 'codex';
+  }
+  if (runtimeType === 'claude' || runtimeType === 'claude_code') {
+    if (raw.includes('statusline') && direct[field]?.has('statusline')) return 'statusline';
+    if (['usage', 'model'].includes(field) && (raw.endsWith('.jsonl') || raw.includes('/.claude/'))) return 'transcript';
+  }
+  return null;
 }
 
 function normalizeQuotaShape(quota, fallbackSource = 'agent_health') {
@@ -83,7 +132,7 @@ function normalizeQuotaShape(quota, fallbackSource = 'agent_health') {
 
   return {
     supported,
-    source: quota.source || fallbackSource,
+    source: semanticEvidenceSource(quota.source || fallbackSource, fallbackSource, 'quota'),
     reason: quota.reason || (requestedSupported && !hasUsedQuotaWindow ? 'no_used_quota_window' : null),
     sampled_at: normalizeTimestamp(quota.sampled_at),
     primary,
@@ -117,43 +166,67 @@ function selectQuotaForRuntime(health, runtimeType) {
   return { supported: false, source: 'agent_health', reason: 'not_reported', primary: null, secondary: null, credits: null, sampled_at: null };
 }
 
-function normalizeUsageTokens(tokens) {
-  if (!tokens || typeof tokens !== 'object') return null;
-  const cleaned = {
-    input: typeof tokens.input === 'number' ? tokens.input : null,
-    output: typeof tokens.output === 'number' ? tokens.output : null,
-    cache_creation: typeof tokens.cache_creation === 'number' ? tokens.cache_creation : null,
-    cache_read: typeof tokens.cache_read === 'number' ? tokens.cache_read : null,
-    cached_input: typeof tokens.cached_input === 'number' ? tokens.cached_input : null,
-    reasoning: typeof tokens.reasoning === 'number' ? tokens.reasoning : null,
-    total: typeof tokens.total === 'number' ? tokens.total : null,
+function normalizeUsageTokenEvidence(tokens) {
+  if (!tokens || typeof tokens !== 'object') return { value: null, invalid: false };
+  const raw = {
+    input: tokens.input,
+    output: tokens.output,
+    cache_creation: tokens.cache_creation,
+    cache_read: tokens.cache_read,
+    cached_input: tokens.cached_input,
+    reasoning: tokens.reasoning,
+    total: tokens.total,
   };
-  return Object.values(cleaned).some(v => v != null) ? cleaned : null;
+  const token = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  if (Object.values(raw).some(value => value != null && token(value) == null)) {
+    return { value: null, invalid: true };
+  }
+  const cleaned = Object.fromEntries(
+    Object.entries(raw).map(([key, value]) => [key, token(value)]),
+  );
+  return {
+    value: Object.values(cleaned).some(value => value != null) ? cleaned : null,
+    invalid: false,
+  };
 }
 
-function normalizeUsageShape(usage, fallbackSource = 'agent_health') {
+function normalizeUsageShape(usage, runtimeType = 'unknown') {
   if (!usage || typeof usage !== 'object') return null;
-  const sessionTokens = normalizeUsageTokens(usage.session_tokens);
-  const lastTurnTokens = normalizeUsageTokens(usage.last_turn_tokens);
+  const sessionTokens = normalizeUsageTokenEvidence(usage.session_tokens);
+  const lastTurnTokens = normalizeUsageTokenEvidence(usage.last_turn_tokens);
+  const sessionCost = typeof usage.session_cost_usd === 'number'
+    && Number.isFinite(usage.session_cost_usd)
+    && usage.session_cost_usd >= 0
+    ? usage.session_cost_usd
+    : null;
+  const evidenceInvalid = sessionTokens.invalid
+    || lastTurnTokens.invalid
+    || (usage.session_cost_usd != null && sessionCost == null)
+    || (usage.estimated_cost != null && typeof usage.estimated_cost !== 'boolean')
+    || (usage.partial != null && typeof usage.partial !== 'boolean');
   const supported = typeof usage.supported === 'boolean'
     ? usage.supported
-    : !!(sessionTokens || lastTurnTokens);
+    : !!(sessionTokens.value || lastTurnTokens.value);
 
   return {
     supported,
-    source: usage.source || fallbackSource,
-    reason: usage.reason || null,
+    source: semanticEvidenceSource(usage.source || runtimeType, runtimeType, 'usage'),
+    reason: usage.reason || (evidenceInvalid ? 'invalid_value' : null),
     sampled_at: normalizeTimestamp(usage.sampled_at),
     session_id: usage.session_id || null,
     thread_id: usage.thread_id || null,
     model: usage.model || null,
+    model_source: semanticEvidenceSource(usage.model_source, runtimeType, 'model'),
+    model_sampled_at: normalizeTimestamp(usage.model_sampled_at),
     plan_type: usage.plan_type || null,
-    session_tokens: sessionTokens,
-    last_turn_tokens: lastTurnTokens,
-    session_cost_usd: typeof usage.session_cost_usd === 'number' ? usage.session_cost_usd : null,
-    estimated_cost: !!usage.estimated_cost,
+    session_tokens: sessionTokens.value,
+    last_turn_tokens: lastTurnTokens.value,
+    session_cost_usd: sessionCost,
+    cost_source: semanticEvidenceSource(usage.cost_source, runtimeType, 'cost'),
+    cost_sampled_at: normalizeTimestamp(usage.cost_sampled_at),
+    estimated_cost: typeof usage.estimated_cost === 'boolean' ? usage.estimated_cost : null,
     turns: typeof usage.turns === 'number' ? usage.turns : null,
-    partial: !!usage.partial,
+    partial: typeof usage.partial === 'boolean' ? usage.partial : null,
   };
 }
 
@@ -182,9 +255,30 @@ function selectUsageForRuntime(health, runtimeType) {
   return { supported: false, source: 'agent_health', reason: 'not_reported', session_tokens: null, last_turn_tokens: null, sampled_at: null };
 }
 
+function requiredMetricEvidence(metric) {
+  const pct = metric?.pct;
+  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 100) {
+    return { pct: null, status: 'unknown', unavailable_reason: 'invalid_value' };
+  }
+  return {
+    pct,
+    status: pct > 90 ? 'critical' : pct > 80 ? 'warning' : 'ok',
+    unavailable_reason: null,
+  };
+}
+
 function computeOverallSystemHealth(health) {
   if (!health) return 'unknown';
-  const statuses = [health.disk?.status, health.memory?.status];
+  const disk = requiredMetricEvidence(health.disk);
+  const memory = requiredMetricEvidence(health.memory);
+  if (disk.status === 'unknown' || memory.status === 'unknown') return 'unknown';
+  if (health.memory?.capacity_reason != null
+    || health.cpu?.reason != null
+    || health.pm2?.reason != null) {
+    return 'unknown';
+  }
+
+  const statuses = [disk.status, memory.status];
   if (health.cpu?.pct != null) {
     statuses.push(health.cpu.pct > 90 ? 'critical' : health.cpu.pct > 80 ? 'warning' : 'ok');
   }
@@ -222,29 +316,49 @@ function runtimeEvidenceLevel(health, runtimeType) {
   return 'none';
 }
 
-function hasRuntimeConfirmation(health) {
+function tokenEvidenceReported(tokens) {
+  return tokens && typeof tokens === 'object'
+    && Object.values(tokens).some(value => Number.isSafeInteger(value) && value >= 0);
+}
+
+function hasRuntimeConfirmation(health, runtimeType, now) {
   if (!health || typeof health !== 'object') return false;
   if (health?.runtime?.version) return true;
-  const supportedQuota = health?.quota && typeof health.quota === 'object'
-    ? Object.values(health.quota).some(item => item && typeof item === 'object' && item.supported === true)
-    : false;
-  if (supportedQuota) return true;
-  const supportedUsage = health?.usage && typeof health.usage === 'object'
-    ? Object.values(health.usage).some(item => item && typeof item === 'object' && item.supported === true)
-    : false;
-  return supportedUsage;
+
+  const quota = quotaForRead(selectQuotaForRuntime(health, runtimeType), {
+    now,
+    reportedAt: health.reported_at,
+  });
+  const quotaConfirmed = quota?.supported === true
+    && quota.source != null
+    && [quota.primary, quota.secondary]
+      .some(window => typeof window?.used_percent === 'number');
+  if (quotaConfirmed) return true;
+
+  const usage = usageForRead(selectUsageForRuntime(health, runtimeType), {
+    now,
+    reportedAt: health.reported_at,
+  });
+  const tokenConfirmed = usage?.supported === true
+    && usage.source != null
+    && (tokenEvidenceReported(usage.session_tokens) || tokenEvidenceReported(usage.last_turn_tokens));
+  const costConfirmed = usage?.supported === true
+    && usage.cost_source != null
+    && typeof usage.session_cost_usd === 'number';
+  return tokenConfirmed || costConfirmed;
 }
 
 function buildRuntimeSummary(agent, health, now) {
   const reportedAt = normalizeTimestamp(health?.reported_at);
-  const stale = !reportedAt || (now - reportedAt) > HEALTH_STALE_MS;
-  const type = normalizeRuntimeType(health?.runtime?.type);
+  const checkedAt = normalizeTimestamp(health?.runtime?.checked_at);
+  const stale = !freshTimestamp(reportedAt, now) || !freshTimestamp(checkedAt, now);
+  const type = stale ? 'unknown' : normalizeRuntimeType(health?.runtime?.type);
   const rawStatus = normalizeRuntimeStatus(health?.runtime?.status);
-  const systemHealth = computeOverallSystemHealth(health);
-  const evidence = runtimeEvidenceLevel(health, type);
+  const systemHealth = stale ? 'unknown' : computeOverallSystemHealth(health);
+  const evidence = stale ? 'none' : runtimeEvidenceLevel(health, type);
   const hasStrongEvidence = evidence === 'strong';
   const hasAnyEvidence = evidence !== 'none';
-  const confirmedRuntime = hasRuntimeConfirmation(health);
+  const confirmedRuntime = hasRuntimeConfirmation(health, type, now);
 
   let status = 'offline';
   if (stale) {
@@ -270,12 +384,12 @@ function buildRuntimeSummary(agent, health, now) {
   return {
     type,
     label: runtimeLabel(type),
-    version: health?.runtime?.version || null,
+    version: stale ? null : health?.runtime?.version || null,
     status,
-    source: health?.runtime?.source || 'agent_health',
-    detection_source: health?.runtime?.detection_source || null,
-    checked_at: normalizeTimestamp(health?.runtime?.checked_at) || reportedAt,
-    last_heartbeat_at: reportedAt,
+    source: stale ? null : health?.runtime?.source || 'agent_health',
+    detection_source: stale ? null : health?.runtime?.detection_source || null,
+    checked_at: stale ? null : checkedAt,
+    last_heartbeat_at: freshTimestamp(reportedAt, now) ? reportedAt : null,
     hostname: health?.hostname || null,
     stale,
     system_health: systemHealth,
@@ -298,9 +412,25 @@ function buildAgents() {
 
     const now = Date.now();
     const runtime = buildRuntimeSummary(a, health, now);
-    const quota = selectQuotaForRuntime(health, runtime.type);
-    const usage = selectUsageForRuntime(health, runtime.type);
-    const backup = buildBackupSummary(health?.backup || null, a.name);
+    const selectedQuota = selectQuotaForRuntime(health, runtime.type);
+    const quota = health
+      ? quotaForRead(selectedQuota, { now, reportedAt: health.reported_at })
+      : selectedQuota;
+    const selectedUsage = selectUsageForRuntime(health, runtime.type);
+    const usage = health
+      ? usageForRead(selectedUsage, { now, reportedAt: health.reported_at })
+      : selectedUsage;
+    const backup = buildBackupAgent(a, health, undefined, now).summary;
+    const observability = buildAgentObservability({
+      runtime: { ...runtime, source: 'agent_health' },
+      quota,
+      usage,
+      backup,
+      roster: health?.roster || null,
+      activity: health?.activity_monitor || null,
+      now,
+      reportedAt: health?.reported_at,
+    });
     const recentWorkEvents = allRecentEvents.filter(e => e.timestamp && e.timestamp > (now - WORK_SIGNAL_WINDOW_MS) && isWorkSignal(e.action));
     const lastWorkSignal = recentWorkEvents[0] || allRecentEvents.find(e => isWorkSignal(e.action)) || null;
     const latestEventTs = (lastWorkSignal && lastWorkSignal.timestamp) || (latestEvent && latestEvent.timestamp) || 0;
@@ -363,6 +493,7 @@ function buildAgents() {
       quota,
       usage,
       backup,
+      observability,
       last_heartbeat_at: runtime.last_heartbeat_at,
       active_projects: activeProjects,
       top_collaborator: topCollaborator,
@@ -393,7 +524,7 @@ function buildAgents() {
         project: lastWorkSignal.project
       } : null,
       sparkline_7d: db.getAgentSparkline7d(a.name),
-      hardware: buildHardwareSummary(health, runtime),
+      hardware: buildHardwareSummary(health, runtime, now),
       stats: {
         open_tasks: openTasks.length,
         closed_tasks: closedTasks.length,
@@ -477,25 +608,35 @@ router.get('/:name', (req, res) => {
 });
 
 // Build compact hardware summary from agent-health data (#122)
-function buildHardwareSummary(health, runtime) {
+function buildHardwareSummary(health, runtime, now = Date.now()) {
   if (!health) return null;
 
-  const stale = (Date.now() - health.reported_at) > 10 * 60 * 1000;
+  const reportedAt = normalizeTimestamp(health.reported_at);
+  const reportReason = timestampReadReason(reportedAt, now);
+  const stale = reportReason != null;
+  const disk = stale
+    ? { pct: null, status: 'unknown', unavailable_reason: reportReason }
+    : requiredMetricEvidence(health.disk);
+  const memory = stale
+    ? { pct: null, status: 'unknown', unavailable_reason: reportReason }
+    : requiredMetricEvidence(health.memory);
   return {
-    disk_pct: health.disk ? health.disk.pct : null,
-    disk_status: health.disk ? health.disk.status : null,
-    mem_pct: health.memory ? health.memory.pct : null,
-    mem_status: health.memory ? health.memory.status : null,
-    cpu_pct: health.cpu ? health.cpu.pct : null,
-    pm2_online: health.pm2 ? health.pm2.online : null,
-    pm2_total: health.pm2 ? health.pm2.total : null,
+    disk_pct: disk.pct,
+    disk_status: disk.status,
+    disk_unavailable_reason: disk.unavailable_reason || null,
+    mem_pct: memory.pct,
+    mem_status: memory.status,
+    mem_unavailable_reason: memory.unavailable_reason || null,
+    cpu_pct: stale ? null : health.cpu?.pct ?? null,
+    pm2_online: stale ? null : health.pm2?.online ?? null,
+    pm2_total: stale ? null : health.pm2?.total ?? null,
     hostname: health.hostname || runtime?.hostname || null,
     runtime_type: runtime?.type || 'unknown',
     runtime_version: runtime?.version || null,
     runtime_status: runtime?.status || 'offline',
     system_health: runtime?.system_health || 'unknown',
     stale,
-    reported_at: health.reported_at,
+    reported_at: stale ? null : reportedAt,
   };
 }
 

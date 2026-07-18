@@ -44,18 +44,18 @@ async function fetchJson(fetchImpl, url) {
     }, FETCH_TIMEOUT_MS);
   });
   try {
-    const response = await Promise.race([
-      fetchImpl(url, {
+    const request = (async () => {
+      const response = await fetchImpl(url, {
         method: 'GET',
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',
         cache: 'no-store',
         signal: controller.signal,
-      }),
-      timeout,
-    ]);
-    if (!response.ok) throw new Error(`http_${response.status}`);
-    return await response.json();
+      });
+      if (!response.ok) throw new Error(`http_${response.status}`);
+      return response.json();
+    })();
+    return await Promise.race([request, timeout]);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -259,6 +259,240 @@ function formatDateTime(value) {
   return date.toLocaleString('zh-CN', { hour12: false });
 }
 
+const DETAIL_SOURCE_LABELS = Object.freeze({
+  agent_health: '中央健康记录（agent_health）',
+  statusline: '本机状态行（statusline）',
+  statusline_roster: '本机状态清单（statusline_roster）',
+  transcript: '会话记录（transcript）',
+  codex: 'Codex 本机记录（codex）',
+  dashboard_api: '本机 Dashboard 只读接口（dashboard_api）',
+  activity_monitor_fallback: '活跃度监控补充（activity_monitor_fallback）',
+});
+
+const DETAIL_REASON_LABELS = Object.freeze({
+  not_reported: '未上报',
+  unsupported: '不支持',
+  unsupported_for_now: '暂不支持',
+  no_used_quota_window: '没有可用额度窗口',
+  window_not_reported: '对应额度窗口未上报',
+  sample_time_unavailable: '缺少采样时间',
+  invalid_value: '值格式无效',
+  no_authoritative_field: '没有权威字段',
+  three_evidence_not_reported: '三项备份证据未齐',
+  activity_monitor_unavailable: '活跃度监控不可用',
+  stale_sample: '采样已过期',
+  single_session_snapshot_not_comparable: '仅有单会话快照，不能用于 7 天排行',
+});
+
+function detailSourceLabel(source) {
+  return DETAIL_SOURCE_LABELS[source] || '未提供';
+}
+
+function detailReasonLabel(reason) {
+  return DETAIL_REASON_LABELS[reason] || '未提供有效原因';
+}
+
+function detailEvidence({ available, value, source, sampledAt, unavailableReason }) {
+  return {
+    availability: available ? 'available' : 'unavailable',
+    value: available ? value : '暂不可用',
+    meta: `来源：${detailSourceLabel(source)} · 采样：${formatDateTime(sampledAt)} · 不可用原因：${available ? '无' : detailReasonLabel(unavailableReason)}`,
+  };
+}
+
+function runtimeTypeLabel(type) {
+  if (type === 'codex') return 'Codex';
+  if (type === 'claude' || type === 'claude_code') return 'Claude Code';
+  if (type === 'openclaw') return 'OpenClaw';
+  if (type === 'unknown') return '运行时类型未知';
+  return null;
+}
+
+function quotaDetail(window, quota) {
+  const available = window?.availability === 'available' && window.usedPercent != null;
+  const evidence = detailEvidence({
+    available,
+    value: available ? `已用 ${window.usedPercent}%` : null,
+    source: quota?.source,
+    sampledAt: quota?.sampledAt,
+    unavailableReason: window?.unavailableReason || 'not_reported',
+  });
+  if (available && window?.resetsAt) {
+    evidence.meta += ` · 重置：${formatDateTime(window.resetsAt)}`;
+  }
+  return evidence;
+}
+
+function comparableTokenRank(employee) {
+  const available = employee?.tokens != null && Number.isFinite(Number(employee.tokens));
+  const value = employee?.rank != null
+    ? `第 ${employee.rank} 名 · ${Number(employee.tokens).toLocaleString('zh-CN')} Token（7 天可比口径）`
+    : `${Number(employee?.tokens || 0).toLocaleString('zh-CN')} Token（7 天可比口径；覆盖不足不排名）`;
+  return {
+    availability: available ? 'available' : 'unavailable',
+    value: available ? value : '暂不可用',
+    meta: `来源：中央 7 天 Token 汇总（/api/tokens） · 源采样：${formatDateTime(employee?.tokenSampledAt)} · 中央确认：${formatDateTime(employee?.tokenObservedAt)} · 不可用原因：${available ? '无' : detailReasonLabel(employee?.tokenUnavailableReason || 'not_reported')}`,
+  };
+}
+
+export function buildEmployeeDetailPresentation(employee = {}) {
+  const observability = employee.observability || {};
+  const runtime = observability.runtime || {};
+  const model = observability.model || {};
+  const context = observability.context || {};
+  const quota = observability.quota || {};
+  const sessionTokens = observability.sessionTokens || {};
+  const cost = observability.cost || {};
+  const backup = observability.backup || {};
+  const activity = observability.activity || {};
+  const runtimeLabel = runtimeTypeLabel(runtime.type);
+  const runtimeAvailable = runtime.availability === 'available' && runtimeLabel != null;
+  const modelAvailable = model.availability === 'available' && model.value != null;
+  const pendingRestartAvailable = runtime.pendingRestartAvailability === 'available'
+    && typeof runtime.pendingRestart === 'boolean';
+  const contextAvailable = context.availability === 'available' && context.usedPercent != null;
+  const contextParts = contextAvailable ? [`已用 ${context.usedPercent}%`] : [];
+  if (contextAvailable && context.remainingPercent != null) contextParts.push(`剩余 ${context.remainingPercent}%`);
+  if (contextAvailable && context.totalTokens != null) {
+    contextParts.push(`当前上下文 ${Number(context.totalTokens).toLocaleString('zh-CN')} Token`);
+  }
+  const sessionTokensAvailable = sessionTokens.availability === 'available' && sessionTokens.total != null;
+  const costAvailable = cost.availability === 'available' && cost.total != null && cost.currency === 'USD';
+  const backupAvailable = backup.availability === 'available' && backup.status != null;
+  const lastSuccessAvailable = backupAvailable
+    && backup.lastSuccessAvailability === 'available'
+    && backup.lastSuccessAt != null;
+  const remoteMatchAvailable = backupAvailable
+    && backup.remoteMatchAvailability === 'available'
+    && typeof backup.remoteMatch === 'boolean';
+  const restoreDrillAvailable = backupAvailable
+    && backup.restoreDrill?.status === 'verified'
+    && backup.restoreDrill?.evidenceAt != null;
+  const backupEvidenceReason = backupAvailable
+    ? 'three_evidence_not_reported'
+    : (backup.unavailableReason || 'not_reported');
+  const activityAvailable = activity.availability === 'available'
+    && activity.source === 'activity_monitor_fallback'
+    && activity.usedForRouting === false;
+  const activityState = {
+    busy: '工作中',
+    idle: '待命',
+    waiting: '等待中',
+    offline: '离线',
+    unknown: '状态未知',
+  }[activity.state] || '状态未知';
+  const activityHealth = activity.health === 'ok' ? '健康正常' : '健康信息不可用';
+
+  return {
+    runtime: detailEvidence({
+      available: runtimeAvailable,
+      value: `${runtimeLabel}${runtime.version ? ` ${runtime.version}` : ''}`,
+      source: runtime.source,
+      sampledAt: runtime.sampledAt,
+      unavailableReason: runtime.unavailableReason || 'not_reported',
+    }),
+    model: detailEvidence({
+      available: modelAvailable,
+      value: model.value,
+      source: model.source,
+      sampledAt: model.sampledAt,
+      unavailableReason: model.unavailableReason || 'not_reported',
+    }),
+    pendingRestart: detailEvidence({
+      available: pendingRestartAvailable,
+      value: runtime.pendingRestart ? '等待重启' : '无需重启',
+      source: runtime.source,
+      sampledAt: runtime.sampledAt,
+      unavailableReason: runtime.pendingRestartUnavailableReason || runtime.unavailableReason || 'no_authoritative_field',
+    }),
+    context: detailEvidence({
+      available: contextAvailable,
+      value: contextParts.join(' · '),
+      source: context.source,
+      sampledAt: context.sampledAt,
+      unavailableReason: context.unavailableReason || 'not_reported',
+    }),
+    quotaFiveHour: quotaDetail(quota.fiveHour, quota),
+    quotaSevenDay: quotaDetail(quota.sevenDay, quota),
+    sessionTokens: detailEvidence({
+      available: sessionTokensAvailable,
+      value: `${Number(sessionTokens.total).toLocaleString('zh-CN')} Token（单次会话累计）`,
+      source: sessionTokens.source,
+      sampledAt: sessionTokens.sampledAt,
+      unavailableReason: sessionTokens.unavailableReason || 'not_reported',
+    }),
+    cumulativeCost: detailEvidence({
+      available: costAvailable,
+      value: `US$${Number(cost.total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}（单次会话累计${cost.estimated === true ? '，估算' : ''}）`,
+      source: cost.source,
+      sampledAt: cost.sampledAt,
+      unavailableReason: cost.unavailableReason || 'not_reported',
+    }),
+    comparableTokenRank: comparableTokenRank(employee),
+    backupStatus: detailEvidence({
+      available: backupAvailable,
+      value: ({ ok: '本机备份记录正常', warning: '本机备份记录需关注', critical: '本机备份记录异常', unsupported: '本机不支持该备份检查' })[backup.status],
+      source: backup.source,
+      sampledAt: backup.sampledAt,
+      unavailableReason: backup.unavailableReason || 'not_reported',
+    }),
+    backupLastSuccess: detailEvidence({
+      available: lastSuccessAvailable,
+      value: formatDateTime(backup.lastSuccessAt),
+      source: backup.source,
+      sampledAt: backup.sampledAt,
+      unavailableReason: backupEvidenceReason,
+    }),
+    backupRemoteMatch: detailEvidence({
+      available: remoteMatchAvailable,
+      value: backup.remoteMatch ? '预期远端一致，且无未同步改动' : '预期远端或本地同步检查不一致',
+      source: backup.source,
+      sampledAt: backup.sampledAt,
+      unavailableReason: backupEvidenceReason,
+    }),
+    backupRestoreDrill: detailEvidence({
+      available: restoreDrillAvailable,
+      value: `已验证 · ${formatDateTime(backup.restoreDrill?.evidenceAt)}`,
+      source: backup.source,
+      sampledAt: backup.sampledAt,
+      unavailableReason: backupEvidenceReason,
+    }),
+    activity: detailEvidence({
+      available: activityAvailable,
+      value: `${activityState} · ${activityHealth} · 仅展示，不参与调度`,
+      source: activity.source,
+      sampledAt: activity.sampledAt,
+      unavailableReason: activity.unavailableReason || 'activity_monitor_unavailable',
+    }),
+  };
+}
+
+const DETAIL_DOM_IDS = Object.freeze({
+  quotaFiveHour: 'detail-5h',
+  quotaSevenDay: 'detail-7d',
+  comparableTokenRank: 'detail-rank',
+  context: 'detail-context',
+  sessionTokens: 'detail-session-tokens',
+  cumulativeCost: 'detail-cost',
+  runtime: 'detail-runtime-evidence',
+  model: 'detail-model',
+  pendingRestart: 'detail-pending-restart',
+  backupStatus: 'detail-backup-status',
+  backupLastSuccess: 'detail-backup-last-success',
+  backupRemoteMatch: 'detail-backup-remote',
+  backupRestoreDrill: 'detail-backup-restore',
+  activity: 'detail-activity',
+});
+
+export function applyEmployeeDetail(documentRef, employee) {
+  const presentation = buildEmployeeDetailPresentation(employee);
+  for (const [key, id] of Object.entries(DETAIL_DOM_IDS)) {
+    setText(documentRef, id, presentation[key].value);
+    setText(documentRef, `${id}-meta`, presentation[key].meta);
+  }
+  return presentation;
+}
+
 export function formatTokenPeriod(period) {
   const startDate = String(period?.startDate || '');
   const endDate = String(period?.endDate || '');
@@ -454,6 +688,9 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined') {
   if (classicRedirect) {
     window.location.replace(classicRedirect);
   } else {
+    if (window.workbenchView) {
+      window.workbenchView.renderEmployeeDetail = employee => applyEmployeeDetail(document, employee);
+    }
     const fetchImpl = window.fetch.bind(window);
     const presenter = createWorkbenchSnapshotPresenter({
       renderSnapshot(snapshot) {

@@ -26,7 +26,7 @@ describe('limits quota freshness', () => {
     });
   });
 
-  it('falls back to the heartbeat timestamp when sampled_at is missing', () => {
+  it('keeps quota stale when its own source time is missing', () => {
     const now = nowMs;
     const heartbeatAt = now - 120_000;
     const quota = enrichQuota({
@@ -35,8 +35,12 @@ describe('limits quota freshness', () => {
       primary: { used_percent: 12 },
     }, heartbeatAt, now);
 
-    expect(quota.sampled_at).toBe(heartbeatAt);
-    expect(quota.freshness.status).toBe('fresh');
+    expect(quota.sampled_at).toBeNull();
+    expect(quota.freshness).toMatchObject({
+      status: 'stale',
+      sampled_at: null,
+      age_ms: null,
+    });
   });
 
   it('normalizes second-epoch sampled_at values to milliseconds', () => {
@@ -65,5 +69,19 @@ describe('limits quota freshness', () => {
     expect(quota.sampled_at).toBe(sampledAt);
     expect(quota.freshness.status).toBe('stale');
     expect(quota.freshness.age_ms).toBe(QUOTA_STALE_MS + 1);
+  });
+
+  it('marks quota source time beyond clock skew stale without clamping its age', () => {
+    const quota = enrichQuota({
+      supported: true,
+      sampled_at: nowMs + 5_001,
+      primary: { used_percent: 12 },
+    }, nowMs - 1_000, nowMs);
+
+    expect(quota.freshness).toMatchObject({
+      status: 'stale',
+      sampled_at: nowMs + 5_001,
+      age_ms: -5_001,
+    });
   });
 });

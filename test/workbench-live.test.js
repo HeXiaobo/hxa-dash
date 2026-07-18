@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyWorkbenchModel,
+  applyEmployeeDetail,
+  buildEmployeeDetailPresentation,
   buildWorkbenchPresentation,
   classicRedirectForHash,
   createWorkbenchRefreshController,
@@ -11,6 +13,10 @@ import {
   modelFromSnapshot,
   scheduleWorkbenchRefresh,
 } from '../public/js/workbench-live.js';
+import {
+  TWO_NODE_SAMPLED_AT,
+  twoNodeWorkbenchSnapshot,
+} from './fixtures/workbench-two-node.js';
 
 describe('central workbench live adapter', () => {
   it('reads only authenticated central endpoints under the browser base path', async () => {
@@ -40,6 +46,157 @@ describe('central workbench live adapter', () => {
     expect(modelFromSnapshot(snapshot).employees).toHaveLength(22);
   });
 
+  it('keeps two-node detail evidence and seven-day ranking visibly separate', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TWO_NODE_SAMPLED_AT + 1_000);
+    try {
+      const model = modelFromSnapshot(twoNodeWorkbenchSnapshot());
+      const yueran = buildEmployeeDetailPresentation(
+        model.employees.find(employee => employee.id === 'yueran'),
+      );
+      const mylos = buildEmployeeDetailPresentation(
+        model.employees.find(employee => employee.id === 'mylos'),
+      );
+
+      expect(yueran).toMatchObject({
+        runtime: { value: 'Codex 9.9.1-fixture' },
+        model: { value: 'codex-fixture-alpha' },
+        pendingRestart: { value: '暂不可用' },
+        context: { value: '已用 61.2% · 剩余 38.8% · 当前上下文 120,000 Token' },
+        quotaFiveHour: { value: '暂不可用' },
+        quotaSevenDay: { value: '已用 23%' },
+        sessionTokens: { value: '321,000 Token（单次会话累计）' },
+        cumulativeCost: { value: '暂不可用' },
+        comparableTokenRank: { value: '第 1 名 · 4,200 Token（7 天可比口径）' },
+        backupStatus: { value: '暂不可用' },
+        activity: { value: '暂不可用' },
+      });
+      expect(yueran.quotaFiveHour.meta).toContain('不可用原因：对应额度窗口未上报');
+      expect(yueran.cumulativeCost.meta).toContain('不可用原因：未上报');
+      expect(yueran.sessionTokens.meta).toContain('来源：Codex 本机记录（codex）');
+      expect(yueran.comparableTokenRank.meta).toContain('中央确认：');
+
+      expect(mylos).toMatchObject({
+        runtime: { value: 'Claude Code 8.8.2-fixture' },
+        model: { value: 'claude-fixture-beta' },
+        pendingRestart: { value: '暂不可用' },
+        context: { value: '已用 27.5% · 剩余 72.5%' },
+        quotaFiveHour: { value: '已用 7%' },
+        quotaSevenDay: { value: '已用 41%' },
+        sessionTokens: { value: '650,100 Token（单次会话累计）' },
+        cumulativeCost: { value: 'US$12.34（单次会话累计，估算）' },
+        comparableTokenRank: { value: '第 2 名 · 2,100 Token（7 天可比口径）' },
+        backupStatus: { value: '本机备份记录正常' },
+        backupLastSuccess: { value: '暂不可用' },
+        backupRemoteMatch: { value: '暂不可用' },
+        backupRestoreDrill: { value: '暂不可用' },
+        activity: { value: '待命 · 健康正常 · 仅展示，不参与调度' },
+      });
+      expect(mylos.activity.meta).toContain('来源：活跃度监控补充（activity_monitor_fallback）');
+      expect(mylos.activity.meta).toContain('不可用原因：无');
+      expect(mylos.backupRestoreDrill.meta).toContain('不可用原因：三项备份证据未齐');
+      expect(mylos.sessionTokens.value).not.toContain('2,100');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('writes both nodes into the employee-detail DOM with provenance and unavailable reasons', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TWO_NODE_SAMPLED_AT + 1_000);
+    const detailKeys = [
+      'quotaFiveHour',
+      'quotaSevenDay',
+      'comparableTokenRank',
+      'context',
+      'sessionTokens',
+      'cumulativeCost',
+      'runtime',
+      'model',
+      'pendingRestart',
+      'backupStatus',
+      'backupLastSuccess',
+      'backupRemoteMatch',
+      'backupRestoreDrill',
+      'activity',
+    ];
+    const idForKey = {
+      quotaFiveHour: 'detail-5h',
+      quotaSevenDay: 'detail-7d',
+      comparableTokenRank: 'detail-rank',
+      context: 'detail-context',
+      sessionTokens: 'detail-session-tokens',
+      cumulativeCost: 'detail-cost',
+      runtime: 'detail-runtime-evidence',
+      model: 'detail-model',
+      pendingRestart: 'detail-pending-restart',
+      backupStatus: 'detail-backup-status',
+      backupLastSuccess: 'detail-backup-last-success',
+      backupRemoteMatch: 'detail-backup-remote',
+      backupRestoreDrill: 'detail-backup-restore',
+      activity: 'detail-activity',
+    };
+    const nodes = {};
+    for (const key of detailKeys) {
+      const id = idForKey[key];
+      nodes[id] = { textContent: '' };
+      nodes[`${id}-meta`] = { textContent: '' };
+    }
+    const documentRef = { getElementById: id => nodes[id] || null };
+
+    try {
+      const model = modelFromSnapshot(twoNodeWorkbenchSnapshot());
+      const yueran = model.employees.find(employee => employee.id === 'yueran');
+      const mylos = model.employees.find(employee => employee.id === 'mylos');
+
+      applyEmployeeDetail(documentRef, yueran);
+      expect(nodes['detail-5h'].textContent).toBe('暂不可用');
+      expect(nodes['detail-5h-meta'].textContent).toContain('不可用原因：对应额度窗口未上报');
+      expect(nodes['detail-session-tokens'].textContent).toBe('321,000 Token（单次会话累计）');
+      expect(nodes['detail-rank'].textContent).toBe('第 1 名 · 4,200 Token（7 天可比口径）');
+      expect(nodes['detail-cost-meta'].textContent).toContain('不可用原因：未上报');
+
+      applyEmployeeDetail(documentRef, mylos);
+      expect(nodes['detail-5h'].textContent).toBe('已用 7%');
+      expect(nodes['detail-session-tokens'].textContent).toBe('650,100 Token（单次会话累计）');
+      expect(nodes['detail-rank'].textContent).toBe('第 2 名 · 2,100 Token（7 天可比口径）');
+      expect(nodes['detail-cost'].textContent).toBe('US$12.34（单次会话累计，估算）');
+      expect(nodes['detail-activity'].textContent).toContain('仅展示，不参与调度');
+      expect(nodes['detail-activity-meta'].textContent).toContain('不可用原因：无');
+      expect(nodes['detail-backup-restore-meta'].textContent).toContain('不可用原因：三项备份证据未齐');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('explains that a single-session snapshot cannot be used for the seven-day rank', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TWO_NODE_SAMPLED_AT + 1_000);
+    try {
+      const snapshot = twoNodeWorkbenchSnapshot();
+      snapshot.tokens.observed = {
+        ...snapshot.tokens.observed,
+        comparable: false,
+        comparability: 'single_session_snapshot',
+        unavailable_reason: 'single_session_snapshot_not_comparable',
+        agents: snapshot.tokens.observed.agents.map(agent => ({
+          ...agent,
+          partial_baseline: true,
+        })),
+      };
+
+      const yueran = buildEmployeeDetailPresentation(
+        modelFromSnapshot(snapshot).employees.find(employee => employee.id === 'yueran'),
+      );
+
+      expect(yueran.comparableTokenRank.value).toBe('暂不可用');
+      expect(yueran.comparableTokenRank.meta)
+        .toContain('不可用原因：仅有单会话快照，不能用于 7 天排行');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('presents backup evidence separately from restore readiness and uses date-window Token copy', () => {
     const presentation = buildWorkbenchPresentation({
       employees: [],
@@ -48,7 +205,7 @@ describe('central workbench live adapter', () => {
         covered: 4,
         healthy: 3,
         synchronized: 2,
-        latestSuccessAt: '2026-07-17T03:20:00.000Z',
+        latestSuccessAt: '2040-01-15T03:20:00.000Z',
         restoreStatus: 'unverified',
       },
     });
@@ -60,10 +217,10 @@ describe('central workbench live adapter', () => {
       restoreLabel: '待验证',
     });
     expect(formatTokenPeriod({
-      startDate: '2026-07-11',
-      endDate: '2026-07-17',
+      startDate: '2040-01-09',
+      endDate: '2040-01-15',
       timezone: 'Asia/Shanghai',
-    })).toBe('统计时段 2026-07-11 至 2026-07-17（Asia/Shanghai）');
+    })).toBe('统计时段 2040-01-09 至 2040-01-15（Asia/Shanghai）');
     expect(formatTokenPeriod(null)).toBe('统计时段暂不可用');
   });
 
@@ -120,6 +277,33 @@ describe('central workbench live adapter', () => {
       const pending = fetchWorkbenchSnapshot(hungFetch, '', ['agentStates']);
       await vi.advanceTimersByTimeAsync(10_000);
       const snapshot = await pending;
+
+      expect(requestSignal?.aborted).toBe(true);
+      expect(snapshot).toEqual({
+        errors: [{ source: 'agentStates', reason: 'timeout' }],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('bounds response body parsing after the endpoint has returned headers', async () => {
+    vi.useFakeTimers();
+    let requestSignal;
+    let snapshot;
+    const stalledBodyFetch = (_url, options) => {
+      requestSignal = options.signal;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => new Promise(() => {}),
+      });
+    };
+
+    try {
+      fetchWorkbenchSnapshot(stalledBodyFetch, '', ['agentStates'])
+        .then(value => { snapshot = value; });
+      await vi.advanceTimersByTimeAsync(10_000);
 
       expect(requestSignal?.aborted).toBe(true);
       expect(snapshot).toEqual({
@@ -275,7 +459,7 @@ describe('central workbench live adapter', () => {
 
   it('re-presents a snapshot when fresh agent state reaches its local expiry', async () => {
     vi.useFakeTimers();
-    const now = Date.parse('2026-07-17T02:00:00.000Z');
+    const now = Date.parse('2040-01-15T02:00:00.000Z');
     vi.setSystemTime(now);
     const states = [];
     const presenter = createWorkbenchSnapshotPresenter({

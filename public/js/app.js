@@ -147,9 +147,13 @@ const RuntimeCenter = {
     const waiting = records.filter(r => this._backupStatus(r).key === 'waiting').length;
     const healthy = records.filter(r => this._backupStatus(r).key === 'ok').length;
     const payloadSummary = backups?.summary || {};
+    const repoCount = Number.isSafeInteger(payloadSummary.repos) && payloadSummary.repos >= 0
+      ? payloadSummary.repos
+      : null;
+    const repoCountText = repoCount == null ? '暂不可用' : String(repoCount);
     if (summaryEl) {
       summaryEl.textContent = records.length
-        ? `${payloadSummary.total_agents || records.length} 位 · ${payloadSummary.repos || this._backupRepoCount(records)} 个 GitHub 仓库 · ${healthy} 正常 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
+        ? `${payloadSummary.total_agents || records.length} 位 · ${repoCountText} 个 GitHub 仓库 · ${healthy} 正常 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
         : '等待 /api/backups 数据';
     }
     if (!records.length) {
@@ -164,7 +168,7 @@ const RuntimeCenter = {
     container.innerHTML = `
       <div class="backup-summary-grid">
         <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.total_agents || records.length}</span><span class="runtime-stat-label">助理</span></div>
-        <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.repos || this._backupRepoCount(records)}</span><span class="runtime-stat-label">GitHub 仓库</span></div>
+        <div class="runtime-stat-card"><span class="runtime-stat-value">${repoCountText}</span><span class="runtime-stat-label">GitHub 仓库</span></div>
         <div class="runtime-stat-card"><span class="runtime-stat-value">${healthy}</span><span class="runtime-stat-label">正常</span></div>
         <div class="runtime-stat-card attention"><span class="runtime-stat-value">${abnormal.length}</span><span class="runtime-stat-label">异常</span></div>
       </div>
@@ -177,11 +181,11 @@ const RuntimeCenter = {
               return `<tr>
                 <td>${esc(this._backupAgentName(r))}</td>
                 <td><span class="runtime-pill ${status.cls}">${status.label}</span></td>
-                <td>${esc(this._timeAgoText(this._backupLastSuccessAt(r) || this._backupCheckedAt(r)))}</td>
+                <td>${esc(this._backupLastSuccessText(r))}</td>
                 <td>${this._backupTargetHTML(r)}</td>
-                <td>${esc(String(this._backupNumber(r, 'ahead')))}</td>
-                <td>${esc(String(this._backupNumber(r, 'behind')))}</td>
-                <td>${esc(String(this._backupNumber(r, 'dirty') + this._backupNumber(r, 'untracked')))}</td>
+                <td>${esc(this._backupCounterText(r, 'ahead'))}</td>
+                <td>${esc(this._backupCounterText(r, 'behind'))}</td>
+                <td>${esc(this._backupLocalChangeText(r))}</td>
                 <td>${esc(status.detail || this._backupSummaryText(r))}</td>
               </tr>`;
             }).join('')}
@@ -418,7 +422,16 @@ const RuntimeCenter = {
         detail: isMissingReport ? '等待上报程序上报' : (reasonText || '备份状态不可用')
       };
     }
-    if (raw === 'ok') return { key: 'ok', cls: 'ok', label: this._backupOkLabel(summary) };
+    if (raw === 'ok') {
+      const counterEvidenceMissing = summary?.backup_required !== false
+        && summary?.counter_evidence_complete !== true;
+      return {
+        key: 'ok',
+        cls: 'ok',
+        label: this._backupOkLabel(summary),
+        detail: counterEvidenceMissing ? '同步计数暂不可用' : null,
+      };
+    }
 
     const okRaw = ['ok', 'success', 'healthy', 'fresh', 'synced', 'completed'].includes(raw);
     const failedRaw = ['failed', 'error', 'stale', 'missing', 'blocked'].includes(raw);
@@ -467,9 +480,7 @@ const RuntimeCenter = {
   _backupRecords(backups, agents) {
     const raw = Array.isArray(backups) ? backups : (backups?.agents || backups?.backups || backups?.records || []);
     if (raw.length) return raw;
-    return agents
-      .filter(a => a.backup || a.github_backup || a.backups)
-      .map(a => ({ agent: a.name, ...(Array.isArray(a.backups) ? a.backups[0] : (a.backup || a.github_backup || {})) }));
+    return [];
   },
 
   _backupAgentName(record) {
@@ -484,9 +495,27 @@ const RuntimeCenter = {
     return record.summary?.last_success_at || record.cron?.last_success_at || record.last_success_at || record.last_backup_at;
   },
 
+  _backupLastSuccessText(record) {
+    const last = this._backupLastSuccessAt(record);
+    return last ? this._timeAgoText(last) : '暂不可用';
+  },
+
   _backupNumber(record, key) {
-    const value = record.summary?.[key] ?? record[key] ?? 0;
-    return Number.isFinite(Number(value)) ? Number(value) : 0;
+    if (record.summary?.backup_required !== false
+      && record.summary?.counter_evidence_complete !== true) return null;
+    const value = record.summary?.[key] ?? record[key];
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  },
+
+  _backupCounterText(record, key) {
+    const value = this._backupNumber(record, key);
+    return value == null ? '暂不可用' : String(value);
+  },
+
+  _backupLocalChangeText(record) {
+    const dirty = this._backupNumber(record, 'dirty');
+    const untracked = this._backupNumber(record, 'untracked');
+    return dirty == null || untracked == null ? '暂不可用' : String(dirty + untracked);
   },
 
   _backupRepoCount(records) {
@@ -494,6 +523,7 @@ const RuntimeCenter = {
   },
 
   _backupOkLabel(summary) {
+    if (summary?.backup_required !== false && summary?.counter_evidence_complete !== true) return '备份可见';
     if (summary?.total) return `正常 ${summary.ok || summary.total}/${summary.total}`;
     return '备份正常';
   },
@@ -527,6 +557,9 @@ const RuntimeCenter = {
     else if (summary.log_path || record.cron?.log_path) parts.push('仅检测到备份日志');
     const lastSuccess = this._backupLastSuccessAt(record);
     if (lastSuccess) parts.push(`最近成功 ${this._timeAgoText(lastSuccess)}`);
+    if (summary.backup_required !== false && summary.counter_evidence_complete !== true) {
+      parts.push('同步计数暂不可用');
+    }
     const ahead = this._backupNumber(record, 'ahead');
     const behind = this._backupNumber(record, 'behind');
     const dirty = this._backupNumber(record, 'dirty');
@@ -547,6 +580,9 @@ const RuntimeCenter = {
       backup_not_required: '非 AI 员工，无需 GitHub 仓库',
       git_not_available: '未安装 git，无法检查仓库状态',
       collection_failed: '仓库状态采集失败',
+      upstream_unavailable: '未找到可核验的上游分支',
+      sync_probe_failed: '仓库同步状态核验失败',
+      worktree_probe_failed: '本地仓库状态核验失败',
       no_github_remote: '未配置 GitHub 远端',
       no_github_backup_repo: '未发现 GitHub 仓库',
       github_repo_mismatch: 'GitHub 仓库不匹配',
@@ -561,6 +597,7 @@ const RuntimeCenter = {
       failure_after_last_success: '最近成功后又出现失败记录',
       backup_success_too_old: '最近成功备份时间过久',
       backup_success_stale: '最近成功备份已超过预期',
+      backup_success_in_future: '最近成功备份时间晚于采集时间',
       no_backup_signal_found: '未发现备份日志或备份仓库',
       no_git_repositories_found: '未发现备份仓库'
     };
