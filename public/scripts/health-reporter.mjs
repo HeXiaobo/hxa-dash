@@ -368,41 +368,43 @@ function latestFiles(rootDir, predicate, limit = 20) {
 }
 
 function numberOrNull(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
 
 function tokenOrNull(value) {
   const n = numberOrNull(value);
-  return n == null || n < 0 ? null : Math.round(n);
+  return n == null || !Number.isSafeInteger(n) || n < 0 ? null : n;
 }
 
 function normalizeUsageTokens(raw) {
   if (!raw || typeof raw !== 'object') return null;
 
-  const tokens = {
-    input: tokenOrNull(raw.input_tokens ?? raw.input ?? raw.total_input_tokens ?? raw.prompt_tokens),
-    output: tokenOrNull(raw.output_tokens ?? raw.output ?? raw.total_output_tokens ?? raw.completion_tokens),
-    cache_creation: tokenOrNull(
+  const rawTokens = {
+    input: raw.input_tokens ?? raw.input ?? raw.total_input_tokens ?? raw.prompt_tokens,
+    output: raw.output_tokens ?? raw.output ?? raw.total_output_tokens ?? raw.completion_tokens,
+    cache_creation:
       raw.cache_creation_input_tokens ??
       raw.cache_creation_tokens ??
       raw.cache_write_input_tokens ??
-      raw.cache_write_tokens
-    ),
-    cache_read: tokenOrNull(
+      raw.cache_write_tokens,
+    cache_read:
       raw.cache_read_input_tokens ??
-      raw.cache_read_tokens
-    ),
-    cached_input: tokenOrNull(
+      raw.cache_read_tokens,
+    cached_input:
       raw.cached_input_tokens ??
-      raw.cached_input
-    ),
-    reasoning: tokenOrNull(
+      raw.cached_input,
+    reasoning:
       raw.reasoning_output_tokens ??
-      raw.reasoning_tokens
-    ),
-    total: tokenOrNull(raw.total_tokens ?? raw.total),
+      raw.reasoning_tokens,
+    total: raw.total_tokens ?? raw.total,
   };
+  if (Object.values(rawTokens).some(value => value != null && tokenOrNull(value) == null)) return null;
+  const tokens = Object.fromEntries(
+    Object.entries(rawTokens).map(([key, value]) => [key, tokenOrNull(value)])
+  );
 
   if (tokens.total == null) {
     const addends = [
@@ -444,8 +446,12 @@ function buildUsagePayload({
   session_id = null,
   thread_id = null,
   model = null,
+  model_source = null,
+  model_sampled_at = null,
   plan_type = null,
   session_cost_usd = null,
+  cost_source = null,
+  cost_sampled_at = null,
   estimated_cost = false,
   turns = null,
   partial = false,
@@ -467,10 +473,14 @@ function buildUsagePayload({
     session_id,
     thread_id,
     model,
+    model_source,
+    model_sampled_at,
     plan_type,
     session_tokens,
     last_turn_tokens,
     session_cost_usd,
+    cost_source,
+    cost_sampled_at,
     estimated_cost: Boolean(estimated_cost),
     turns,
     partial: Boolean(partial),
@@ -541,12 +551,22 @@ function fileMtimeMs(filePath) {
 
 function normalizeQuotaWindow(window) {
   if (!window || typeof window !== 'object') return null;
-  const usedPercent = Number(window.used_percent);
+  const usedPercent = typeof window.used_percent === 'number'
+    && Number.isFinite(window.used_percent)
+    && window.used_percent >= 0
+    && window.used_percent <= 100
+    ? window.used_percent
+    : null;
   const resetsAt = window.resets_at;
-  const resetsAtEpoch = Number.isFinite(Number(resetsAt)) ? Number(resetsAt) : null;
+  const resetsAtEpoch = typeof resetsAt === 'number' && Number.isFinite(resetsAt) ? resetsAt : null;
+  const windowMinutes = typeof window.window_minutes === 'number'
+    && Number.isFinite(window.window_minutes)
+    && window.window_minutes > 0
+    ? window.window_minutes
+    : null;
   return {
-    used_percent: Number.isFinite(usedPercent) ? usedPercent : null,
-    window_minutes: Number.isFinite(Number(window.window_minutes)) ? Number(window.window_minutes) : null,
+    used_percent: usedPercent,
+    window_minutes: windowMinutes,
     resets_at: resetsAtEpoch ? new Date(resetsAtEpoch * 1000).toISOString() : null,
     resets_at_epoch: resetsAtEpoch,
   };
@@ -677,6 +697,24 @@ function probeRuntimeDetails(runtimeProbe) {
   };
 }
 
+function mapClaudeStatuslineRateLimits(rateLimits) {
+  if (!rateLimits || typeof rateLimits !== 'object') return null;
+  return {
+    primary: {
+      used_percent: rateLimits.five_hour?.used_percentage ?? rateLimits.five_hour?.used_percent ?? null,
+      window_minutes: 300,
+      resets_at: rateLimits.five_hour?.resets_at ?? null,
+      label: '5h',
+    },
+    secondary: {
+      used_percent: rateLimits.seven_day?.used_percentage ?? rateLimits.seven_day?.used_percent ?? null,
+      window_minutes: 10_080,
+      resets_at: rateLimits.seven_day?.resets_at ?? null,
+      label: '7d',
+    },
+  };
+}
+
 function collectClaudeQuota() {
   const home = os.homedir();
 
@@ -689,18 +727,7 @@ function collectClaudeQuota() {
     const parsed = safeJsonParse(fs.readFileSync(slPath, 'utf8'));
     const rl = parsed?.rate_limits;
     if (!rl) continue;
-    const mapped = {
-      primary: {
-        used_percent: rl.five_hour?.used_percentage ?? rl.five_hour?.used_percent ?? null,
-        resets_at: rl.five_hour?.resets_at ?? null,
-        label: '5h',
-      },
-      secondary: {
-        used_percent: rl.seven_day?.used_percentage ?? rl.seven_day?.used_percent ?? null,
-        resets_at: rl.seven_day?.resets_at ?? null,
-        label: '7d',
-      },
-    };
+    const mapped = mapClaudeStatuslineRateLimits(rl);
     return buildQuotaPayload({
       supported: true,
       source: slPath,
@@ -886,7 +913,7 @@ function collectClaudeTranscriptUsage(claudeDir) {
       turns += 1;
       totals = addUsageTokens(totals, tokens);
       lastTurn = tokens;
-      sampledAt = parsed.timestamp || parsed.created_at || parsed.createdAt || sampledAt;
+      sampledAt = parsed.timestamp || parsed.created_at || parsed.createdAt || null;
       sessionId = parsed.session_id || parsed.sessionId || parsed.conversation_id || sessionId;
       model = parsed.message?.model || parsed.model || parsed.payload?.message?.model || model;
     }
@@ -928,7 +955,8 @@ function collectClaudeStatuslineUsage() {
       total_tokens: context.total_tokens,
     });
     const lastTurnTokens = normalizeUsageTokens(context.current_usage || parsed.usage || null);
-    if (!sessionTokens && !lastTurnTokens && parsed.cost?.total_cost_usd == null) continue;
+    const sessionCostUsd = numberOrNull(parsed.cost?.total_cost_usd);
+    if (!sessionTokens && !lastTurnTokens && sessionCostUsd == null) continue;
 
     return {
       source: filePath,
@@ -937,12 +965,59 @@ function collectClaudeStatuslineUsage() {
       model: parsed.model?.id || parsed.model || null,
       session_tokens: sessionTokens,
       last_turn_tokens: lastTurnTokens,
-      session_cost_usd: numberOrNull(parsed.cost?.total_cost_usd),
-      estimated_cost: parsed.cost?.total_cost_usd != null,
+      session_cost_usd: sessionCostUsd,
+      estimated_cost: sessionCostUsd != null,
     };
   }
 
   return null;
+}
+
+function canCombineClaudeSessionEvidence(transcript, statusline) {
+  const transcriptSession = typeof transcript?.session_id === 'string'
+    ? transcript.session_id.trim()
+    : '';
+  const statuslineSession = typeof statusline?.session_id === 'string'
+    ? statusline.session_id.trim()
+    : '';
+  if (!transcriptSession || transcriptSession !== statuslineSession) return false;
+
+  const transcriptAt = timestampToMs(transcript?.sampled_at);
+  const statuslineAt = timestampToMs(statusline?.sampled_at);
+  if (transcriptAt == null || statuslineAt == null) return false;
+  return statuslineAt + 5_000 >= transcriptAt;
+}
+
+function buildClaudeUsageEvidence({ transcript = null, statusline = null } = {}) {
+  const best = transcript || statusline;
+  if (!best) return null;
+  const sessionSource = transcript ? 'transcript' : 'statusline';
+  const compatibleStatusline = !transcript || canCombineClaudeSessionEvidence(transcript, statusline)
+    ? statusline
+    : null;
+  const modelEvidence = compatibleStatusline?.model
+    ? { value: compatibleStatusline.model, source: 'statusline', sampledAt: compatibleStatusline.sampled_at }
+    : best.model
+      ? { value: best.model, source: sessionSource, sampledAt: best.sampled_at }
+      : { value: null, source: null, sampledAt: null };
+  const hasCost = typeof compatibleStatusline?.session_cost_usd === 'number'
+    && Number.isFinite(compatibleStatusline.session_cost_usd);
+  return {
+    source: sessionSource,
+    sampled_at: best.sampled_at || null,
+    session_id: best.session_id || null,
+    model: modelEvidence.value,
+    model_source: modelEvidence.source,
+    model_sampled_at: modelEvidence.sampledAt || null,
+    session_tokens: best.session_tokens || compatibleStatusline?.session_tokens || null,
+    last_turn_tokens: best.last_turn_tokens || compatibleStatusline?.last_turn_tokens || null,
+    session_cost_usd: hasCost ? compatibleStatusline.session_cost_usd : null,
+    cost_source: hasCost ? 'statusline' : null,
+    cost_sampled_at: hasCost ? compatibleStatusline.sampled_at || null : null,
+    estimated_cost: hasCost ? compatibleStatusline.estimated_cost === true : false,
+    turns: best.turns || null,
+    partial: best.partial === true,
+  };
 }
 
 function collectClaudeUsage() {
@@ -952,8 +1027,8 @@ function collectClaudeUsage() {
     ? collectClaudeTranscriptUsage(path.join(home, '.claude'))
     : null;
 
-  const best = transcript || statusline;
-  if (!best) {
+  const evidence = buildClaudeUsageEvidence({ transcript, statusline });
+  if (!evidence) {
     return buildUsagePayload({
       supported: false,
       source: 'local-files',
@@ -963,16 +1038,7 @@ function collectClaudeUsage() {
 
   return buildUsagePayload({
     supported: true,
-    source: transcript ? 'transcript' : 'statusline',
-    sampled_at: best.sampled_at || statusline?.sampled_at || null,
-    session_id: best.session_id || statusline?.session_id || null,
-    model: statusline?.model || best.model || null,
-    session_tokens: best.session_tokens || statusline?.session_tokens || null,
-    last_turn_tokens: best.last_turn_tokens || statusline?.last_turn_tokens || null,
-    session_cost_usd: statusline?.session_cost_usd ?? null,
-    estimated_cost: statusline?.estimated_cost || false,
-    turns: best.turns || null,
-    partial: best.partial || false,
+    ...evidence,
   });
 }
 
@@ -1126,11 +1192,13 @@ function collectCodexUsage() {
 
   return buildUsagePayload({
     supported: true,
-    source: usage.source,
+    source: 'codex',
     sampled_at: usage.sampled_at,
     session_id: usage.session_id,
     thread_id: usage.thread_id,
     model: usage.model,
+    model_source: usage.model ? 'codex' : null,
+    model_sampled_at: usage.model ? usage.sampled_at : null,
     plan_type: usage.plan_type,
     session_tokens: usage.session_tokens,
     last_turn_tokens: usage.last_turn_tokens,
@@ -1346,18 +1414,48 @@ function sanitizeRemoteUrl(remoteUrl) {
   const raw = String(remoteUrl || '').trim();
   if (!raw) return null;
 
+  const hasCredentialPath = value => {
+    let decoded = String(value || '');
+    let stable = false;
+    for (let pass = 0; pass < 8; pass += 1) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) {
+          stable = true;
+          break;
+        }
+        decoded = next;
+      } catch {
+        return true;
+      }
+    }
+    if (!stable) return true;
+    return /(?:^|[^A-Za-z0-9_-])(?:x-access-token|oauth2|access[_-]?token|private[_-]?token|api[_-]?key|client[_-]?secret|password|passwd|secret|token)(?:[^A-Za-z0-9_-]|$)/i.test(decoded)
+      || /(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{6,}/i.test(decoded);
+  };
+
+  const withoutSuffix = raw.replace(/[?#].*$/, '');
+  if (!withoutSuffix.includes('://')) {
+    const scp = withoutSuffix.match(/^(?:[^@\s/:]+@)?([A-Za-z0-9.-]+):([^\s]+)$/);
+    if (!scp || scp[2].includes('@') || hasCredentialPath(scp[2])) return null;
+    const [, host, repoPath] = scp;
+    return host.toLowerCase() === 'github.com'
+      ? `git@${host}:${repoPath}`
+      : `${host}:${repoPath}`;
+  }
+
   try {
     const parsed = new URL(raw);
-    if (parsed.username || parsed.password) {
-      parsed.username = '';
-      parsed.password = '';
-    }
+    if (!['http:', 'https:', 'ssh:', 'git:'].includes(parsed.protocol)) return null;
+    if (hasCredentialPath(parsed.pathname)) return null;
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
     return parsed.toString().replace(/\/$/, '');
-  } catch {}
-
-  return raw
-    .replace(/(https?:\/\/)[^/@\s]+@/i, '$1')
-    .replace(/(x-access-token:|oauth2:|token=)[^@\s/]+/ig, '$1***');
+  } catch {
+    return null;
+  }
 }
 
 function isGithubRemote(remoteUrl) {
@@ -1410,35 +1508,51 @@ function collectGitRepoBackup(repoPath) {
   const lastCommitProbe = gitCommand(repoPath, ['log', '-1', '--format=%cI']);
   const statusProbe = gitCommand(repoPath, ['status', '--porcelain=v1', '--untracked-files=normal']);
 
-  let ahead = 0;
-  let behind = 0;
+  let ahead = null;
+  let behind = null;
+  let syncProbeReason = null;
   if (upstreamProbe.ok && upstreamProbe.stdout) {
     const countsProbe = gitCommand(repoPath, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']);
     if (countsProbe.ok) {
       const [aheadText, behindText] = countsProbe.stdout.split(/\s+/);
-      ahead = Math.max(0, Number.parseInt(aheadText, 10) || 0);
-      behind = Math.max(0, Number.parseInt(behindText, 10) || 0);
+      const parsedAhead = tokenOrNull(aheadText);
+      const parsedBehind = tokenOrNull(behindText);
+      if (parsedAhead != null && parsedBehind != null) {
+        ahead = parsedAhead;
+        behind = parsedBehind;
+      } else {
+        syncProbeReason = 'sync_probe_failed';
+      }
+    } else {
+      syncProbeReason = 'sync_probe_failed';
     }
+  } else {
+    syncProbeReason = 'upstream_unavailable';
   }
 
   const lines = statusProbe.ok && statusProbe.stdout ? statusProbe.stdout.split(/\r?\n/).filter(Boolean) : [];
-  const untracked = lines.filter(line => line.startsWith('??')).length;
-  const dirty = lines.length - untracked;
-  const hasGithubRemote = Boolean(githubRemote);
+  const untracked = statusProbe.ok ? lines.filter(line => line.startsWith('??')).length : null;
+  const dirty = statusProbe.ok ? lines.length - untracked : null;
+  const worktreeProbeReason = statusProbe.ok ? null : 'worktree_probe_failed';
+  const sanitizedRemote = sanitizeRemoteUrl(githubRemote || remoteUrls[0] || null);
+  const hasGithubRemote = Boolean(sanitizedRemote && isGithubRemote(sanitizedRemote));
   const status = !hasGithubRemote
     ? 'critical'
-    : (ahead > 0 || behind > 0 || dirty > 0 || untracked > 0) ? 'warning' : 'ok';
+    : syncProbeReason || worktreeProbeReason
+      ? 'critical'
+      : (ahead > 0 || behind > 0 || dirty > 0 || untracked > 0) ? 'warning' : 'ok';
   const reason = !hasGithubRemote
     ? 'no_github_remote'
-    : ahead > 0 ? 'ahead_of_upstream'
+    : syncProbeReason || worktreeProbeReason
+      || (ahead > 0 ? 'ahead_of_upstream'
       : dirty > 0 ? 'dirty_worktree'
         : untracked > 0 ? 'untracked_files'
           : behind > 0 ? 'behind_upstream'
-            : null;
+            : null);
 
   return {
     path: repoPath,
-    remote: sanitizeRemoteUrl(githubRemote || remoteUrls[0] || null),
+    remote: sanitizedRemote,
     branch: branchProbe.stdout || null,
     head: headProbe.stdout || null,
     upstream: upstreamProbe.ok ? upstreamProbe.stdout || null : null,
@@ -1453,16 +1567,19 @@ function collectGitRepoBackup(repoPath) {
 }
 
 function summarizeBackupRepos(repos) {
+  const countersComplete = repos.length > 0
+    && repos.every(repo => ['ahead', 'behind', 'dirty', 'untracked']
+      .every(field => Number.isSafeInteger(repo?.[field]) && repo[field] >= 0));
   const summary = {
     total: repos.length,
     ok: 0,
     warning: 0,
     critical: 0,
     unsupported: 0,
-    ahead: 0,
-    behind: 0,
-    dirty: 0,
-    untracked: 0,
+    ahead: countersComplete ? 0 : null,
+    behind: countersComplete ? 0 : null,
+    dirty: countersComplete ? 0 : null,
+    untracked: countersComplete ? 0 : null,
     github_remotes: 0,
   };
 
@@ -1471,10 +1588,12 @@ function summarizeBackupRepos(repos) {
     else if (repo.status === 'warning') summary.warning += 1;
     else if (repo.status === 'unsupported') summary.unsupported += 1;
     else summary.critical += 1;
-    summary.ahead += repo.ahead || 0;
-    summary.behind += repo.behind || 0;
-    summary.dirty += repo.dirty || 0;
-    summary.untracked += repo.untracked || 0;
+    if (countersComplete) {
+      summary.ahead += repo.ahead;
+      summary.behind += repo.behind;
+      summary.dirty += repo.dirty;
+      summary.untracked += repo.untracked;
+    }
     if (repo.remote && isGithubRemote(repo.remote)) summary.github_remotes += 1;
   }
 
@@ -1691,20 +1810,24 @@ function collectBackupStatus(botName) {
   };
 }
 
-function getDiskInfo() {
+function getDiskInfo(execCommand = execSync) {
   try {
-    const out = execSync('df -h / 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+    const out = execCommand('df -h / 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
     const lines = out.trim().split('\n');
     if (lines.length >= 2) {
       const parts = lines[1].split(/\s+/);
-      return {
-        total: parts[1] || null,
-        used: parts[2] || null,
-        pct: parseInt(parts[4], 10) || 0,
-      };
+      const match = parts[4]?.match(/^(\d{1,3})%$/);
+      const pct = match ? Number(match[1]) : null;
+      if (pct != null && pct >= 0 && pct <= 100) {
+        return {
+          total: parts[1] || null,
+          used: parts[2] || null,
+          pct,
+        };
+      }
     }
   } catch {}
-  return { total: null, used: null, pct: 0 };
+  return { total: null, used: null, pct: null, unavailable_reason: 'collection_failed' };
 }
 
 function getMemoryInfo() {
@@ -1782,11 +1905,8 @@ function postHealth(name, payload) {
   });
 }
 
-function collectRoster() {
-  const statuslinePath = path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json');
-  if (!fs.existsSync(statuslinePath)) return null;
-  let sl;
-  try { sl = JSON.parse(fs.readFileSync(statuslinePath, 'utf8')); } catch { return null; }
+function buildRosterPayload(sl, sourceMtimeMs = null) {
+  if (!sl || typeof sl !== 'object') return null;
   return {
     session_id: sl.session_id || null,
     model: sl.model?.id || sl.model?.display_name || null,
@@ -1797,6 +1917,7 @@ function collectRoster() {
     lines_added: sl.cost?.total_lines_added ?? null,
     lines_removed: sl.cost?.total_lines_removed ?? null,
     context_used_pct: sl.context_window?.used_percentage ?? null,
+    context_used_tokens: (sl.context_window?.total_input_tokens || 0) + (sl.context_window?.total_output_tokens || 0) || null,
     context_total_tokens: (sl.context_window?.total_input_tokens || 0) + (sl.context_window?.total_output_tokens || 0) || null,
     rate_limits: {
       five_hour: sl.rate_limits?.five_hour ? {
@@ -1809,7 +1930,32 @@ function collectRoster() {
       } : null,
     },
     plan_type: sl.plan_type || null,
-    sampled_at: Date.now(),
+    sampled_at: normalizeSampledAt(sl.timestamp ?? sl.updated_at ?? sl.sampled_at, sourceMtimeMs),
+  };
+}
+
+function collectRoster() {
+  const statuslinePath = path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json');
+  if (!fs.existsSync(statuslinePath)) return null;
+  let sl;
+  try { sl = JSON.parse(fs.readFileSync(statuslinePath, 'utf8')); } catch { return null; }
+  return buildRosterPayload(sl, fileMtimeMs(statuslinePath));
+}
+
+function collectActivityMonitorFallback() {
+  const statusPath = path.join(ZYLOS_DIR, 'activity-monitor', 'agent-status.json');
+  if (!fs.existsSync(statusPath)) return null;
+  const status = safeJsonParse(fs.readFileSync(statusPath, 'utf8'));
+  const state = typeof status?.state === 'string' ? status.state.toLowerCase() : null;
+  if (!['busy', 'idle', 'waiting', 'offline', 'unknown'].includes(state)) return null;
+  const observedAt = normalizeSampledAt(status.last_check, status.last_activity);
+  if (observedAt == null) return null;
+  return {
+    state,
+    health: status.health === 'ok' ? 'ok' : 'unavailable',
+    observed_at: observedAt,
+    source: 'activity_monitor_fallback',
+    used_for_routing: false,
   };
 }
 
@@ -1882,6 +2028,7 @@ async function main() {
   const backup = collectBackupStatus(botName);
 
   const roster = collectRoster();
+  const activityMonitor = collectActivityMonitorFallback();
   const payload = {
     hostname: os.hostname(),
     name_source: botNameSource,
@@ -1894,6 +2041,7 @@ async function main() {
     usage,
     backup,
     ...(roster ? { roster } : {}),
+    ...(activityMonitor ? { activity_monitor: activityMonitor } : {}),
   };
 
   const quotaSummary = [
@@ -1916,7 +2064,7 @@ async function main() {
 
   console.log(
     `[health-reporter] ${botName}: runtime=${runtime.type}@${runtime.version || 'unknown'} ${runtime.status} ` +
-    `disk=${disk.pct}% mem=${memory.pct}% cpu=${cpu.pct}%` +
+    `disk=${disk.pct == null ? 'unavailable' : `${disk.pct}%`} mem=${memory.pct}% cpu=${cpu.pct}%` +
     `${pm2 ? ` pm2=${pm2.online}/${pm2.total}` : ''} ${quotaSummary} ${usageSummary} ` +
     `backup=${backup.status} repos=${backup.summary.total} warn=${backup.summary.warning} critical=${backup.summary.critical}`
   );
@@ -1935,9 +2083,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 }
 
 export {
+  buildClaudeUsageEvidence,
+  buildRosterPayload,
+  collectGitRepoBackup,
   detectBotName,
   extractIdentityBotName,
+  getDiskInfo,
   isGenericRuntimeAgentName,
+  mapClaudeStatuslineRateLimits,
   normalizeAgentName,
+  normalizeUsageTokens,
+  numberOrNull,
   normalizeRuntimeType,
+  normalizeQuotaWindow,
+  sanitizeRemoteUrl,
+  summarizeBackupRepos,
 };

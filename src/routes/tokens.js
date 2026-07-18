@@ -11,6 +11,8 @@ const COST_PER_M_OUTPUT = 15.00;
 const DAY_MS = 86400000;
 const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
 const TOKEN_FIELDS = ['input', 'output', 'cache_creation', 'cache_read', 'cached_input', 'reasoning', 'total'];
+const COMPARABLE_USAGE_SOURCES = new Set(['transcript', 'statusline', 'codex']);
+const USAGE_FUTURE_SKEW_MS = 5 * 1000;
 
 // Per-action token estimates (based on typical Claude API usage patterns)
 // These are rough estimates — actual usage depends on prompt/response complexity
@@ -123,9 +125,17 @@ function buildTimeWindow(query, now = Date.now()) {
 
 function usageSampledAt(agent) {
   const sampledAt = agent.usage?.sampled_at;
-  if (typeof sampledAt === 'number' && Number.isFinite(sampledAt)) return sampledAt;
-  const heartbeatAt = agent.runtime?.last_heartbeat_at;
-  return typeof heartbeatAt === 'number' && Number.isFinite(heartbeatAt) ? heartbeatAt : null;
+  return typeof sampledAt === 'number' && Number.isFinite(sampledAt) && sampledAt > 0
+    ? sampledAt
+    : null;
+}
+
+function usageTimeConsistent(sampledAt, observedAt) {
+  return typeof sampledAt === 'number'
+    && Number.isFinite(sampledAt)
+    && typeof observedAt === 'number'
+    && Number.isFinite(observedAt)
+    && sampledAt <= observedAt + USAGE_FUTURE_SKEW_MS;
 }
 
 function usageGroupKey(runtimeType, usage) {
@@ -134,8 +144,6 @@ function usageGroupKey(runtimeType, usage) {
     usage.source || 'unknown',
     usage.session_id || 'no-session',
     usage.thread_id || 'no-thread',
-    usage.model || 'no-model',
-    usage.plan_type || 'no-plan',
   ].join('|');
 }
 
@@ -143,8 +151,11 @@ function healthUsageSample(name, health) {
   const runtimeType = health.runtime?.type || 'claude_code';
   const usage = selectUsageForRuntime(health, runtimeType);
   if (!usage?.supported || (!usage.session_tokens && !usage.last_turn_tokens)) return null;
-  const reportedAt = typeof health.reported_at === 'number' ? health.reported_at : usageSampledAt({ usage, runtime: health.runtime });
-  if (reportedAt == null) return null;
+  if (!COMPARABLE_USAGE_SOURCES.has(usage.source)) return null;
+  if (usageSampledAt({ usage }) == null) return null;
+  const reportedAt = health.reported_at;
+  if (typeof reportedAt !== 'number' || !Number.isFinite(reportedAt) || reportedAt <= 0) return null;
+  if (!usageTimeConsistent(usage.sampled_at, reportedAt)) return null;
   return {
     key: `${name}|${usageGroupKey(runtimeType, usage)}`,
     name,
@@ -163,6 +174,7 @@ function formatAgentUsage(agent) {
     runtime: agent.runtime,
     source: agent.usage.source,
     sampled_at: agent.usage.sampled_at,
+    observed_at: agent.last_heartbeat_at ?? agent.runtime?.last_heartbeat_at ?? null,
     model: agent.usage.model,
     plan_type: agent.usage.plan_type,
     input: tokens.input || 0,
@@ -174,6 +186,7 @@ function formatAgentUsage(agent) {
     total: usageTotal(tokens),
     cost_usd: typeof agent.usage.session_cost_usd === 'number' ? agent.usage.session_cost_usd : null,
     estimated_cost: !!agent.usage.estimated_cost,
+    partial_baseline: true,
   };
 }
 
@@ -224,29 +237,59 @@ function summarizeAgents(agents) {
   return { ...summary, total_cost_usd: Math.round(summary.total_cost_usd * 100) / 100 };
 }
 
-function buildObservedUsage(window) {
-  const historyRows = typeof db.iterHealthHistoryBetween === 'function'
+function buildObservedUsage(window, { historyRows, currentAgents } = {}) {
+  const resolvedHistoryRows = historyRows ?? (typeof db.iterHealthHistoryBetween === 'function'
     ? db.iterHealthHistoryBetween(window.start_ms, window.end_ms)
     : typeof db.getHealthHistoryBetween === 'function'
       ? db.getHealthHistoryBetween(window.start_ms, window.end_ms)
-    : [];
+      : []);
 
-  const historyUsage = buildObservedUsageFromHistory(historyRows, window);
+  const historyUsage = buildObservedUsageFromHistory(resolvedHistoryRows, window);
   let agents = historyUsage.agents;
   let fromHistory = historyUsage.sample_count > 0 && agents.length > 0;
   if (!fromHistory) {
-    agents = buildAgents()
+    const resolvedCurrentAgents = currentAgents ?? buildAgents();
+    agents = resolvedCurrentAgents
       .filter(agent => agent.usage?.supported)
+      .filter(agent => COMPARABLE_USAGE_SOURCES.has(agent.usage?.source))
       .filter(agent => {
         const sampledAt = usageSampledAt(agent);
         return sampledAt != null && sampledAt >= window.start_ms && sampledAt < window.end_ms;
       })
       .map(formatAgentUsage)
+      .filter(agent => usageTimeConsistent(agent.sampled_at, agent.observed_at))
       .sort((a, b) => b.total - a.total);
   }
 
+  const supported = agents.length > 0;
+  const sampledAt = fromHistory
+    ? historyUsage.sampled_at
+    : agents.reduce((latest, agent) => {
+        const sampled = typeof agent.sampled_at === 'number' && Number.isFinite(agent.sampled_at)
+          ? agent.sampled_at
+          : null;
+        return sampled == null ? latest : Math.max(latest || 0, sampled);
+      }, null);
+  const observedAt = fromHistory
+    ? historyUsage.observed_at
+    : agents.reduce((latest, agent) => {
+        const observed = typeof agent.observed_at === 'number' && Number.isFinite(agent.observed_at)
+          ? agent.observed_at
+          : null;
+        return observed == null ? latest : Math.max(latest || 0, observed);
+      }, null);
+
   return {
-    supported: agents.length > 0,
+    supported,
+    comparable: supported && fromHistory,
+    comparability: supported
+      ? fromHistory ? 'history_last_turns' : 'single_session_snapshot'
+      : 'unavailable',
+    sampled_at: sampledAt,
+    observed_at: observedAt,
+    unavailable_reason: supported && fromHistory
+      ? null
+      : supported ? 'single_session_snapshot_not_comparable' : 'not_reported',
     agent_count: agents.length,
     window,
     summary: summarizeAgents(agents),
@@ -259,6 +302,8 @@ function buildObservedUsage(window) {
 
 function buildObservedUsageFromHistory(historyRows, window) {
   let sampleCount = 0;
+  let latestAcceptedSampleAt = null;
+  let latestAcceptedObservedAt = null;
   const seenTurns = new Set();
   const agentsByName = new Map();
 
@@ -270,15 +315,15 @@ function buildObservedUsageFromHistory(historyRows, window) {
 
     const tokens = sample.usage.last_turn_tokens;
     if (!tokens) continue;
-    const turnAt = typeof sample.usage.sampled_at === 'number' && Number.isFinite(sample.usage.sampled_at)
-      ? sample.usage.sampled_at
-      : sample.reported_at;
+    const turnAt = sample.usage.sampled_at;
     if (turnAt < window.start_ms || turnAt >= window.end_ms) continue;
 
     const tokenSignature = TOKEN_FIELDS.map(key => tokenNumber(tokens, key) ?? '').join(',');
     const turnKey = `${sample.key}|${turnAt}|${tokenSignature}`;
     if (seenTurns.has(turnKey)) continue;
     seenTurns.add(turnKey);
+    latestAcceptedSampleAt = Math.max(latestAcceptedSampleAt || 0, turnAt);
+    latestAcceptedObservedAt = Math.max(latestAcceptedObservedAt || 0, sample.reported_at);
 
     const existing = agentsByName.get(sample.name) || {
       name: sample.name,
@@ -301,7 +346,12 @@ function buildObservedUsageFromHistory(historyRows, window) {
     .filter(agent => agent.total > 0 || agent.cost_usd != null)
     .sort((a, b) => b.total - a.total);
 
-  return { agents, sample_count: sampleCount };
+  return {
+    agents,
+    sample_count: sampleCount,
+    sampled_at: latestAcceptedSampleAt,
+    observed_at: latestAcceptedObservedAt,
+  };
 }
 
 // GET /api/tokens — token consumption estimates for a time window
@@ -418,4 +468,4 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
-module.exports.__private = { buildTimeWindow, buildObservedUsageFromHistory };
+module.exports.__private = { buildTimeWindow, buildObservedUsage, buildObservedUsageFromHistory };

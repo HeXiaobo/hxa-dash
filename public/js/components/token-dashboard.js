@@ -60,7 +60,23 @@ const TokenDashboard = {
   },
 
   _hasObserved() {
-    return Boolean(this._data?.observed?.supported && this._data.observed.agents?.length);
+    const observed = this._data?.observed;
+    return Boolean(
+      observed?.supported
+      && observed.comparable === true
+      && observed.agents?.length
+      && observed.agents.every(agent => agent?.partial_baseline !== true)
+    );
+  },
+
+  _observedUnavailableText() {
+    const observed = this._data?.observed;
+    if (observed?.unavailable_reason === 'single_session_snapshot_not_comparable'
+      || observed?.comparability === 'single_session_snapshot'
+      || observed?.agents?.some(agent => agent?.partial_baseline === true)) {
+      return '当前仅有单次会话快照，不可用于时间段汇总或排名';
+    }
+    return '暂无可比观测数据';
   },
 
   _fmt(n) {
@@ -194,7 +210,7 @@ const TokenDashboard = {
       return;
     }
 
-    el.innerHTML = '<div class="trends-empty" style="grid-column:1/-1">暂无观测数据</div>';
+    el.innerHTML = `<div class="trends-empty" style="grid-column:1/-1">${this._observedUnavailableText()}</div>`;
   },
 
   _renderChart() {
@@ -205,7 +221,7 @@ const TokenDashboard = {
       return;
     }
 
-    container.innerHTML = '<div class="trends-empty">暂无观测数据</div>';
+    container.innerHTML = `<div class="trends-empty">${this._observedUnavailableText()}</div>`;
   },
 
   _renderObservedChart(container) {
@@ -286,7 +302,7 @@ const TokenDashboard = {
       return;
     }
 
-    el.innerHTML = '<div class="trends-empty">暂无观测数据</div>';
+    el.innerHTML = `<div class="trends-empty">${this._observedUnavailableText()}</div>`;
   },
 
   _renderObservedAgentTable(el) {
@@ -357,6 +373,11 @@ const TokenDashboard = {
   _renderCostPie() {
     const container = document.getElementById('token-cost-pie');
     if (!container) return;
+
+    if (!this._hasObserved()) {
+      container.innerHTML = `<div class="trends-empty">${this._observedUnavailableText()}</div>`;
+      return;
+    }
 
     const agents = this._data.observed?.agents || [];
     if (!agents.length) {

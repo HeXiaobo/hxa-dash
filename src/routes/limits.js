@@ -15,6 +15,7 @@ try {
   }
 } catch (_) { /* entities config optional */ }
 const QUOTA_STALE_MS = 10 * 60 * 1000;
+const QUOTA_FUTURE_SKEW_MS = 5 * 1000;
 
 function normalizeTimestamp(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -34,9 +35,9 @@ function quotaFreshness(quota, fallbackSampledAt, now = Date.now()) {
     return { status: 'unsupported', sampled_at: normalizeTimestamp(quota?.sampled_at) || null, age_ms: null, stale_after_ms: QUOTA_STALE_MS };
   }
 
-  const sampledAt = normalizeTimestamp(quota.sampled_at) || normalizeTimestamp(fallbackSampledAt);
-  const ageMs = sampledAt ? Math.max(0, now - sampledAt) : null;
-  const stale = !sampledAt || ageMs > QUOTA_STALE_MS;
+  const sampledAt = normalizeTimestamp(quota.sampled_at);
+  const ageMs = sampledAt ? now - sampledAt : null;
+  const stale = !sampledAt || ageMs < -QUOTA_FUTURE_SKEW_MS || ageMs > QUOTA_STALE_MS;
   return {
     status: stale ? 'stale' : 'fresh',
     sampled_at: sampledAt,
@@ -113,4 +114,4 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
-module.exports.__private = { QUOTA_STALE_MS, enrichQuota, quotaFreshness };
+module.exports.__private = { QUOTA_STALE_MS, QUOTA_FUTURE_SKEW_MS, enrichQuota, quotaFreshness };

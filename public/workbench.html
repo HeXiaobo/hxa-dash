@@ -358,6 +358,24 @@
     .detail-metric { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-md); }
     .detail-metric span { display: block; color: var(--muted); font-size: var(--type-label-size); }
     .detail-metric strong { display: block; margin-top: 5px; }
+    .detail-metric small, .evidence-meta {
+      display: block;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.48;
+      overflow-wrap: anywhere;
+    }
+    .detail-evidence { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .detail-evidence-head h4 { margin: 0; font-size: var(--type-panel-size); }
+    .detail-evidence-head p { margin: 4px 0 0; color: var(--muted); font-size: var(--type-label-size); }
+    .evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 13px; }
+    .evidence-card { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--background); }
+    .evidence-card h5 { margin: 0 0 4px; font-size: 15px; }
+    .evidence-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .evidence-row:last-child { border-bottom: 0; }
+    .evidence-row > span { display: block; color: var(--muted); font-size: var(--type-label-size); }
+    .evidence-row > strong { display: block; margin-top: 3px; }
     .detail-side { display: grid; gap: 18px; align-content: start; }
     .side-card { padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
     .side-card h4 { margin: 0 0 12px; font-size: var(--type-panel-size); font-weight: var(--type-panel-weight); line-height: var(--type-panel-line); }
@@ -439,6 +457,7 @@
       .rank-row { grid-template-columns: 24px 70px minmax(80px, 1fr) 80px; }
       .compact-roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .detail-metrics { grid-template-columns: 1fr; }
+      .evidence-grid { grid-template-columns: 1fr; }
       .steps { grid-template-columns: repeat(3, 1fr); }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -723,13 +742,32 @@
               </div>
               <div class="detail-task"><small>当前业务任务</small><strong id="detail-task">业务任务源待接入</strong></div>
               <div class="detail-metrics">
-                <div class="detail-metric"><span>5 小时额度</span><strong id="detail-5h">暂不可用</strong></div>
-                <div class="detail-metric"><span>7 天额度</span><strong id="detail-7d">暂不可用</strong></div>
-                <div class="detail-metric"><span>Token 消耗排行</span><strong id="detail-rank">暂不可用</strong></div>
-                <div class="detail-metric"><span>备份</span><strong>证据源待接入</strong></div>
-                <div class="detail-metric"><span>数据更新时间</span><strong id="detail-updated">暂不可用</strong></div>
-                <div class="detail-metric"><span>业务阻塞</span><strong id="detail-blocker">暂不可用</strong></div>
+                <div class="detail-metric"><span>5 小时额度</span><strong id="detail-5h">暂不可用</strong><small id="detail-5h-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                <div class="detail-metric"><span>7 天额度</span><strong id="detail-7d">暂不可用</strong><small id="detail-7d-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                <div class="detail-metric"><span>7 天可比 Token 排行</span><strong id="detail-rank">暂不可用</strong><small id="detail-rank-meta">来源：中央 7 天 Token 汇总 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                <div class="detail-metric"><span>上下文</span><strong id="detail-context">暂不可用</strong><small id="detail-context-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                <div class="detail-metric"><span>单次会话 Token</span><strong id="detail-session-tokens">暂不可用</strong><small id="detail-session-tokens-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                <div class="detail-metric"><span>累计美元成本</span><strong id="detail-cost">暂不可用</strong><small id="detail-cost-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
               </div>
+              <section class="detail-evidence" aria-label="运行与备份证据">
+                <div class="detail-evidence-head"><h4>运行与备份证据</h4><p>每项均标明来源、采样时间和不可用原因；缺失证据不会显示成正常。</p></div>
+                <div class="evidence-grid">
+                  <article class="evidence-card">
+                    <h5>运行环境</h5>
+                    <div class="evidence-row"><span>运行时</span><strong id="detail-runtime-evidence">暂不可用</strong><small class="evidence-meta" id="detail-runtime-evidence-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                    <div class="evidence-row"><span>模型</span><strong id="detail-model">暂不可用</strong><small class="evidence-meta" id="detail-model-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                    <div class="evidence-row"><span>等待重启</span><strong id="detail-pending-restart">暂不可用</strong><small class="evidence-meta" id="detail-pending-restart-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：没有权威字段</small></div>
+                    <div class="evidence-row"><span>Activity Monitor（仅展示，不参与调度）</span><strong id="detail-activity">暂不可用</strong><small class="evidence-meta" id="detail-activity-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：活跃度监控不可用</small></div>
+                  </article>
+                  <article class="evidence-card">
+                    <h5>本机备份证据</h5>
+                    <div class="evidence-row"><span>本机备份记录</span><strong id="detail-backup-status">暂不可用</strong><small class="evidence-meta" id="detail-backup-status-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：未上报</small></div>
+                    <div class="evidence-row"><span>最近成功时间</span><strong id="detail-backup-last-success">暂不可用</strong><small class="evidence-meta" id="detail-backup-last-success-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：三项备份证据未齐</small></div>
+                    <div class="evidence-row"><span>本地与远端一致</span><strong id="detail-backup-remote">暂不可用</strong><small class="evidence-meta" id="detail-backup-remote-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：三项备份证据未齐</small></div>
+                    <div class="evidence-row"><span>恢复演练</span><strong id="detail-backup-restore">暂不可用</strong><small class="evidence-meta" id="detail-backup-restore-meta">来源：未提供 · 采样：暂不可用 · 不可用原因：三项备份证据未齐</small></div>
+                  </article>
+                </div>
+              </section>
             </article>
             <aside class="detail-side">
               <section class="side-card">
@@ -742,10 +780,11 @@
                 <div class="button-caption" id="upgrade-caption">只有组件、当前版本和目标版本都可核验时，才能查看准备流程；当前工作台不执行升级。</div>
               </section>
               <section class="side-card">
-                <h4>技术详情</h4>
-                <div class="fact-row"><span>运行时</span><strong id="detail-runtime">暂不可用</strong></div>
+                <h4>采集与边界</h4>
                 <div class="fact-row"><span>采集状态</span><strong id="detail-collection">暂未观测</strong></div>
-                <div class="fact-row"><span>服务与日志</span><strong>下沉到此处</strong></div>
+                <div class="fact-row"><span>业务阻塞</span><strong id="detail-blocker">暂不可用</strong></div>
+                <div class="fact-row"><span>数据更新时间</span><strong id="detail-updated">暂不可用</strong></div>
+                <div class="fact-row"><span>操作边界</span><strong>当前页面只读</strong></div>
               </section>
             </aside>
           </div>
@@ -902,16 +941,20 @@
       status.textContent = a.state;
       status.className = `status ${statusClass(a.state)}`;
       document.getElementById('detail-task').textContent = a.task;
-      document.getElementById('detail-5h').textContent = a.q5 == null ? '暂不可用' : `已用 ${a.q5}%`;
-      document.getElementById('detail-7d').textContent = a.q7 == null ? '暂不可用' : `已用 ${a.q7}%`;
-      document.getElementById('detail-rank').textContent = a.rank != null
-        ? `第 ${a.rank} 名`
-        : (a.tokens != null ? `${a.tokens.toLocaleString('zh-CN')} Token · 覆盖不足不排名` : '暂不可用');
+      const renderEmployeeDetail = window.workbenchView?.renderEmployeeDetail;
+      if (typeof renderEmployeeDetail === 'function') {
+        renderEmployeeDetail(a);
+      } else {
+        document.getElementById('detail-5h').textContent = a.q5 == null ? '暂不可用' : `已用 ${a.q5}%`;
+        document.getElementById('detail-7d').textContent = a.q7 == null ? '暂不可用' : `已用 ${a.q7}%`;
+        document.getElementById('detail-rank').textContent = a.rank != null
+          ? `第 ${a.rank} 名`
+          : (a.tokens != null ? `${a.tokens.toLocaleString('zh-CN')} Token · 覆盖不足不排名` : '暂不可用');
+      }
       document.getElementById('detail-blocker').textContent = a.blocker;
       document.getElementById('detail-component').textContent = upgradeFact(a.upgradeComponent) || '暂不可用';
       document.getElementById('detail-version').textContent = upgradeFact(a.upgradeCurrent) || '暂不可用';
       document.getElementById('detail-target').textContent = upgradeFact(a.upgradeTarget) || '暂不可用';
-      document.getElementById('detail-runtime').textContent = a.runtime;
       document.getElementById('detail-updated').textContent = a.updatedAt ? new Date(a.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '暂不可用';
       document.getElementById('detail-collection').textContent = a.observed ? 'Dashboard 实时只读' : '暂未观测';
       document.getElementById('dialog-employee').textContent = a.name;

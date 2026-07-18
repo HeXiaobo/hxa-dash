@@ -2,7 +2,10 @@
 const path = require('path');
 const Database = require('better-sqlite3');
 const { initializeHealthSchema } = require('./health-schema');
-const healthDbPath = path.join(__dirname, '..', 'health.db');
+const configuredHealthDbPath = process.env.HXA_HEALTH_DB_PATH?.trim();
+const healthDbPath = process.env.NODE_ENV === 'test'
+  ? ':memory:'
+  : (configuredHealthDbPath || path.join(__dirname, '..', 'health.db'));
 const healthDb = new Database(healthDbPath);
 healthDb.pragma('journal_mode = WAL');
 initializeHealthSchema(healthDb);
