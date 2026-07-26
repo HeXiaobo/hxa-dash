@@ -138,11 +138,17 @@ reporter is distributed separately after release without weakening public auth.
 
    ```bash
    SMOKE_NAME="deploy-smoke-$(date +%Y%m%d%H%M%S)"
+   HXA_SMOKE_TOKEN="$(
+     node -e "require('dotenv').config({ override: true }); const { signToken } = require('./src/auth/token'); const tenantKey = process.env.FEISHU_TENANT_KEY; if (!tenantKey) process.exit(1); process.stdout.write(signToken({ openId: 'deploy-smoke', unionId: '', name: 'Deploy Smoke', avatarUrl: '', tenantKey }));"
+   )"
+   HXA_SMOKE_COOKIE="hxa_token=${HXA_SMOKE_TOKEN}"
+
    curl -fsS -X POST https://hxa.zhiw.ai/api/report \
      -H "Content-Type: application/json" \
      -H "X-API-Key: $HXA_INGEST_API_KEY" \
      -d "{\"name\":\"${SMOKE_NAME}\",\"status\":\"smoke\"}"
    curl -fsS https://hxa.zhiw.ai/api/team \
+     -H "Cookie: $HXA_SMOKE_COOKIE" \
      | jq -e --arg name "$SMOKE_NAME" \
        '.agents[] | select(.name == $name) | .last_seen_at > 0'
 
@@ -150,6 +156,7 @@ reporter is distributed separately after release without weakening public auth.
    HEALTH_SMOKE_PATH="$(jq -nr --arg name "$SMOKE_NAME" '$name | @uri')"
    HEALTH_BEFORE_AT="$(curl -fsS \
      "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
+     -H "Cookie: $HXA_SMOKE_COOKIE" \
      | jq -r '.health.reported_at // 0')"
    HEALTH_PAYLOAD='{"hostname":"deploy-smoke","disk":{"pct":null},"memory":{"pct":null}}'
 
@@ -159,18 +166,24 @@ reporter is distributed separately after release without weakening public auth.
      -H "X-API-Key: $HEALTH_CANARY_KEY" \
      -d "$HEALTH_PAYLOAD"
    curl -fsS "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
+     -H "Cookie: $HXA_SMOKE_COOKIE" \
      | jq -e --argjson before "$HEALTH_BEFORE_AT" \
        '(.health.reported_at // 0) > $before'
    curl -fsS https://hxa.zhiw.ai/api/team \
+     -H "Cookie: $HXA_SMOKE_COOKIE" \
      | jq -e --arg name "$SMOKE_NAME" \
        --argjson before "$HEALTH_BEFORE_AT" \
        '.agents[] | select(.name == $name)
         | (.monitoring.observed_at // 0) > $before'
+   unset HXA_SMOKE_TOKEN HXA_SMOKE_COOKIE HEALTH_CANARY_KEY
    ```
 
    Each POST and its stored timestamp read-back are one gate. A 200 from
    `/api/health`, or even a 200 from either POST without a later persisted
-   timestamp, does not prove that ingest works.
+   timestamp, does not prove that ingest works. The temporary smoke token is
+   generated on the production host from the persisted auth secret, is never
+   printed, and is removed from the shell immediately after the protected
+   read-back checks.
 
 6. Smoke test the auth boundary:
 
