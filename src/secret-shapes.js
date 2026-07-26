@@ -54,9 +54,46 @@ function redactSecretShaped(value) {
   return matchSecretShape(value) ? REDACTED : value;
 }
 
+// Depth cap for the recursive walker. A hostile or accidentally self-referential
+// payload must not be able to blow the stack inside an ingest handler.
+const MAX_DEPTH = 8;
+
+// Recursive redaction for structured payloads.
+//
+// WHY this exists alongside the scalar version: the report.js ingest points
+// accept free-form nested bodies — `metadata` (arbitrary object) on
+// /api/report, `tags` (array) on /api/webhook/connect, per-event objects on
+// /api/report/activity. Those have no field allowlist, so a fixed list of field
+// names can neither reach into `metadata` nor survive someone adding a field
+// later. Callers apply this at their db-write boundary instead.
+//
+// Object KEYS are redacted too: a key is serialized into the stored JSON and
+// rendered on the homepage exactly like a value, so `{"sk-ant-...": 1}` would
+// leak through a value-only walker.
+//
+// Idempotent: the REDACTED marker itself matches no pattern, so re-redacting a
+// previously stored value is a no-op.
+function redactSecretShapedDeep(value, depth = 0) {
+  if (typeof value === 'string') return redactSecretShaped(value);
+  if (value === null || typeof value !== 'object') return value;
+  // Below the cap we DROP rather than pass through: an unredacted pass-through
+  // is precisely the failure this module exists to prevent.
+  if (depth >= MAX_DEPTH) return null;
+  if (Array.isArray(value)) {
+    return value.map(item => redactSecretShapedDeep(item, depth + 1));
+  }
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    out[redactSecretShaped(key)] = redactSecretShapedDeep(item, depth + 1);
+  }
+  return out;
+}
+
 module.exports = {
   REDACTED,
   SECRET_SHAPE_PATTERNS,
+  MAX_DEPTH,
   matchSecretShape,
   redactSecretShaped,
+  redactSecretShapedDeep,
 };
