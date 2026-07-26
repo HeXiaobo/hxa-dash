@@ -11,7 +11,7 @@ describe('primary navigation', () => {
     const labels = [...nav.matchAll(/<a [^>]*class="nav-item[^"]*"[^>]*>([^<]+)<\/a>/g)]
       .map(match => match[1].trim());
 
-    expect(labels).toEqual(['AI 员工', '额度', 'Token 用量', '备份', '系统健康']);
+    expect(labels).toEqual(['AI 员工', '额度', 'Token用量', '备份', '系统健康']);
     expect(nav).not.toContain('更多');
     expect(nav).not.toContain('任务');
     expect(nav).not.toContain('协作');
