@@ -1965,6 +1965,10 @@ main {
 
 /* Hamburger visible at ≤900px (must come after base display:none) */
 @media (max-width: 900px) {
+  body.nav-mobile-open header {
+    backdrop-filter: none;
+  }
+
   .nav-hamburger { display: inline-flex; align-items: center; justify-content: center; }
   #main-nav { display: none; }
   .nav-sep { width: 100%; height: 1px; margin: 4px 0; }
