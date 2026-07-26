@@ -3,6 +3,7 @@
 // GET  /api/agent-health        — retrieve all agent health data
 // GET  /api/agent-health/:name  — retrieve single agent health
 const { Router } = require('express');
+const { redactSecretShaped } = require('../secret-shapes');
 const db = require('../db');
 const { hasApiKey } = require('../auth/api-key');
 
@@ -27,9 +28,15 @@ function requireHealthAuth(req, res, next) {
   next();
 }
 
-// Sanitize string: strip HTML tags, clamp length
+// Sanitize string: redact credential-shaped values, strip HTML tags, clamp length.
+// Redaction runs FIRST and on the raw value: clamping a secret would still store
+// its prefix, and the field-level allowlists cannot help here because the secret
+// arrives inside an *allowed* field (e.g. `model: "sk-ant-..."`).
+// Canonical requirement: anomaly-criteria-v1 「secret 值形态检测」. See src/secret-shapes.js.
 function sanitizeStr(val, maxLen = 64) {
   if (typeof val !== 'string') return null;
+  const guarded = redactSecretShaped(val);
+  if (guarded !== val) return guarded;
   return val.replace(/<[^>]*>/g, '').slice(0, maxLen);
 }
 
