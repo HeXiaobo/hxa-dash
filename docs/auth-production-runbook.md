@@ -5,14 +5,16 @@ boundary without interrupting hxa-dash ingest.
 
 ## Safety rules
 
-- Codex owns execution, coding, PRs, testing, and deployment.
-- Mylos provides review and production context only.
+- Codex owns coding, PRs, and pre-production verification.
+- For issue #25, Mylos owns the production release and PM2 operations on the
+  private GCP VM under the user's explicit authorization; Codex has no SSH/IAP
+  path to that host.
 - Do not deploy from an uncommitted production working tree.
 - Post the pinned deploy commit and rollback commit on #4 before changing PM2.
 - Keep `HXA_AUTH_ENABLED=false` until all machine reporters and webhooks are
   confirmed to send their required server-to-server secret.
-- Codex owns reporter distribution and the auth flip. Mylos reviews and provides
-  fleet context only.
+- Mylos owns reporter distribution and the auth flip for issue #25 and returns
+  read-only evidence to the issue/PR. Secrets stay on the production host.
 
 ## Required production configuration
 
@@ -120,7 +122,8 @@ confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
    curl -fsS https://hxa.zhiw.ai/api/about
    ```
 
-5. Verify machine ingest with a key:
+5. Verify both activity ingest and the monitoring-health write/read path with
+   machine keys:
 
    ```bash
    SMOKE_NAME="deploy-smoke-$(date +%Y%m%d%H%M%S)"
@@ -128,7 +131,40 @@ confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
      -H "Content-Type: application/json" \
      -H "X-API-Key: $HXA_INGEST_API_KEY" \
      -d "{\"name\":\"${SMOKE_NAME}\",\"status\":\"smoke\"}"
+   curl -fsS https://hxa.zhiw.ai/api/team \
+     | jq -e --arg name "$SMOKE_NAME" \
+       '.agents[] | select(.name == $name) | .last_seen_at > 0'
+
+   HEALTH_CANARY_KEY="${HEALTH_API_KEY:-$HXA_INGEST_API_KEY}"
+   HEALTH_LIST="$(curl -fsS https://hxa.zhiw.ai/api/agent-health)"
+   HEALTH_SMOKE_AGENT="$(printf '%s\n' "$HEALTH_LIST" \
+     | jq -er 'first(.agents[] | select(.health.disk and .health.memory) | .name)')"
+   HEALTH_SMOKE_PATH="$(jq -nr --arg name "$HEALTH_SMOKE_AGENT" '$name | @uri')"
+   HEALTH_BEFORE="$(curl -fsS \
+     "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}")"
+   HEALTH_BEFORE_AT="$(printf '%s\n' "$HEALTH_BEFORE" \
+     | jq -r '.health.reported_at // 0')"
+   HEALTH_PAYLOAD="$(printf '%s\n' "$HEALTH_BEFORE" \
+     | jq -c '.health | del(.reported_at)')"
+
+   curl -fsS -X POST \
+     "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: $HEALTH_CANARY_KEY" \
+     -d "$HEALTH_PAYLOAD"
+   curl -fsS "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
+     | jq -e --argjson before "$HEALTH_BEFORE_AT" \
+       '(.health.reported_at // 0) > $before'
+   curl -fsS https://hxa.zhiw.ai/api/team \
+     | jq -e --arg name "$HEALTH_SMOKE_AGENT" \
+       --argjson before "$HEALTH_BEFORE_AT" \
+       '.agents[] | select(.name == $name)
+        | (.monitoring.observed_at // 0) > $before'
    ```
+
+   Each POST and its stored timestamp read-back are one gate. A 200 from
+   `/api/health`, or even a 200 from either POST without a later persisted
+   timestamp, does not prove that ingest works.
 
 6. Flip auth:
 
@@ -157,6 +193,10 @@ Expected results:
 - `/api/team` without a cookie returns 401 JSON.
 - `/api/report` without a key returns 401 JSON.
 - `/api/report` with the ingest key returns 200.
+- The smoke employee appears in `/api/team` with a new non-zero
+  `last_seen_at`, proving the write was persisted and read back.
+- The chosen existing employee has a later `health.reported_at`, and
+  `/api/team` exposes the same later value as `monitoring.observed_at`.
 - Browser visit to `https://hxa.zhiw.ai/#limits` redirects through Feishu login and returns to the dashboard.
 - `/ws` only connects after the browser has a valid `hxa_token` cookie.
 - Any smoke agent rows are named with `deploy-smoke-<timestamp>` and should be
@@ -178,5 +218,7 @@ git checkout <rollback-commit>
 pm2 reload hxa-dash --update-env
 ```
 
-After rollback, verify `/api/about`, `/api/health`, the dashboard page, reporter
-ingest, and PM2 status. Post the rollback evidence on #4.
+After rollback, verify `/api/about`, `/api/health`, the dashboard page, a
+write/read reporter-ingest canary, the bare WebSocket update path, backup
+freshness, and PM2 status. Post the rollback evidence on the active release
+issue.

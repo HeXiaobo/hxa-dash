@@ -3,49 +3,63 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HxA Dash — AI 助理运行中枢</title>
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <meta name="theme-color" content="#0D9488">
+  <title>三个智能 — AI 员工监控</title>
+  <link rel="icon" href="assets/brand/three-ai-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/brand-tokens.css?v=1">
+  <link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
-  <div id="progress-bar"></div>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div id="progress-bar" aria-hidden="true"></div>
   <header>
     <div class="header-left">
       <h1 class="brand-mark">
-        <span class="brand-word">hxa</span>
-        <span class="brand-dot">.dash</span>
+        <span class="brand-logo-frame" aria-hidden="true">
+          <img class="brand-logo" src="assets/brand/three-ai-mark.svg" alt="" width="44" height="44">
+        </span>
+        <span class="brand-word">三个智能</span>
       </h1>
-      <button class="nav-hamburger" id="nav-hamburger" aria-label="菜单" aria-expanded="false">☰</button>
-      <nav id="main-nav">
-        <a href="#overview" class="nav-item active" data-page="overview">总览</a>
-        <a href="#team" class="nav-item" data-page="team">助理</a>
-        <a href="#limits" class="nav-item" data-page="limits">限额</a>
-        <a href="#tokens" class="nav-item" data-page="tokens">用量</a>
+      <button type="button" class="nav-hamburger" id="nav-hamburger" aria-label="打开菜单" aria-expanded="false">菜单</button>
+      <nav id="main-nav" aria-label="主导航">
+        <a href="#overview" class="nav-item active" data-page="overview" aria-current="page">监控</a>
         <a href="#backups" class="nav-item" data-page="backups">备份</a>
-        <a href="#system" class="nav-item" data-page="system">系统</a>
+        <details id="nav-more" class="nav-more">
+          <summary class="nav-more-toggle">更多</summary>
+          <div class="nav-more-menu">
+            <a href="#team" class="nav-item nav-item-secondary" data-page="team">AI 员工</a>
+            <a href="#tasks" class="nav-item nav-item-secondary" data-page="tasks">任务</a>
+            <a href="#collab" class="nav-item nav-item-secondary" data-page="collab">协作</a>
+            <a href="#analysis" class="nav-item nav-item-secondary" data-page="analysis">分析</a>
+            <a href="#system" class="nav-item nav-item-secondary" data-page="system">系统</a>
+            <a href="#myview" class="nav-item nav-item-secondary" data-page="myview">我的视图</a>
+          </div>
+        </details>
       </nav>
-      <button id="nav-close-btn" aria-label="关闭菜单">×</button>
+      <button type="button" id="nav-close-btn" aria-label="关闭菜单">关闭</button>
     </div>
     <div class="header-right">
+      <label class="visually-hidden" for="scope-selector">管理范围</label>
       <select id="scope-selector" class="scope-select hidden" title="管理范围"></select>
       <div class="global-agent-filter">
-        <button id="global-select-agents" class="btn-filter-global" title="筛选 Agent">
-          <span class="filter-icon">👥</span>
+        <button type="button" id="global-select-agents" class="btn-filter-global" title="筛选 Agent">
+          <span class="filter-icon" aria-hidden="true">筛选</span>
           <span id="global-agent-label" class="filter-label-text">全部 Agent</span>
         </button>
-        <button id="global-clear-filter" class="btn-clear-filter-global" style="display:none" title="清除筛选">✕</button>
+        <button type="button" id="global-clear-filter" class="btn-clear-filter-global" style="display:none" title="清除筛选" aria-label="清除 Agent 筛选">清除</button>
       </div>
-      <span id="ws-status" class="status-badge disconnected">断开</span>
-      <span id="refresh-status" class="refresh-status">
+      <span id="ws-status" class="status-badge disconnected" role="status" aria-live="polite">断开</span>
+      <span id="refresh-status" class="refresh-status" role="status" aria-live="polite">
         <span class="refresh-dot"></span>
         <span id="refresh-countdown"></span>
         <span class="refresh-sep">·</span>
         <span id="last-update"></span>
       </span>
-      <button id="refresh-btn" class="btn-refresh" title="手动刷新 (r)">⟳</button>
+      <button type="button" id="refresh-btn" class="btn-refresh" title="手动刷新 (r)" aria-label="手动刷新监控数据">刷新</button>
     </div>
   </header>
 
-  <main>
+  <main id="main-content" tabindex="-1">
     <!-- Sub-tabs for grouped pages (#114) -->
     <div class="sub-tabs hidden" data-group="tasks">
       <a href="#tasks" class="sub-tab active" data-subpage="tasks">任务</a>
@@ -72,35 +86,26 @@
     <div id="page-overview" class="page active">
       <section class="section">
         <div class="section-header">
-          <h2>运行总览</h2>
+          <h2>AI 员工监控</h2>
           <span id="runtime-overview-stats" class="team-stats"></span>
         </div>
-        <div id="runtime-summary" class="runtime-summary-grid"></div>
+        <div id="runtime-summary" class="runtime-summary-grid" aria-live="polite"></div>
       </section>
 
-      <div class="runtime-layout">
-        <section class="section attention-section">
-          <div class="section-header">
-            <h2>需关注</h2>
-            <span id="attention-total" class="team-stats"></span>
-          </div>
-          <div id="attention-panel" class="attention-list"></div>
-        </section>
-
-        <section class="section activity-section">
-          <div class="section-header">
-            <h2>最近关键活动</h2>
-            <span id="critical-activity-total" class="team-stats"></span>
-          </div>
-          <div id="critical-activity" class="runtime-activity-list"></div>
-        </section>
-      </div>
+      <section class="section attention-section">
+        <div class="section-header">
+          <h2>需关注</h2>
+          <span id="attention-total" class="team-stats"></span>
+        </div>
+        <div id="attention-panel" class="attention-list" aria-live="polite"></div>
+      </section>
 
       <section class="section runtime-agents-section">
         <div class="section-header">
-          <h2>Agent 运行</h2>
+          <h2>员工运行事实</h2>
           <div class="section-tools">
             <span id="overview-team-stats" class="team-stats"></span>
+            <label class="visually-hidden" for="overview-sort">员工排序方式</label>
             <select id="overview-sort" class="sort-select" title="排序方式">
               <option value="default">排序: 默认</option>
               <option value="health">按健康分</option>
@@ -109,8 +114,16 @@
             </select>
           </div>
         </div>
-        <p class="section-subtitle">按 runtime、心跳、活动、限额、用量和备份状态扫描助理运行态</p>
-        <div id="overview-agent-cards" class="runtime-card-grid"></div>
+        <p class="section-subtitle">采集状态和工作状态分开呈现；所有缺失事实均标记为“未采集”。</p>
+        <div id="overview-agent-cards" class="runtime-card-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="section activity-section">
+        <div class="section-header">
+          <h2>最近关键活动</h2>
+          <span id="critical-activity-total" class="team-stats"></span>
+        </div>
+        <div id="critical-activity" class="runtime-activity-list"></div>
       </section>
     </div>
 
@@ -120,7 +133,9 @@
         <div class="section-header">
           <h2>助理 Roster</h2>
           <div class="section-tools">
-            <input type="text" id="team-search" class="search-input" placeholder="搜索助理…">
+            <label class="visually-hidden" for="team-search">搜索 AI 员工</label>
+            <input type="search" id="team-search" class="search-input" placeholder="搜索助理…" autocomplete="off">
+            <label class="visually-hidden" for="team-status-filter">员工状态筛选</label>
             <select id="team-status-filter" class="select-filter">
               <option value="all">全部助理</option>
               <option value="attention">需关注</option>
@@ -132,6 +147,7 @@
               <option value="runtime:openclaw">OpenClaw</option>
               <option value="runtime:unknown">Unknown</option>
             </select>
+            <label class="visually-hidden" for="team-sort">员工排序方式</label>
             <select id="team-sort" class="sort-select" title="排序方式">
               <option value="default">排序: 默认</option>
               <option value="health">按健康分</option>
@@ -141,7 +157,7 @@
           </div>
         </div>
         <span id="team-stats" class="team-stats"></span>
-        <div id="team-agent-cards" class="runtime-card-grid runtime-card-grid-wide"></div>
+        <div id="team-agent-cards" class="runtime-card-grid runtime-card-grid-wide" aria-live="polite"></div>
       </section>
     </div>
 
@@ -164,9 +180,10 @@
             <h2>协作关系</h2>
             <div class="section-tools">
               <div class="view-toggle">
-                <button id="collab-view-graph" class="btn-toggle active" title="力导向图">图谱</button>
-                <button id="collab-view-matrix" class="btn-toggle" title="热力矩阵">矩阵</button>
+                <button type="button" id="collab-view-graph" class="btn-toggle active" title="力导向图">图谱</button>
+                <button type="button" id="collab-view-matrix" class="btn-toggle" title="热力矩阵">矩阵</button>
               </div>
+              <label class="visually-hidden" for="collab-project-filter">协作项目筛选</label>
               <select id="collab-project-filter" class="select-filter">
                 <option value="">全部项目</option>
               </select>
@@ -175,7 +192,7 @@
           </div>
           <!-- Graph View -->
           <div id="collab-graph-view" class="graph-container graph-container-large">
-            <canvas id="collab-canvas"></canvas>
+            <canvas id="collab-canvas" role="img" aria-label="AI 员工协作关系图"></canvas>
             <div id="collab-empty" class="graph-empty hidden">暂无协作数据 — 请先在左侧选择 Agent</div>
             <div class="graph-legend">
               <span class="legend-separator">连线类型</span>
@@ -339,7 +356,7 @@
             </div>
           </div>
         </div>
-        <span class="token-estimate-badge" title="优先展示各 agent 本机 runtime usage 快照；无观测数据时回退活动估算">🧮 本机观测</span>
+        <span class="token-estimate-badge" title="优先展示各 agent 本机 runtime usage 快照；无观测数据时回退活动估算">本机观测</span>
         <div id="token-summary" class="token-summary"></div>
       </section>
 
@@ -369,16 +386,17 @@
     <!-- Page: Pipeline (#77) -->
     <div id="page-pipeline" class="page">
       <div class="pipe-toolbar">
+        <label class="visually-hidden" for="pipeline-project-filter">Pipeline 项目筛选</label>
         <select id="pipeline-project-filter" class="select-filter">
           <option value="">全部项目</option>
         </select>
       </div>
       <div id="pipeline-summary" class="pipe-summary-bar"></div>
       <div id="pipeline-flow" class="pipe-flow" style="position:relative">
-        <canvas id="pipe-dep-canvas" class="pipe-canvas"></canvas>
+        <canvas id="pipe-dep-canvas" class="pipe-canvas" role="img" aria-label="Pipeline 依赖关系图"></canvas>
         <div class="pipe-stages">
           <div class="pipe-stage">
-            <h3 class="pipe-stage-title pipe-stage-executing">🔨 执行中</h3>
+            <h3 class="pipe-stage-title pipe-stage-executing">执行中</h3>
             <div id="pipe-executing" class="pipe-stage-list"></div>
           </div>
           <div class="pipe-stage">
@@ -416,7 +434,7 @@
     <div id="page-estimates" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>⏱️ 时间预估</h2>
+          <h2>时间预估</h2>
           <div class="section-tools">
             <div class="btn-group">
               <button data-estimate-period="7" class="btn-toggle">7天</button>
@@ -433,7 +451,7 @@
     <div id="page-health" class="page">
       <section class="section">
         <div class="section-header">
-          <h2>🩺 运行态诊断</h2>
+          <h2>运行态诊断</h2>
         </div>
         <div id="health-diagnostics"></div>
       </section>
@@ -448,7 +466,7 @@
     <!-- Page: My View (#55) -->
     <div id="page-myview" class="page">
       <div class="filter-bar">
-        <span class="filter-label">身份</span>
+        <label class="filter-label" for="myview-agent-select">身份</label>
         <select id="myview-agent-select" class="select-filter"></select>
       </div>
       <div id="myview-content"></div>
@@ -482,42 +500,42 @@
       </section>
     </div>
 
-    <!-- Agent Detail Drawer -->
-    <div id="detail-drawer" class="drawer hidden">
-      <div class="drawer-overlay"></div>
-      <div class="drawer-content">
-        <button class="drawer-close">&times;</button>
-        <div id="drawer-body"></div>
-      </div>
-    </div>
-
-    <!-- Agent Selector Modal -->
-    <div id="agent-selector-modal" class="modal hidden">
-      <div class="modal-overlay"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>选择 Agent</h3>
-          <button class="modal-close">&times;</button>
-        </div>
-        <div class="modal-actions">
-          <button id="modal-select-all" class="btn-sm">全选</button>
-          <button id="modal-clear-all" class="btn-sm">清空</button>
-        </div>
-        <div id="modal-agent-list" class="agent-checklist"></div>
-        <div class="modal-footer">
-          <button id="modal-cancel" class="btn-secondary">取消</button>
-          <button id="modal-apply" class="btn-primary">确定</button>
-        </div>
-      </div>
-    </div>
   </main>
+
+  <!-- Dialogs live outside <main> so the sticky header cannot cover them. -->
+  <div id="detail-drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true">
+    <div class="drawer-overlay" aria-hidden="true"></div>
+    <div class="drawer-content" tabindex="-1">
+      <button type="button" class="drawer-close" aria-label="关闭员工详情">关闭</button>
+      <div id="drawer-body"></div>
+    </div>
+  </div>
+
+  <div id="agent-selector-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="agent-selector-title">
+    <div class="modal-overlay" aria-hidden="true"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="agent-selector-title">选择 Agent</h3>
+        <button type="button" class="modal-close" aria-label="关闭 Agent 选择器">关闭</button>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="modal-select-all" class="btn-sm">全选</button>
+        <button type="button" id="modal-clear-all" class="btn-sm">清空</button>
+      </div>
+      <div id="modal-agent-list" class="agent-checklist"></div>
+      <div class="modal-footer">
+        <button type="button" id="modal-cancel" class="btn-secondary">取消</button>
+        <button type="button" id="modal-apply" class="btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
 
   <script src="js/lib/force-graph.js?v=3"></script>
   <script src="js/components/trends.js?v=3"></script>
   <script src="js/components/member-output.js?v=3"></script>
   <script src="js/components/card-wall.js?v=3"></script>
   <script src="js/components/team-capacity.js?v=3"></script>
-  <script src="js/components/detail-drawer.js?v=3"></script>
+  <script src="js/components/detail-drawer.js?v=4"></script>
   <script src="js/components/collab-graph.js?v=3"></script>
   <script src="js/components/task-board.js?v=3"></script>
   <script src="js/components/timeline.js?v=3"></script>
@@ -538,6 +556,6 @@
   <script src="js/components/time-estimates.js?v=3"></script>
   <script src="js/components/health-diagnostics.js?v=3"></script>
   <script src="js/components/projects.js?v=3"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>

@@ -2,32 +2,148 @@
 const DetailDrawer = {
   drawer: null,
   body: null,
+  dialog: null,
+  previouslyFocused: null,
+  openerName: null,
+  backgroundStates: [],
+  bodyStyle: null,
+  requestId: 0,
 
   init() {
     this.drawer = document.getElementById('detail-drawer');
     this.body = document.getElementById('drawer-body');
+    this.dialog = this.drawer?.querySelector('.drawer-content');
+    if (!this.drawer || !this.body || !this.dialog) return;
 
     // Close handlers
     this.drawer.querySelector('.drawer-overlay').addEventListener('click', () => this.close());
     this.drawer.querySelector('.drawer-close').addEventListener('click', () => this.close());
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') this.close();
+      if (!this.isOpen()) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.close();
+        return;
+      }
+      if (e.key === 'Tab') this._trapFocus(e);
     });
   },
 
-  async open(name) {
+  async open(name, opener = null) {
+    const currentRequest = ++this.requestId;
+    this.previouslyFocused = opener instanceof HTMLElement ? opener : document.activeElement;
+    this.openerName = name;
     try {
       const res = await fetch(`${BASE}/api/team/${encodeURIComponent(name)}`);
       if (!res.ok) throw new Error('Not found');
       const data = await res.json();
+      if (currentRequest !== this.requestId) return;
       this.renderDetail(data);
       this.drawer.classList.remove('hidden');
+      this.drawer.setAttribute('aria-hidden', 'false');
+      this._lockBackground();
+      requestAnimationFrame(() => {
+        const title = document.getElementById('drawer-title');
+        (title || this.dialog).focus({ preventScroll: true });
+      });
 
       // Async-load output trends (#127) + hardware (#122)
       this._loadOutputSection(name);
       this._loadHardwareSection(name);
     } catch (err) {
       console.error('Failed to load agent detail:', err);
+      if (currentRequest !== this.requestId) return;
+      this.body.innerHTML = `
+        <div class="drawer-header">
+          <h3 id="drawer-title" tabindex="-1">员工详情暂不可用</h3>
+          <p class="drawer-bio">无法读取该员工的详情，请稍后重试。</p>
+        </div>`;
+      this.drawer.classList.remove('hidden');
+      this.drawer.setAttribute('aria-hidden', 'false');
+      this._lockBackground();
+      requestAnimationFrame(() => document.getElementById('drawer-title')?.focus({ preventScroll: true }));
+    }
+  },
+
+  isOpen() {
+    return !!this.drawer && !this.drawer.classList.contains('hidden');
+  },
+
+  _lockBackground() {
+    if (this.backgroundStates.length) return;
+    const excluded = new Set([this.drawer]);
+    const elements = Array.from(document.body.children).filter(element => (
+      !excluded.has(element)
+      && !['SCRIPT', 'STYLE', 'LINK'].includes(element.tagName)
+    ));
+    this.backgroundStates = elements.map(element => ({
+      element,
+      inert: element.inert,
+      ariaHidden: element.getAttribute('aria-hidden')
+    }));
+    this.backgroundStates.forEach(({ element }) => {
+      element.inert = true;
+      element.setAttribute('aria-hidden', 'true');
+    });
+
+    const scrollbarGap = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    this.bodyStyle = {
+      overflow: document.body.style.overflow,
+      paddingRight: document.body.style.paddingRight
+    };
+    document.body.classList.add('drawer-open');
+    document.body.style.overflow = 'hidden';
+    if (scrollbarGap) document.body.style.paddingRight = `${scrollbarGap}px`;
+  },
+
+  _unlockBackground() {
+    this.backgroundStates.forEach(({ element, inert, ariaHidden }) => {
+      element.inert = inert;
+      if (ariaHidden == null) element.removeAttribute('aria-hidden');
+      else element.setAttribute('aria-hidden', ariaHidden);
+    });
+    this.backgroundStates = [];
+
+    document.body.classList.remove('drawer-open');
+    if (this.bodyStyle) {
+      document.body.style.overflow = this.bodyStyle.overflow;
+      document.body.style.paddingRight = this.bodyStyle.paddingRight;
+      this.bodyStyle = null;
+    }
+  },
+
+  _focusableElements() {
+    return Array.from(this.dialog.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter(element => (
+      !element.hidden
+      && element.getAttribute('aria-hidden') !== 'true'
+      && element.getClientRects().length > 0
+    ));
+  },
+
+  _trapFocus(event) {
+    const focusable = this._focusableElements();
+    if (!focusable.length) {
+      event.preventDefault();
+      this.dialog.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (
+      active === first
+      || active === this.dialog
+      || active === document.getElementById('drawer-title')
+      || !this.dialog.contains(active)
+    )) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !this.dialog.contains(active))) {
+      event.preventDefault();
+      first.focus();
     }
   },
 
@@ -67,12 +183,13 @@ const DetailDrawer = {
     };
     const gauge = (label, pct, status, detail) => {
       if (pct == null) return '';
+      const safePct = Math.max(0, Math.min(100, Number(pct) || 0));
       const cls = status === 'critical' ? 'hw-crit' : status === 'warning' ? 'hw-warn' : 'hw-ok';
       return `<div class="drawer-hw-gauge">
         <div class="drawer-hw-bar-wrap">
-          <div class="drawer-hw-bar ${cls}" style="width:${pct}%"></div>
+          <div class="drawer-hw-bar ${cls}" style="width:${safePct}%"></div>
         </div>
-        <div class="drawer-hw-info"><span class="drawer-hw-label">${label}</span><span class="drawer-hw-val">${pct}%</span></div>
+        <div class="drawer-hw-info"><span class="drawer-hw-label">${esc(label)}</span><span class="drawer-hw-val">${safePct}%</span></div>
         ${detail ? `<div class="drawer-hw-detail">${esc(detail)}</div>` : ''}
       </div>`;
     };
@@ -81,7 +198,13 @@ const DetailDrawer = {
     const memDetail = h.memory ? `${h.memory.used_gb || '?'}GB / ${h.memory.total_gb || '?'}GB` : '';
     const cpuDetail = h.cpu && h.cpu.load_avg ? `负载: ${h.cpu.load_avg.join(' / ')}` : '';
 
-    const pm2HTML = h.pm2 ? `<div class="drawer-hw-pm2">⚙️ PM2: ${h.pm2.online}/${h.pm2.total} 在线</div>` : '';
+    const services = Array.isArray(h.pm2?.services) ? h.pm2.services : [];
+    const serviceSummary = services.length
+      ? ` · ${services.map(service => `${service.name || '未命名服务'} ${service.status || 'unknown'}`).join(' · ')}`
+      : '';
+    const pm2HTML = h.pm2
+      ? `<div class="drawer-hw-pm2">PM2: ${h.pm2.online}/${h.pm2.total} 在线${esc(serviceSummary)}</div>`
+      : '';
     const usageEntries = h.usage && typeof h.usage === 'object' ? Object.entries(h.usage) : [];
     const usageHTML = usageEntries.map(([runtime, usage]) => {
       if (!usage?.supported) return '';
@@ -96,32 +219,158 @@ const DetailDrawer = {
         usage.session_cost_usd != null ? `估算 $${Number(usage.session_cost_usd).toFixed(2)}` : null,
       ].filter(Boolean);
       return bits.length
-        ? `<div class="drawer-hw-pm2">🧮 ${esc(runtime)}: ${esc(bits.join(' · '))}</div>`
+        ? `<div class="drawer-hw-pm2">${esc(runtime)}: ${esc(bits.join(' · '))}</div>`
         : '';
     }).join('');
     const reportedAgo = data.health.reported_at ? timeAgo(data.health.reported_at) : '';
 
     return `<div class="drawer-section">
-      <h4>硬件资源 <span style="font-weight:normal;color:var(--text-secondary);font-size:12px;">${reportedAgo}上报</span></h4>
-      ${gauge('💾 磁盘', h.disk?.pct, h.disk?.status, diskDetail)}
-      ${gauge('🧠 内存', h.memory?.pct, h.memory?.status, memDetail)}
-      ${gauge('⚡ CPU', h.cpu?.pct, h.cpu?.pct > 90 ? 'critical' : h.cpu?.pct > 80 ? 'warning' : 'ok', cpuDetail)}
+      <h4>采集明细 <span style="font-weight:normal;color:var(--text-secondary);font-size:12px;">${reportedAgo}上报</span></h4>
+      ${gauge('磁盘', h.disk?.pct, h.disk?.status, diskDetail)}
+      ${gauge('内存', h.memory?.pct, h.memory?.status, memDetail)}
+      ${gauge('CPU', h.cpu?.pct, h.cpu?.pct >= 90 ? 'critical' : h.cpu?.pct >= 80 ? 'warning' : 'ok', cpuDetail)}
       ${pm2HTML}
       ${usageHTML}
     </div>`;
   },
 
-  close() {
-    this.drawer.classList.add('hidden');
+  _renderMonitoring(agent) {
+    const monitoring = agent.monitoring || {};
+    const system = monitoring.system || {};
+    const capacity = monitoring.capacity || {};
+    const tokens = monitoring.tokens || {};
+    const collection = RuntimeCenter._collectionState(monitoring);
+    const work = RuntimeCenter._workState(agent);
+    const anomalies = RuntimeCenter._anomalyFacts(agent);
+    const versions = RuntimeCenter._versionsLabel(agent);
+    const observedAt = this._formatObservedAt(monitoring.observed_at);
+    const backup = this._monitoringBackupLabel(monitoring.backup);
+
+    const systemText = [
+      `CPU ${RuntimeCenter._factPercent(system.cpu_pct)}`,
+      `内存 ${RuntimeCenter._factPercent(system.memory_pct)}`,
+      `磁盘 ${RuntimeCenter._factPercent(system.disk_pct)}`
+    ].join(' · ');
+    const pm2Text = system.pm2_online == null && system.pm2_total == null
+      ? '未采集'
+      : `${RuntimeCenter._factNumber(system.pm2_online)}/${RuntimeCenter._factNumber(system.pm2_total)} 在线`;
+    const contextText = [
+      RuntimeCenter._factPercent(capacity.context_pct),
+      RuntimeCenter._factTokens(capacity.context_tokens)
+    ].join(' · ');
+    const tokenText = [
+      `会话 ${RuntimeCenter._factTokens(tokens.session_total)}`,
+      `最近一轮 ${RuntimeCenter._factTokens(tokens.last_turn_total)}`,
+      `成本 ${tokens.cost_usd == null ? '未采集' : `$${Number(tokens.cost_usd).toFixed(2)}`}`
+    ].join(' · ');
+
+    return `<div class="drawer-section monitoring-detail-section">
+      <h4>运行事实</h4>
+      <div class="monitoring-detail-states">
+        <span class="runtime-pill ${collection.cls}">${esc(collection.label)}</span>
+        <span class="runtime-pill ${work.cls}">${esc(work.label)}</span>
+      </div>
+      <dl class="monitoring-detail-grid">
+        ${this._monitoringDetailFact('最近采集', observedAt)}
+        ${this._monitoringDetailFact('系统资源', systemText)}
+        ${this._monitoringDetailFact('PM2 服务', pm2Text)}
+        ${this._monitoringDetailFact('Context', contextText)}
+        ${this._monitoringDetailFact('Token', tokenText)}
+        ${this._monitoringDetailFact(
+          '5 小时额度',
+          RuntimeCenter._factPercent(capacity.five_hour_pct),
+          this._formatResetAt(capacity.five_hour_resets_at)
+        )}
+        ${this._monitoringDetailFact(
+          '7 天额度',
+          RuntimeCenter._factPercent(capacity.seven_day_pct),
+          this._formatResetAt(capacity.seven_day_resets_at)
+        )}
+        ${this._monitoringDetailFact('Runtime / 版本', versions)}
+        ${this._monitoringDetailFact('最近成功备份', backup.label, backup.note)}
+      </dl>
+      <div class="monitoring-detail-anomalies">
+        <h4>异常事实</h4>
+        ${anomalies.length
+          ? `<ul>${anomalies.map(item => `<li class="${item.risk.cls}">${esc(item.risk.detail || item.risk.label)}</li>`).join('')}</ul>`
+          : `<p>${agent.monitoring ? '无异常事实' : '未采集'}</p>`}
+      </div>
+    </div>`;
   },
 
-  // Event type icon mapping
-  _eventIcon(action) {
-    const icons = {
-      'opened': '📋', 'closed': '✅', 'merged': '🔀', 'commented on': '💬',
-      'pushed to': '📦', 'approved': '👍', 'assigned': '👤', 'updated': '✏️'
+  _monitoringDetailFact(label, value, note = '') {
+    return `<div class="monitoring-detail-fact">
+      <dt>${esc(label)}</dt>
+      <dd>${esc(value || '未采集')}${note ? `<small>${esc(note)}</small>` : ''}</dd>
+    </div>`;
+  },
+
+  _formatObservedAt(value) {
+    if (!value) return '未采集';
+    const timestamp = typeof value === 'number' ? value : new Date(value).getTime();
+    if (!Number.isFinite(timestamp)) return '未采集';
+    return `${new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).format(new Date(timestamp))}（${timeAgo(timestamp)}）`;
+  },
+
+  _formatResetAt(value) {
+    if (!value) return '重置时间 未采集';
+    const timestamp = typeof value === 'number' ? value : new Date(value).getTime();
+    if (!Number.isFinite(timestamp)) return '重置时间 未采集';
+    return `重置 ${new Intl.DateTimeFormat('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(timestamp))}`;
+  },
+
+  _monitoringBackupLabel(backup) {
+    if (!backup || (
+      backup.last_success_at == null
+      && ['unsupported', 'unknown', ''].includes(String(backup.status || '').toLowerCase())
+    )) {
+      return { label: '未采集', note: '' };
+    }
+    const labels = {
+      ok: '正常',
+      warning: '需确认',
+      critical: '异常',
+      unsupported: '未采集'
     };
-    return icons[action] || '•';
+    return {
+      label: labels[String(backup.status || '').toLowerCase()] || '未采集',
+      note: backup.last_success_at
+        ? this._formatObservedAt(backup.last_success_at)
+        : '成功时间 未采集'
+    };
+  },
+
+  close({ restoreFocus = true } = {}) {
+    if (!this.drawer || !this.isOpen()) return;
+    this.requestId += 1;
+    this.drawer.classList.add('hidden');
+    this.drawer.setAttribute('aria-hidden', 'true');
+    this._unlockBackground();
+    let returnTarget = this.previouslyFocused;
+    if (!returnTarget || !returnTarget.isConnected || returnTarget === document.body) {
+      returnTarget = Array.from(document.querySelectorAll('.runtime-agent-card[data-name]'))
+        .find(element => (
+          element.dataset.name === this.openerName
+          && element.closest('.page.active')
+        )) || null;
+    }
+    this.previouslyFocused = null;
+    this.openerName = null;
+    if (restoreFocus && returnTarget instanceof HTMLElement && returnTarget.isConnected) {
+      requestAnimationFrame(() => returnTarget.focus({ preventScroll: true }));
+    }
   },
 
   // Group events by day and render activity timeline (#46)
@@ -161,11 +410,10 @@ const DetailDrawer = {
                   const url = e.url || e.target_url || '';
                   const title = e.target_title || '';
                   const titleHtml = url
-                    ? `<a href="${esc(url)}" target="_blank" class="at-link">${esc(truncate(title, 60))}</a>`
+                    ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="at-link">${esc(truncate(title, 60))}</a>`
                     : `<span>${esc(truncate(title, 60))}</span>`;
                   return `
                     <div class="at-event">
-                      <span class="at-icon">${this._eventIcon(e.action)}</span>
                       <span class="at-time">${hm}</span>
                       <span class="at-action">${esc(e.action)}</span>
                       ${titleHtml}
@@ -180,32 +428,41 @@ const DetailDrawer = {
   },
 
   renderDetail(data) {
-    const { agent, current_tasks, recent_done, events, collabs, stats } = data;
+    const {
+      agent = {},
+      current_tasks: currentTasks = [],
+      recent_done: recentDone = [],
+      events = [],
+      collabs = [],
+      stats = {}
+    } = data || {};
 
     this.body.innerHTML = `
       <div class="drawer-header">
-        <h3>${esc(agent.name)} <span class="online-dot ${agent.online ? 'online' : 'offline'}"></span></h3>
+        <h3 id="drawer-title" tabindex="-1">${esc(agent.name || '未命名员工')}</h3>
         <div class="drawer-role">${esc(agent.role || '—')}</div>
         ${agent.bio ? `<div class="drawer-bio">${esc(agent.bio)}</div>` : ''}
       </div>
+
+      ${this._renderMonitoring(agent)}
 
       <div class="drawer-section">
         <h4>统计</h4>
         <div class="drawer-stat-grid">
           <div class="stat-box">
-            <div class="stat-num">${stats.open_tasks}</div>
+            <div class="stat-num">${Number(stats.open_tasks || 0)}</div>
             <div class="stat-label">进行中</div>
           </div>
           <div class="stat-box">
-            <div class="stat-num">${stats.closed_tasks}</div>
+            <div class="stat-num">${Number(stats.closed_tasks || 0)}</div>
             <div class="stat-label">已完成</div>
           </div>
           <div class="stat-box">
-            <div class="stat-num">${stats.mr_count}</div>
+            <div class="stat-num">${Number(stats.mr_count || 0)}</div>
             <div class="stat-label">MR</div>
           </div>
           <div class="stat-box">
-            <div class="stat-num">${stats.issue_count}</div>
+            <div class="stat-num">${Number(stats.issue_count || 0)}</div>
             <div class="stat-label">Issue</div>
           </div>
         </div>
@@ -214,13 +471,13 @@ const DetailDrawer = {
       <div id="drawer-output-section"></div>
       <div id="drawer-hardware-section"></div>
 
-      ${current_tasks.length > 0 ? `
+      ${currentTasks.length > 0 ? `
         <div class="drawer-section">
-          <h4>当前工作 (${current_tasks.length})</h4>
+          <h4>当前工作 (${currentTasks.length})</h4>
           <ul class="drawer-task-list">
-            ${current_tasks.map(t => `
+            ${currentTasks.map(t => `
               <li>
-                <a href="${esc(t.url)}" target="_blank" style="color: var(--accent); text-decoration: none;">
+                <a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">
                   ${esc(t.title)}
                 </a>
                 <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
@@ -232,13 +489,13 @@ const DetailDrawer = {
         </div>
       ` : ''}
 
-      ${recent_done.length > 0 ? `
+      ${recentDone.length > 0 ? `
         <div class="drawer-section">
-          <h4>近期完成 (${recent_done.length})</h4>
+          <h4>近期完成 (${recentDone.length})</h4>
           <ul class="drawer-task-list">
-            ${recent_done.slice(0, 8).map(t => `
+            ${recentDone.slice(0, 8).map(t => `
               <li>
-                <a href="${esc(t.url)}" target="_blank" style="color: var(--text); text-decoration: none;">
+                <a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer" style="color: var(--text); text-decoration: none;">
                   ${esc(t.title)}
                 </a>
                 <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">

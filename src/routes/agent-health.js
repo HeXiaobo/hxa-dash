@@ -8,8 +8,10 @@ const { hasApiKey } = require('../auth/api-key');
 
 const router = Router();
 
-// Max age before health data is considered stale (10 minutes)
-const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+// The reporter runs every 10 minutes. Allow 1.5x cadence jitter before a
+// collection is stale; stale telemetry is not evidence that an employee is
+// offline or not working.
+const STALE_THRESHOLD_MS = 15 * 60 * 1000;
 
 // Auth middleware for POST — requires Bearer token or X-API-Key header
 function requireHealthAuth(req, res, next) {
@@ -43,8 +45,14 @@ function clampInt(val, min = 0, max = 1e12) {
 }
 
 function normalizeTimestamp(val) {
-  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    return val >= 1e9 && val < 1e12 ? val * 1000 : val;
+  }
   if (typeof val === 'string') {
+    const numeric = Number(val);
+    if (Number.isFinite(numeric) && val.trim()) {
+      return numeric >= 1e9 && numeric < 1e12 ? numeric * 1000 : numeric;
+    }
     const parsed = Date.parse(val);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -54,6 +62,36 @@ function normalizeTimestamp(val) {
 function sanitizeEnum(val, allowed, fallback = null) {
   const normalized = sanitizeStr(val, 64)?.toLowerCase() || null;
   return normalized && allowed.includes(normalized) ? normalized : fallback;
+}
+
+function resourceStatus(pct) {
+  if (pct == null) return 'unknown';
+  if (pct >= 90) return 'critical';
+  if (pct >= 80) return 'warning';
+  return 'ok';
+}
+
+function overallHealthStatus(health, agentOnline, stale) {
+  if (!health || stale) return 'unknown';
+  const statuses = [
+    health.disk?.status,
+    health.memory?.status,
+    health.cpu?.status || resourceStatus(health.cpu?.pct),
+  ].filter(Boolean);
+
+  if (health.pm2?.total > 0) {
+    statuses.push(
+      health.pm2.online === health.pm2.total
+        ? 'ok'
+        : health.pm2.online === 0 ? 'critical' : 'warning'
+    );
+  }
+  if (health.runtime?.status === 'degraded') statuses.push('warning');
+  if (health.runtime?.status === 'offline' && agentOnline) statuses.push('critical');
+
+  if (statuses.includes('critical')) return 'critical';
+  if (statuses.includes('warning')) return 'warning';
+  return statuses.includes('ok') ? 'ok' : 'unknown';
 }
 
 function sanitizeRemoteUrl(val) {
@@ -155,10 +193,59 @@ function sanitizeRuntime(runtime) {
   return {
     type: sanitizeEnum(runtime.type, ['claude_code', 'codex', 'openclaw', 'unknown'], 'unknown'),
     version: sanitizeStr(runtime.version, 64),
-    status: sanitizeEnum(runtime.status, ['running', 'degraded', 'offline'], 'offline'),
+    installed: typeof runtime.installed === 'boolean' ? runtime.installed : !!sanitizeStr(runtime.version, 64),
+    status: sanitizeEnum(runtime.status, ['running', 'degraded', 'offline', 'unknown'], 'unknown'),
+    status_source: sanitizeEnum(runtime.status_source, ['override', 'process', 'runtime_health', 'installed_binary', 'detection', 'unknown'], 'unknown'),
     source: sanitizeStr(runtime.source, 64),
     detection_source: sanitizeStr(runtime.detection_source, 32),
-    checked_at: normalizeTimestamp(runtime.checked_at) || Date.now(),
+    checked_at: normalizeTimestamp(runtime.checked_at),
+  };
+}
+
+function sanitizeRosterRateLimit(window) {
+  if (!window || typeof window !== 'object') return null;
+  const usedPct = clampNum(window.used_pct ?? window.used_percent ?? window.used_percentage, 0, 100);
+  const resetsAt = normalizeTimestamp(window.resets_at);
+  if (usedPct == null && resetsAt == null) return null;
+  return {
+    used_pct: usedPct,
+    resets_at: resetsAt,
+  };
+}
+
+// statusline.json is produced by a runtime component and must be treated as
+// untrusted input. Reconstruct the object from this explicit allowlist rather
+// than persisting arbitrary nested keys (which could include secrets).
+function sanitizeRoster(roster) {
+  if (!roster || typeof roster !== 'object' || Array.isArray(roster)) return null;
+  const sampledAt = normalizeTimestamp(roster.sampled_at);
+  const fiveHour = sanitizeRosterRateLimit(roster.rate_limits?.five_hour);
+  const sevenDay = sanitizeRosterRateLimit(roster.rate_limits?.seven_day);
+
+  return {
+    model: sanitizeStr(roster.model, 128),
+    model_display: sanitizeStr(roster.model_display, 128),
+    version: sanitizeStr(roster.version, 64),
+    runtime_type: sanitizeEnum(roster.runtime_type, ['claude_code', 'codex', 'openclaw', 'unknown'], 'unknown'),
+    cost_usd: clampNum(roster.cost_usd, 0, 999999999),
+    lines_added: clampInt(roster.lines_added, 0, 1000000000),
+    lines_removed: clampInt(roster.lines_removed, 0, 1000000000),
+    context_used_pct: clampNum(roster.context_used_pct, 0, 100),
+    context_total_tokens: clampInt(roster.context_total_tokens, 0, 1e12),
+    rate_limits: {
+      five_hour: fiveHour,
+      seven_day: sevenDay,
+    },
+    plan_type: sanitizeStr(roster.plan_type, 32),
+    sampled_at: sampledAt,
+  };
+}
+
+function withSanitizedRoster(health) {
+  if (!health || typeof health !== 'object') return health;
+  return {
+    ...health,
+    roster: sanitizeRoster(health.roster),
   };
 }
 
@@ -240,7 +327,7 @@ router.get('/roster', (req, res) => {
       runtime_type: health.runtime?.type || null,
       runtime_version: health.runtime?.version || null,
       runtime_status: health.runtime?.status || null,
-      roster: health.roster || null,
+      roster: sanitizeRoster(health.roster),
     }))
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   res.json({ count: roster.length, timestamp: now, agents: roster });
@@ -261,6 +348,7 @@ router.post('/:name', requireHealthAuth, (req, res) => {
 
   const diskPct = clampNum(disk.pct, 0, 100);
   const memPct = clampNum(memory.pct, 0, 100);
+  const cpuPct = cpu ? clampNum(cpu.pct, 0, 100) : null;
 
   const health = {
     hostname: sanitizeStr(hostname, 128),
@@ -268,16 +356,17 @@ router.post('/:name', requireHealthAuth, (req, res) => {
       pct: diskPct,
       used: sanitizeStr(disk.used),
       total: sanitizeStr(disk.total),
-      status: diskPct > 90 ? 'critical' : diskPct > 80 ? 'warning' : 'ok',
+      status: resourceStatus(diskPct),
     },
     memory: {
       pct: memPct,
       used_gb: clampNum(memory.used_gb, 0, 99999),
       total_gb: clampNum(memory.total_gb, 0, 99999),
-      status: memPct > 90 ? 'critical' : memPct > 80 ? 'warning' : 'ok',
+      status: resourceStatus(memPct),
     },
     cpu: cpu ? {
-      pct: clampNum(cpu.pct, 0, 100),
+      pct: cpuPct,
+      status: resourceStatus(cpuPct),
       load_avg: Array.isArray(cpu.load_avg) ? cpu.load_avg.slice(0, 3).map(v => clampNum(v, 0, 9999)) : null,
       cores: clampNum(cpu.cores, 1, 1024),
     } : null,
@@ -307,7 +396,7 @@ router.post('/:name', requireHealthAuth, (req, res) => {
         )
       : null,
     backup: sanitizeBackup(backup),
-    roster: roster && typeof roster === 'object' ? roster : null,
+    roster: sanitizeRoster(roster),
   };
 
   db.upsertAgentHealth(name, health);
@@ -322,26 +411,13 @@ router.get('/', (req, res) => {
   const agents = db.getAllAgents();
 
   const result = agents.map(agent => {
-    const health = allHealth[agent.name] || null;
+    const health = withSanitizedRoster(allHealth[agent.name] || null);
     const stale = health ? (now - health.reported_at > STALE_THRESHOLD_MS) : true;
-
-    // Determine overall status
-    let overall = 'unknown';
-    if (health && !stale) {
-      const statuses = [health.disk.status, health.memory.status];
-      if (health.pm2) {
-        statuses.push(health.pm2.online === health.pm2.total && health.pm2.total > 0 ? 'ok' : health.pm2.online === 0 ? 'critical' : 'warning');
-      }
-      if (health.runtime?.status === 'degraded') statuses.push('warning');
-      if (health.runtime?.status === 'offline' && agent.online) statuses.push('critical');
-      overall = statuses.includes('critical') ? 'critical'
-        : statuses.includes('warning') ? 'warning' : 'ok';
-    }
 
     return {
       name: agent.name,
       online: !!agent.online,
-      overall,
+      overall: overallHealthStatus(health, !!agent.online, stale),
       stale,
       runtime: health?.runtime || null,
       quota: health?.quota || null,
@@ -359,7 +435,7 @@ router.get('/:name', (req, res) => {
   const agent = db.getAgent(req.params.name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const health = db.getAgentHealth(req.params.name);
+  const health = withSanitizedRoster(db.getAgentHealth(req.params.name));
   const now = Date.now();
   const stale = health ? (now - health.reported_at > STALE_THRESHOLD_MS) : true;
 
@@ -373,4 +449,11 @@ router.get('/:name', (req, res) => {
 });
 
 module.exports = router;
-module.exports.__private = { sanitizeBackup };
+module.exports.__private = {
+  STALE_THRESHOLD_MS,
+  sanitizeBackup,
+  sanitizeRoster,
+  sanitizeRuntime,
+  resourceStatus,
+  overallHealthStatus,
+};

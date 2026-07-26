@@ -516,11 +516,11 @@ function collectLatestRateLimitSnapshot(rootDir) {
 
 function timestampToMs(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return value > 0 && value < 1e12 ? value * 1000 : value;
+    return value >= 1e9 && value < 1e12 ? value * 1000 : value;
   }
   if (typeof value === 'string' && value.trim()) {
     const numeric = Number(value);
-    if (Number.isFinite(numeric)) return numeric > 0 && numeric < 1e12 ? numeric * 1000 : numeric;
+    if (Number.isFinite(numeric)) return numeric >= 1e9 && numeric < 1e12 ? numeric * 1000 : numeric;
     const parsed = Date.parse(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -626,7 +626,11 @@ function probeRuntimeDetails(runtimeProbe) {
     return {
       type,
       version,
+      installed: Boolean(version),
       status,
+      status_source: runtimeStatusOverride !== 'unknown'
+        ? 'override'
+        : running ? 'runtime_health' : version ? 'installed_binary' : 'runtime_health',
       source: 'openclaw status',
       detection_source: detectionSource,
       checked_at: new Date().toISOString(),
@@ -638,12 +642,16 @@ function probeRuntimeDetails(runtimeProbe) {
     const version = runtimeVersionOverride || parseVersionText(versionProbe.stdout);
     const status = runtimeStatusOverride !== 'unknown'
       ? runtimeStatusOverride
-      : (version ? 'running' : (strongDetection ? 'degraded' : 'offline'));
+      : (detectionSource === 'process' ? 'running' : (version || strongDetection) ? 'degraded' : 'unknown');
 
     return {
       type,
       version,
+      installed: Boolean(version),
       status,
+      status_source: runtimeStatusOverride !== 'unknown'
+        ? 'override'
+        : detectionSource === 'process' ? 'process' : version ? 'installed_binary' : 'detection',
       source: 'claude version',
       detection_source: detectionSource,
       checked_at: new Date().toISOString(),
@@ -655,12 +663,16 @@ function probeRuntimeDetails(runtimeProbe) {
     const version = runtimeVersionOverride || parseVersionText(versionProbe.stdout);
     const status = runtimeStatusOverride !== 'unknown'
       ? runtimeStatusOverride
-      : (version ? 'running' : (strongDetection ? 'degraded' : 'offline'));
+      : (detectionSource === 'process' ? 'running' : (version || strongDetection) ? 'degraded' : 'unknown');
 
     return {
       type,
       version,
+      installed: Boolean(version),
       status,
+      status_source: runtimeStatusOverride !== 'unknown'
+        ? 'override'
+        : detectionSource === 'process' ? 'process' : version ? 'installed_binary' : 'detection',
       source: 'codex version',
       detection_source: detectionSource,
       checked_at: new Date().toISOString(),
@@ -670,7 +682,9 @@ function probeRuntimeDetails(runtimeProbe) {
   return {
     type: type || 'unknown',
     version: runtimeVersionOverride || null,
+    installed: Boolean(runtimeVersionOverride),
     status: runtimeStatusOverride !== 'unknown' ? runtimeStatusOverride : 'unknown',
+    status_source: runtimeStatusOverride !== 'unknown' ? 'override' : 'unknown',
     source: 'unknown',
     detection_source: detectionSource,
     checked_at: new Date().toISOString(),
@@ -1771,13 +1785,14 @@ function postHealth(name, payload) {
   });
 }
 
-function collectRoster() {
-  const statuslinePath = path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json');
-  if (!fs.existsSync(statuslinePath)) return null;
-  let sl;
-  try { sl = JSON.parse(fs.readFileSync(statuslinePath, 'utf8')); } catch { return null; }
+function buildRosterSnapshot(sl, sourceMtimeMs = null) {
+  if (!sl || typeof sl !== 'object' || Array.isArray(sl)) return null;
+  const sampledAt = normalizeSampledAt(
+    sl.timestamp ?? sl.updated_at ?? sl.sampled_at,
+    sourceMtimeMs
+  );
+
   return {
-    session_id: sl.session_id || null,
     model: sl.model?.id || sl.model?.display_name || null,
     model_display: sl.model?.display_name || null,
     version: sl.version || null,
@@ -1789,17 +1804,25 @@ function collectRoster() {
     context_total_tokens: (sl.context_window?.total_input_tokens || 0) + (sl.context_window?.total_output_tokens || 0) || null,
     rate_limits: {
       five_hour: sl.rate_limits?.five_hour ? {
-        used_pct: sl.rate_limits.five_hour.used_percentage ?? null,
+        used_pct: sl.rate_limits.five_hour.used_percentage ?? sl.rate_limits.five_hour.used_percent ?? null,
         resets_at: sl.rate_limits.five_hour.resets_at ?? null,
       } : null,
       seven_day: sl.rate_limits?.seven_day ? {
-        used_pct: sl.rate_limits.seven_day.used_percentage ?? null,
+        used_pct: sl.rate_limits.seven_day.used_percentage ?? sl.rate_limits.seven_day.used_percent ?? null,
         resets_at: sl.rate_limits.seven_day.resets_at ?? null,
       } : null,
     },
     plan_type: sl.plan_type || null,
-    sampled_at: Date.now(),
+    sampled_at: sampledAt,
   };
+}
+
+function collectRoster() {
+  const statuslinePath = path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json');
+  if (!fs.existsSync(statuslinePath)) return null;
+  let sl;
+  try { sl = JSON.parse(fs.readFileSync(statuslinePath, 'utf8')); } catch { return null; }
+  return buildRosterSnapshot(sl, fileMtimeMs(statuslinePath));
 }
 
 // Pin the runtime to a canonical runtime.json when detection is strong and no file exists yet,
@@ -1929,4 +1952,5 @@ export {
   isGenericRuntimeAgentName,
   normalizeAgentName,
   normalizeRuntimeType,
+  buildRosterSnapshot,
 };

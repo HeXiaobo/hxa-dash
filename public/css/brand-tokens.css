@@ -1,0 +1,69 @@
+/* AUTO-GENERATED from with3ai/knowledge-base/brand/DESIGN.md.
+ * Canonical blob: 5950bdbe591426d43ebd6262c3757582a4ca1ab6
+ * Regenerate with scripts/gen-brand-tokens.mjs. Do not hand-edit. */
+:root {
+  /* Colors: 90% neutral + 10% Jade Ink. */
+  --color-primary: #0D9488;
+  --color-primary-dark: #0F766E;
+  --color-primary-bright: #5EEAD4;
+  --color-primary-soft: #CCFBF1;
+  --color-ink: #0F172A;
+  --color-muted: #475569;
+  --color-muted-light: #94A3B8;
+  --color-line: #E2E8F0;
+  --color-background: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-surface-dark: #0B2B28;
+  --color-surface-dark-2: #0F3D38;
+  --color-surface-dark-3: #124A43;
+  --color-on-dark-strong: #B8DED8;
+  --color-on-dark: #93A5A2;
+  --color-on-dark-muted: #8AA09C;
+  --color-on-dark-weak: #5C7370;
+  --color-success: #0F766E;
+  --color-warning: #B45309;
+  --color-danger: #B42318;
+
+  /* Radius. */
+  --radius-xs: 4px;
+  --radius-sm: 7px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Spacing. */
+  --space-xs: 6px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-section: 88px;
+
+  /* Typography. */
+  --font-sans: Inter, PingFang SC, Microsoft YaHei, sans-serif;
+  --fs-h1: 4.65rem;
+  --fw-h1: 900;
+  --lh-h1: 0.98;
+  --fs-page-title: 4.2rem;
+  --fw-page-title: 900;
+  --lh-page-title: 1.02;
+  --fs-section-title: 3.25rem;
+  --fw-section-title: 900;
+  --lh-section-title: 1.04;
+  --fs-panel-title: 1.28rem;
+  --fw-panel-title: 850;
+  --lh-panel-title: 1.24;
+  --fs-body: 1rem;
+  --fw-body: 400;
+  --lh-body: 1.68;
+  --fs-label: 0.82rem;
+  --fw-label: 850;
+  --lh-label: 1;
+
+  /* Elevation is reserved for real hierarchy. */
+  --shadow-standard: 0 22px 55px rgb(15 23 42 / 0.08);
+  --shadow-brand: 0 14px 34px rgb(15 23 42 / 0.05);
+
+  /* Layout. */
+  --content-width: min(1180px, calc(100% - 32px));
+}
