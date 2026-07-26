@@ -22,19 +22,11 @@
       </h1>
       <button type="button" class="nav-hamburger" id="nav-hamburger" aria-label="打开菜单" aria-expanded="false">菜单</button>
       <nav id="main-nav" aria-label="主导航">
-        <a href="#overview" class="nav-item active" data-page="overview" aria-current="page">监控</a>
-        <a href="#backups" class="nav-item" data-page="backups">备份</a>
-        <details id="nav-more" class="nav-more">
-          <summary class="nav-more-toggle">更多</summary>
-          <div class="nav-more-menu">
-            <a href="#team" class="nav-item nav-item-secondary" data-page="team">AI 员工</a>
-            <a href="#tasks" class="nav-item nav-item-secondary" data-page="tasks">任务</a>
-            <a href="#collab" class="nav-item nav-item-secondary" data-page="collab">协作</a>
-            <a href="#analysis" class="nav-item nav-item-secondary" data-page="analysis">分析</a>
-            <a href="#system" class="nav-item nav-item-secondary" data-page="system">系统</a>
-            <a href="#myview" class="nav-item nav-item-secondary" data-page="myview">我的视图</a>
-          </div>
-        </details>
+        <a href="#team" class="nav-item active" data-page="team" data-target="team" aria-current="page">AI 员工</a>
+        <a href="#analysis/limits" class="nav-item" data-page="analysis" data-target="limits">额度</a>
+        <a href="#analysis/tokens" class="nav-item" data-page="analysis" data-target="tokens">Token 用量</a>
+        <a href="#backups" class="nav-item" data-page="backups" data-target="backups">备份</a>
+        <a href="#system" class="nav-item" data-page="system" data-target="health">系统健康</a>
       </nav>
       <button type="button" id="nav-close-btn" aria-label="关闭菜单">关闭</button>
     </div>
@@ -60,30 +52,8 @@
   </header>
 
   <main id="main-content" tabindex="-1">
-    <!-- Sub-tabs for grouped pages (#114) -->
-    <div class="sub-tabs hidden" data-group="tasks">
-      <a href="#tasks" class="sub-tab active" data-subpage="tasks">任务</a>
-      <a href="#tasks/pipeline" class="sub-tab" data-subpage="pipeline">Pipeline</a>
-      <a href="#tasks/mr-board" class="sub-tab" data-subpage="mr-board">MR Board</a>
-    </div>
-    <div class="sub-tabs hidden" data-group="analysis">
-      <a href="#analysis" class="sub-tab active" data-subpage="report">报表</a>
-      <a href="#analysis/timeline" class="sub-tab" data-subpage="timeline">时间轴</a>
-      <a href="#analysis/limits" class="sub-tab" data-subpage="limits">限额</a>
-      <a href="#analysis/tokens" class="sub-tab" data-subpage="tokens">用量</a>
-      <a href="#analysis/estimates" class="sub-tab" data-subpage="estimates">预估</a>
-    </div>
-    <div class="sub-tabs hidden" data-group="system">
-      <a href="#system" class="sub-tab active" data-subpage="health">健康</a>
-      <a href="#system/live" class="sub-tab" data-subpage="live">Live</a>
-      <a href="#system/projects" class="sub-tab" data-subpage="projects">项目</a>
-      <a href="#system/report" class="sub-tab" data-subpage="report">高级</a>
-      <a href="#system/timeline" class="sub-tab" data-subpage="timeline">归档</a>
-      <a href="#system/about" class="sub-tab" data-subpage="about">版本</a>
-    </div>
-
     <!-- Page: Overview -->
-    <div id="page-overview" class="page active">
+    <div id="page-overview" class="page">
       <section class="section">
         <div class="section-header">
           <h2>AI 员工监控</h2>
@@ -128,7 +98,7 @@
     </div>
 
     <!-- Page: Team -->
-    <div id="page-team" class="page">
+    <div id="page-team" class="page active">
       <section class="section">
         <div class="section-header">
           <h2>助理 Roster</h2>
