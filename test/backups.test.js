@@ -163,7 +163,7 @@ describe('backup health helpers', () => {
   });
 
   it('uses explicit expected backup repo aliases', () => {
-    expect(expectedBackupRepo('mylos').url).toBe('https://github.com/HeXiaobo/zylos-workspace');
+    expect(expectedBackupRepo('mylos').url).toBe('https://github.com/with3ai/Mylos-workspace');
     expect(expectedBackupRepo('wanyanshu').url).toBe('https://github.com/zhi-wai/maxiaozhuo-workspace');
     expect(expectedBackupRepo('veda').url).toBe('https://github.com/with3ai/veda-workspace');
     expect(expectedBackupRepo('wenwen')).toMatchObject({
@@ -183,7 +183,7 @@ describe('backup health helpers', () => {
 
     expect(summary.status).toBe('critical');
     expect(summary.reason).toBe('github_repo_mismatch');
-    expect(summary.expected_remote).toBe('https://github.com/HeXiaobo/zylos-workspace');
+    expect(summary.expected_remote).toBe('https://github.com/with3ai/Mylos-workspace');
     expect(summary.expected_match).toBe(false);
   });
 

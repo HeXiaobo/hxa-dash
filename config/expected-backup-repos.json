@@ -4,7 +4,7 @@
   "default_repo_template": "{agent}-workspace",
   "aliases": {
     "hongshu": "https://github.com/with3ai/hongshu-workspace",
-    "mylos": "https://github.com/HeXiaobo/zylos-workspace",
+    "mylos": "https://github.com/with3ai/Mylos-workspace",
     "veda": "https://github.com/with3ai/veda-workspace",
     "wanyanshu": "https://github.com/zhi-wai/maxiaozhuo-workspace"
   },
