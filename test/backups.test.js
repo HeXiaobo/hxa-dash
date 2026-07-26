@@ -163,9 +163,8 @@ describe('backup health helpers', () => {
   });
 
   it('uses explicit expected backup repo aliases', () => {
-    expect(expectedBackupRepo('mylos').url).toBe('https://github.com/with3ai/zylos-workspace');
+    expect(expectedBackupRepo('mylos').url).toBe('https://github.com/HeXiaobo/zylos-workspace');
     expect(expectedBackupRepo('wanyanshu').url).toBe('https://github.com/zhi-wai/maxiaozhuo-workspace');
-    expect(expectedBackupRepo('hongshu').url).toBe('https://github.com/with3ai/hongshu-workspace');
     expect(expectedBackupRepo('veda').url).toBe('https://github.com/with3ai/veda-workspace');
     expect(expectedBackupRepo('wenwen')).toMatchObject({
       required: true,
@@ -184,8 +183,34 @@ describe('backup health helpers', () => {
 
     expect(summary.status).toBe('critical');
     expect(summary.reason).toBe('github_repo_mismatch');
-    expect(summary.expected_remote).toBe('https://github.com/with3ai/zylos-workspace');
+    expect(summary.expected_remote).toBe('https://github.com/HeXiaobo/zylos-workspace');
     expect(summary.expected_match).toBe(false);
+  });
+
+  it('marks retired and shared-host agents as exempt with an explicit reason', () => {
+    expect(expectedBackupRepo('chengzi')).toEqual({
+      required: false,
+      url: null,
+      reason: '已退役，无需独立 GitHub 备份',
+    });
+    expect(expectedBackupRepo('ss-client')).toEqual({
+      required: false,
+      url: null,
+      reason: '随宿主 ss 共用备份',
+    });
+    expect(expectedBackupRepo('mylos-tech')).toEqual({
+      required: false,
+      url: null,
+      reason: '随宿主 mylos 共用备份',
+    });
+  });
+
+  it('shows the configured exemption reason instead of a generic employee label', () => {
+    const appSource = fs.readFileSync(path.join(process.cwd(), 'public/js/app.js'), 'utf8');
+
+    expect(appSource).toContain("summary.expected_reason || this._backupReasonText('backup_not_required')");
+    expect(appSource).toContain("record.summary.expected_reason || '无需独立 GitHub 备份'");
+    expect(appSource).not.toContain('非 AI 员工，无需 GitHub 仓库');
   });
 
   it('requires wenwen backup reporting through the default expected repo', () => {
