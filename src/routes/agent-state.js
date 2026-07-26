@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { redactSecretShaped } = require('../secret-shapes');
 const db = require('../db');
 const entity = require('../entity');
 const { hasApiKey } = require('../auth/api-key');
@@ -64,8 +65,12 @@ function isCanonicalAgent(name, stateDb = db, entityStore = entity) {
   return !!entityStore.get(name) || !!stateDb.getAgent(name);
 }
 
+// Same credential-shape guard as agent-health's sanitizeStr — this is the second
+// ingest sanitization point; fixing only one would leave half the surface open.
 function sanitizeString(value, maxLength = 64) {
   if (typeof value !== 'string') return null;
+  const guarded = redactSecretShaped(value);
+  if (guarded !== value) return guarded;
   return value.replace(/<[^>]*>/g, '').slice(0, maxLength);
 }
 
