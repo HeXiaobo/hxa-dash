@@ -145,10 +145,11 @@ const RuntimeCenter = {
     const abnormal = records.filter(r => ['bad', 'warning'].includes(this._backupStatus(r).key));
     const waiting = records.filter(r => this._backupStatus(r).key === 'waiting').length;
     const healthy = records.filter(r => this._backupStatus(r).key === 'ok').length;
-    const payloadSummary = backups?.summary || {};
+    const totalAgents = records.length;
+    const repoCount = this._backupRepoCount(records);
     if (summaryEl) {
       summaryEl.textContent = records.length
-        ? `${payloadSummary.total_agents || records.length} 位 · ${payloadSummary.repos || this._backupRepoCount(records)} 个 GitHub 仓库 · ${healthy} 正常 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
+        ? `${totalAgents} 位 · ${repoCount} 个 GitHub 仓库 · ${healthy} 正常 · ${abnormal.length} 异常${waiting ? ` · ${waiting} 待接入` : ''}`
         : '等待 /api/backups 数据';
     }
     if (!records.length) {
@@ -162,8 +163,8 @@ const RuntimeCenter = {
     }
     container.innerHTML = `
       <div class="backup-summary-grid">
-        <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.total_agents || records.length}</span><span class="runtime-stat-label">助理</span></div>
-        <div class="runtime-stat-card"><span class="runtime-stat-value">${payloadSummary.repos || this._backupRepoCount(records)}</span><span class="runtime-stat-label">GitHub 仓库</span></div>
+        <div class="runtime-stat-card"><span class="runtime-stat-value">${totalAgents}</span><span class="runtime-stat-label">助理</span></div>
+        <div class="runtime-stat-card"><span class="runtime-stat-value">${repoCount}</span><span class="runtime-stat-label">GitHub 仓库</span></div>
         <div class="runtime-stat-card"><span class="runtime-stat-value">${healthy}</span><span class="runtime-stat-label">正常</span></div>
         <div class="runtime-stat-card attention"><span class="runtime-stat-value">${abnormal.length}</span><span class="runtime-stat-label">异常</span></div>
       </div>
@@ -728,10 +729,10 @@ const RuntimeCenter = {
 
   _backupRecords(backups, agents) {
     const raw = Array.isArray(backups) ? backups : (backups?.agents || backups?.backups || backups?.records || []);
-    if (raw.length) return raw;
-    return agents
+    const records = raw.length ? raw : agents
       .filter(a => a.backup || a.github_backup || a.backups)
       .map(a => ({ agent: a.name, ...(Array.isArray(a.backups) ? a.backups[0] : (a.backup || a.github_backup || {})) }));
+    return records.filter(record => record?.summary?.backup_required !== false);
   },
 
   _backupAgentName(record) {
