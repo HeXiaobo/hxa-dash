@@ -1073,9 +1073,7 @@ const App = {
         e.preventDefault();
         const group = item.dataset.page;
         const cfg = NAV_GROUPS[group];
-        this.navigateTo(cfg ? cfg.default : group);
-        const more = document.getElementById('nav-more');
-        if (more) more.open = false;
+        this.navigateTo(item.dataset.target || (cfg ? cfg.default : group));
       });
     });
 
@@ -1098,13 +1096,13 @@ const App = {
 
     // Handle browser back/forward
     window.addEventListener('hashchange', () => {
-      const hash = location.hash.replace('#', '') || 'overview';
+      const hash = location.hash.replace('#', '') || 'team';
       const resolved = this._resolveHash(hash);
       this.navigateTo(resolved, false);
     });
 
     // Handle initial hash
-    const hash = location.hash.replace('#', '') || 'overview';
+    const hash = location.hash.replace('#', '') || 'team';
     const resolved = this._resolveHash(hash);
     this.navigateTo(resolved, false);
   },
@@ -1134,32 +1132,30 @@ const App = {
       if (cfg && cfg.subpages.includes(sub)) return sub;
       // Invalid sub, fall back to group default
       if (cfg) return cfg.default;
-      return 'overview';
+      return 'team';
     }
     // Handle legacy flat hashes (e.g., "#collab" → collab page)
     if (SUBPAGE_TO_GROUP[hash]) return hash;
     // Handle group name directly (e.g., "#team" → team default)
     if (NAV_GROUPS[hash]) return NAV_GROUPS[hash].default;
-    return 'overview';
+    return 'team';
   },
 
   navigateTo(page, pushState = true) {
     const allSubpages = Object.values(NAV_GROUPS).flatMap(g => g.subpages);
-    if (!allSubpages.includes(page)) page = 'overview';
+    if (!allSubpages.includes(page)) page = 'team';
 
     const group = SUBPAGE_TO_GROUP[page];
 
     // Update primary nav
     document.querySelectorAll('.nav-item').forEach(n => {
-      const isActive = n.dataset.page === group;
+      const navGroup = n.dataset.page;
+      const navTarget = n.dataset.target || NAV_GROUPS[navGroup]?.default || navGroup;
+      const isActive = navTarget === page;
       n.classList.toggle('active', isActive);
       if (isActive) n.setAttribute('aria-current', 'page');
       else n.removeAttribute('aria-current');
     });
-    document.getElementById('nav-more')?.classList.toggle(
-      'active',
-      group !== 'overview' && group !== 'backups'
-    );
 
     // Update sub-tabs visibility
     document.querySelectorAll('.sub-tabs').forEach(st => {
