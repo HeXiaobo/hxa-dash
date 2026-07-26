@@ -22,7 +22,7 @@ describe('health reporter backup log parser', () => {
       'fatal: unable to access github',
     ], mtime, mtime);
 
-    expect(result.status).toBe('warning');
+    expect(result.status).toBe('critical');
     expect(result.reason).toBe('failure_after_last_success');
   });
 });

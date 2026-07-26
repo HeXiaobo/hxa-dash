@@ -101,6 +101,11 @@ function sanitizeRemoteUrl(val) {
     const parsed = new URL(raw);
     parsed.username = '';
     parsed.password = '';
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (['token', 'access_token'].includes(key.toLowerCase())) {
+        parsed.searchParams.delete(key);
+      }
+    }
     return parsed.toString().replace(/\/$/, '').slice(0, 256);
   } catch {}
   return raw

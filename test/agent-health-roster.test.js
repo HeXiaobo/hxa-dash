@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 const agentHealthRoute = require('../src/routes/agent-health');
 const {
+  sanitizeBackup,
   sanitizeRoster,
   sanitizeRuntime,
   resourceStatus,
@@ -55,6 +56,18 @@ describe('agent health allowlists', () => {
     expect(roster).not.toHaveProperty('session_id');
     expect(roster).not.toHaveProperty('tags');
     expect(roster.rate_limits).not.toHaveProperty('hidden_window');
+  });
+
+  it('removes credentials and token query parameters from backup remotes', () => {
+    const backup = sanitizeBackup({
+      repos: [{
+        remote: 'https://user:password@github.com/org/repo.git?token=secret&access_token=also-secret&ref=main',
+        status: 'ok',
+      }],
+    });
+
+    expect(backup.repos[0].remote).toBe('https://github.com/org/repo.git?ref=main');
+    expect(backup.repos[0].remote).not.toContain('secret');
   });
 
   it('does not manufacture runtime timestamps or running status', () => {

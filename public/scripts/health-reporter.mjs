@@ -1554,7 +1554,7 @@ export function classifyBackupLogLines(lines, mtimeMs = Date.now(), nowMs = Date
     status = latestFailure ? 'critical' : 'warning';
     reason = latestFailure ? 'last_backup_failed' : 'no_success_marker';
   } else if (isFailureAfterSuccess(latestFailure, latestSuccess)) {
-    status = 'warning';
+    status = 'critical';
     reason = 'failure_after_last_success';
   } else {
     const ageHours = (nowMs - lastSuccessAt) / 3600000;
@@ -1703,11 +1703,11 @@ function getDiskInfo() {
       return {
         total: parts[1] || null,
         used: parts[2] || null,
-        pct: parseInt(parts[4], 10) || 0,
+        pct: parseInt(parts[4], 10) || null,
       };
     }
   } catch {}
-  return { total: null, used: null, pct: 0 };
+  return { total: null, used: null, pct: null };
 }
 
 function getMemoryInfo() {
@@ -1953,4 +1953,5 @@ export {
   normalizeAgentName,
   normalizeRuntimeType,
   buildRosterSnapshot,
+  getDiskInfo,
 };
