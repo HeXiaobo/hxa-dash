@@ -642,7 +642,14 @@ const RuntimeCenter = {
     if (!backup) return { key: 'ok', cls: 'muted', label: '备份待接入', detail: '无备份数据' };
     const b = Array.isArray(backup) ? backup[0] : backup;
     const summary = b.summary && typeof b.summary === 'object' ? b.summary : null;
-    if (summary?.backup_required === false) return { key: 'ok', cls: 'muted', label: '无需备份', detail: this._backupReasonText('backup_not_required') };
+    if (summary?.backup_required === false) {
+      return {
+        key: 'ok',
+        cls: 'muted',
+        label: '无需独立备份',
+        detail: summary.expected_reason || this._backupReasonText('backup_not_required')
+      };
+    }
     const raw = String(summary?.status || b.status || b.state || '').toLowerCase();
     const reason = summary?.reason || b.reason || b.error || b.message || null;
     const reasonText = this._backupReasonText(reason);
@@ -754,7 +761,9 @@ const RuntimeCenter = {
   },
 
   _backupTargetHTML(record) {
-    if (record.summary?.backup_required === false) return '<span class="backup-repo-chip">不要求 GitHub 仓库</span>';
+    if (record.summary?.backup_required === false) {
+      return `<span class="backup-repo-chip">${esc(record.summary.expected_reason || '无需独立 GitHub 备份')}</span>`;
+    }
     const repos = Array.isArray(record.repos) ? record.repos : [];
     if (repos.length) {
       const shown = repos.slice(0, 3).map(repo => {
@@ -774,7 +783,7 @@ const RuntimeCenter = {
   _backupSummaryText(record) {
     const summary = record.summary || {};
     const parts = [];
-    if (summary.backup_required === false) parts.push('非 AI 员工，无需 GitHub 仓库');
+    if (summary.backup_required === false) parts.push(summary.expected_reason || '无需独立 GitHub 备份');
     const total = Number(summary.total || 0);
     if (total) parts.push(`${summary.github_remotes || 0}/${total} 个 GitHub 仓库`);
     if (summary.expected_remote && summary.expected_match === false) parts.push('预期仓库未匹配');
@@ -799,7 +808,7 @@ const RuntimeCenter = {
       not_reported: '等待上报程序上报',
       unsupported: '备份状态不可用',
       unsupported_for_now: '备份状态暂不支持',
-      backup_not_required: '非 AI 员工，无需 GitHub 仓库',
+      backup_not_required: '无需独立 GitHub 备份',
       git_not_available: '未安装 git，无法检查仓库状态',
       collection_failed: '仓库状态采集失败',
       no_github_remote: '未配置 GitHub 远端',

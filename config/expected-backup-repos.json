@@ -4,9 +4,18 @@
   "default_repo_template": "{agent}-workspace",
   "aliases": {
     "hongshu": "https://github.com/with3ai/hongshu-workspace",
-    "mylos": "https://github.com/with3ai/zylos-workspace",
+    "mylos": "https://github.com/HeXiaobo/zylos-workspace",
     "veda": "https://github.com/with3ai/veda-workspace",
     "wanyanshu": "https://github.com/zhi-wai/maxiaozhuo-workspace"
   },
-  "exempt": {}
+  "exempt": {
+    "chengzi": "已退役，无需独立 GitHub 备份",
+    "hongshu": "已退役，无需独立 GitHub 备份",
+    "mylos-finance": "随宿主 mylos 共用备份",
+    "mylos-infra": "随宿主 mylos 共用备份",
+    "mylos-org": "随宿主 mylos 共用备份",
+    "mylos-tech": "随宿主 mylos 共用备份",
+    "ss-client": "随宿主 ss 共用备份",
+    "ss-content": "随宿主 ss 共用备份"
+  }
 }
