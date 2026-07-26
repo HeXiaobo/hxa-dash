@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
+import fs from 'fs';
+import path from 'path';
 
 const require = createRequire(import.meta.url);
 const backupRoute = require('../src/routes/backups');
@@ -48,6 +50,37 @@ describe('backup health helpers', () => {
     expect(summary.critical).toBe(1);
     expect(summary.ahead).toBe(2);
     expect(summary.reason).toBe('ahead_of_upstream');
+  });
+
+  it('keeps unknown counts and a missing upstream out of the healthy state', () => {
+    const backup = sanitizeBackup({
+      supported: true,
+      status: 'unknown',
+      reason: 'no_upstream',
+      repos: [{
+        path: '/Users/example/repo',
+        remote: 'https://github.com/acme/repo.git',
+        upstream: null,
+        ahead: null,
+        behind: null,
+        dirty: 0,
+        untracked: 0,
+        status: 'unknown',
+        reason: 'no_upstream',
+      }],
+    });
+    const summary = buildBackupSummary(backup);
+
+    expect(backup.repos[0]).toMatchObject({ upstream: null, ahead: null, behind: null, status: 'unknown' });
+    expect(summary).toMatchObject({ status: 'unknown', reason: 'no_upstream', ok: 0, unknown: 1 });
+  });
+
+  it('renders unknown backup state as waiting instead of healthy', () => {
+    const appSource = fs.readFileSync(path.join(process.cwd(), 'public/js/app.js'), 'utf8');
+
+    expect(appSource).toContain("if (raw === 'unknown')");
+    expect(appSource).toContain("key: 'waiting'");
+    expect(appSource).toContain("label: '备份待确认'");
   });
 
   it('requires a GitHub backup repo even when backup cron is fresh', () => {

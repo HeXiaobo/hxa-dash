@@ -44,13 +44,12 @@ const BASE = (() => {
 // #114: navbar grouping — map primary tabs to sub-pages
 const NAV_GROUPS = {
   overview: { subpages: ['overview'], default: 'overview' },
-  team:     { subpages: ['team'], default: 'team' },
-  limits:   { subpages: ['limits'], default: 'limits' },
-  tokens:   { subpages: ['tokens'], default: 'tokens' },
   backups:  { subpages: ['backups'], default: 'backups' },
+  team:     { subpages: ['team'], default: 'team' },
   tasks:    { subpages: ['tasks', 'pipeline', 'mr-board'], default: 'tasks' },
-  analysis: { subpages: ['estimates'], default: 'estimates' },
-  system:   { subpages: ['health', 'live', 'projects', 'report', 'timeline', 'about'], default: 'health' },
+  collab:   { subpages: ['collab'], default: 'collab' },
+  analysis: { subpages: ['report', 'timeline', 'limits', 'tokens', 'estimates'], default: 'report' },
+  system:   { subpages: ['health', 'live', 'projects', 'about'], default: 'health' },
   myview:   { subpages: ['myview'], default: 'myview' },
 };
 
@@ -101,7 +100,7 @@ const RuntimeCenter = {
   renderOverview(agents, meta, timeline) {
     const summary = this.summary(agents, meta);
     this._renderSummary(summary);
-    const attention = this.attentionItems(agents);
+    const attention = this.attentionItems(agents, meta);
     this._renderAttention(attention);
     this.renderCards('overview-agent-cards', 'overview-team-stats', agents);
     this._renderActivity(timeline, agents);
@@ -116,25 +115,25 @@ const RuntimeCenter = {
     const statsEl = document.getElementById(statsId);
     if (!container) return;
     const sorted = [...agents].sort((a, b) => {
-      const aa = this.attentionItems([a]).length;
-      const bb = this.attentionItems([b]).length;
+      const aa = this._severityRank(a.monitoring?.anomaly?.severity);
+      const bb = this._severityRank(b.monitoring?.anomaly?.severity);
       if (bb !== aa) return bb - aa;
-      const ar = this._isRunning(a) ? 1 : 0;
-      const br = this._isRunning(b) ? 1 : 0;
-      if (br !== ar) return br - ar;
+      const ac = this._collectionRank(a.monitoring?.collection?.status);
+      const bc = this._collectionRank(b.monitoring?.collection?.status);
+      if (bc !== ac) return bc - ac;
       return (a.name || '').localeCompare(b.name || '');
     });
     container.innerHTML = sorted.length
       ? sorted.map(a => this.cardHTML(a)).join('')
       : '<div class="empty-state">暂无助理数据</div>';
     container.querySelectorAll('.runtime-agent-card[data-name]').forEach(card => {
-      card.addEventListener('click', () => DetailDrawer.open(card.dataset.name));
+      card.addEventListener('click', (event) => DetailDrawer.open(card.dataset.name, event.currentTarget));
     });
     if (statsEl) {
-      const running = agents.filter(a => this._isRunning(a)).length;
       const working = agents.filter(a => this._isWorking(a)).length;
       const attention = this.attentionItems(agents).length;
-      statsEl.textContent = `${agents.length} 位 · ${running} 运行中 · ${working} 工作中 · ${attention} 项关注`;
+      const fresh = agents.filter(a => a.monitoring?.freshness === 'fresh').length;
+      statsEl.textContent = `${agents.length} 位 · ${fresh} 位采集新鲜 · ${working} 位有工作证据 · ${attention} 项异常事实`;
     }
   },
 
@@ -175,14 +174,14 @@ const RuntimeCenter = {
             ${records.map(r => {
               const status = this._backupStatus(r);
               return `<tr>
-                <td>${esc(this._backupAgentName(r))}</td>
-                <td><span class="runtime-pill ${status.cls}">${status.label}</span></td>
-                <td>${esc(this._timeAgoText(this._backupLastSuccessAt(r) || this._backupCheckedAt(r)))}</td>
-                <td>${this._backupTargetHTML(r)}</td>
-                <td>${esc(String(this._backupNumber(r, 'ahead')))}</td>
-                <td>${esc(String(this._backupNumber(r, 'behind')))}</td>
-                <td>${esc(String(this._backupNumber(r, 'dirty') + this._backupNumber(r, 'untracked')))}</td>
-                <td>${esc(status.detail || this._backupSummaryText(r))}</td>
+                <td data-label="助理">${esc(this._backupAgentName(r))}</td>
+                <td data-label="状态"><span class="runtime-pill ${status.cls}">${status.label}</span></td>
+                <td data-label="最近备份">${esc(this._timeAgoText(this._backupLastSuccessAt(r) || this._backupCheckedAt(r)))}</td>
+                <td data-label="GitHub 仓库">${this._backupTargetHTML(r)}</td>
+                <td data-label="未推送">${esc(String(this._backupNumber(r, 'ahead')))}</td>
+                <td data-label="未拉取">${esc(String(this._backupNumber(r, 'behind')))}</td>
+                <td data-label="本地变更">${esc(String(this._backupNumber(r, 'dirty') + this._backupNumber(r, 'untracked')))}</td>
+                <td data-label="摘要">${esc(status.detail || this._backupSummaryText(r))}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -216,73 +215,115 @@ const RuntimeCenter = {
   },
 
   summary(agents, meta = {}) {
-    const total = Number(meta.total_members ?? meta.total ?? meta.member_count ?? agents.length) || agents.length;
+    const fleet = this._fleetMonitoring(agents, meta);
     return {
-      total,
-      running: agents.filter(a => this._isRunning(a)).length,
-      working: agents.filter(a => this._isWorking(a)).length,
-      attention: this.attentionItems(agents).length
+      total: fleet.total,
+      observed: fleet.observed,
+      fresh: fleet.fresh,
+      working: Number(meta.work_state?.working ?? agents.filter(a => this._isWorking(a)).length),
+      attention: fleet.needs_attention,
+      ingestChainSuspected: (fleet.anomaly?.reason_codes || []).includes('ingest_chain_suspected')
     };
   },
 
-  attentionItems(agents) {
-    return agents.flatMap(agent => {
-      const items = [];
-      const quota = this._quotaRisk(agent);
-      const runtime = this._runtimeRisk(agent);
-      const inactive = this._inactiveRisk(agent);
-      const backup = this._backupRisk(agent);
-      if (quota.key !== 'ok') items.push(this._attention(agent, '限额风险', quota));
-      if (runtime.key !== 'ok') items.push(this._attention(agent, '运行异常', runtime));
-      if (inactive.key !== 'ok') items.push(this._attention(agent, '极度不活跃', inactive));
-      if (['bad', 'warning'].includes(backup.key)) items.push(this._attention(agent, 'GitHub 备份异常', backup));
-      return items;
+  attentionItems(agents, meta = {}) {
+    const fleet = this._fleetMonitoring(agents, meta);
+    const ingestChainSuspected = (fleet.anomaly?.reason_codes || []).includes('ingest_chain_suspected');
+    const items = agents.flatMap(agent => this._anomalyFacts(agent))
+      .filter(item => !(
+        ingestChainSuspected
+        && ['report_stale', 'report_missing'].includes(item.risk.key)
+      ));
+
+    if (ingestChainSuspected) {
+      items.unshift(this._attention(null, '采集链路', {
+        key: 'ingest_chain_suspected',
+        cls: 'warning',
+        label: '全员采集同时迟滞',
+        detail: '疑似上报链路异常，请先检查统一采集链路'
+      }));
+    }
+
+    return items.sort((a, b) => {
+      const severity = this._severityRank(b.risk.cls) - this._severityRank(a.risk.cls);
+      if (severity !== 0) return severity;
+      if (a.risk.key === 'ingest_chain_suspected') return -1;
+      if (b.risk.key === 'ingest_chain_suspected') return 1;
+      return String(a.agent?.name || '').localeCompare(String(b.agent?.name || ''));
     });
   },
 
   cardHTML(agent) {
-    const runtime = this._runtimeLabel(agent);
-    const runtimeRisk = this._runtimeRisk(agent);
-    const quota = this._quotaRisk(agent);
-    const inactive = this._inactiveRisk(agent);
-    const backup = this._backupRisk(agent);
-    const usage = this._usageLabel(agent);
-    const attentionCount = [runtimeRisk, quota, inactive, backup].filter(x => x.key !== 'ok' && x.key !== 'waiting').length;
-    const work = this._isWorking(agent) ? '工作中' : this._isRunning(agent) ? '待命' : '离线';
+    const monitoring = agent.monitoring || {};
+    const system = monitoring.system || {};
+    const capacity = monitoring.capacity || {};
+    const tokens = monitoring.tokens || {};
+    const collection = this._collectionState(monitoring);
+    const work = this._workState(agent);
+    const backup = this._monitoringBackupState(agent);
+    const attentionCount = this._anomalyFacts(agent).length;
+    const name = agent.name || '未命名助理';
+    const observed = monitoring.observed_at
+      ? `采集 ${this._timeAgoText(monitoring.observed_at)}`
+      : '采集 未采集';
+    const workObservedAt = ['working', 'standby'].includes(work.key)
+      ? this._lastActivityAt(agent)
+      : null;
+    const activity = workObservedAt
+      ? `工作证据 ${this._timeAgoText(workObservedAt)}`
+      : '工作证据 未采集';
     return `
-      <div class="runtime-agent-card ${attentionCount ? 'needs-attention' : ''}" data-name="${esc(agent.name)}">
-        <div class="runtime-card-head">
-          <div>
-            <div class="runtime-card-title">${esc(agent.name || '未命名助理')}</div>
-            <div class="runtime-card-subtitle">${esc(agent.role || runtime)}</div>
-          </div>
-          <span class="runtime-pill ${this._isRunning(agent) ? 'ok' : 'critical'}">${work}</span>
-        </div>
-        <div class="runtime-card-meta">
-          <span>${esc(runtime)}</span>
-          <span>心跳 ${esc(this._timeAgoText(this._heartbeatAt(agent)))}</span>
-          <span>活动 ${esc(this._timeAgoText(this._lastActivityAt(agent)))}</span>
-        </div>
-        <div class="runtime-card-badges">
-          <span class="runtime-pill ${runtimeRisk.cls}">${runtimeRisk.label}</span>
-          <span class="runtime-pill ${quota.cls}">${quota.label}</span>
-          <span class="runtime-pill ${usage.cls}">${usage.label}</span>
-          <span class="runtime-pill ${backup.cls}">${backup.label}</span>
-        </div>
-      </div>
+      <button type="button"
+        class="runtime-agent-card monitoring-agent-row ${attentionCount ? 'needs-attention' : ''}"
+        data-name="${esc(agent.name)}"
+        aria-label="${esc(`查看 ${name} 监控详情，${collection.label}，${work.label}`)}">
+        <span class="runtime-card-head">
+          <span>
+            <span class="runtime-card-title">${esc(name)}</span>
+            <span class="runtime-card-subtitle">${esc(agent.role || 'AI 员工')}</span>
+          </span>
+          <span class="monitoring-state-group">
+            <span class="runtime-pill ${collection.cls}">${esc(collection.label)}</span>
+            <span class="runtime-pill ${work.cls}">${esc(work.label)}</span>
+          </span>
+        </span>
+        <span class="monitoring-metrics">
+          ${this._monitoringFact('CPU / 内存 / 磁盘', [
+            this._factPercent(system.cpu_pct),
+            this._factPercent(system.memory_pct),
+            this._factPercent(system.disk_pct)
+          ].join(' / '))}
+          ${this._monitoringFact('Context / Token', [
+            this._factPercent(capacity.context_pct),
+            this._factTokens(tokens.session_total ?? capacity.context_tokens)
+          ].join(' / '))}
+          ${this._monitoringFact('5h', this._factPercent(capacity.five_hour_pct), this._resetLabel(capacity.five_hour_resets_at))}
+          ${this._monitoringFact('7d', this._factPercent(capacity.seven_day_pct), this._resetLabel(capacity.seven_day_resets_at))}
+          ${this._monitoringFact('Runtime / 版本', this._versionsLabel(agent))}
+        </span>
+        <span class="runtime-card-meta">
+          <span>${esc(observed)}</span>
+          <span>${esc(activity)}</span>
+          <span>${esc(backup.label)}</span>
+        </span>
+      </button>
     `;
   },
 
   _renderSummary(summary) {
     const container = document.getElementById('runtime-summary');
     const statsEl = document.getElementById('runtime-overview-stats');
-    if (statsEl) statsEl.textContent = `来自 /api/team · 总成员 ${summary.total}`;
+    if (statsEl) {
+      statsEl.textContent = summary.ingestChainSuspected
+        ? '来自 /api/team · 疑似统一采集链路异常'
+        : '来自 /api/team · 15 分钟内视为新鲜采集';
+    }
     if (!container) return;
     container.innerHTML = `
-      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.total}</span><span class="runtime-stat-label">总成员</span></div>
-      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.running}</span><span class="runtime-stat-label">运行中</span></div>
-      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.working}</span><span class="runtime-stat-label">工作中</span></div>
-      <div class="runtime-stat-card attention"><span class="runtime-stat-value">${summary.attention}</span><span class="runtime-stat-label">需关注</span></div>
+      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.observed}/${summary.total}</span><span class="runtime-stat-label">已观测员工</span></div>
+      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.fresh}/${summary.total}</span><span class="runtime-stat-label">新鲜采集</span></div>
+      <div class="runtime-stat-card"><span class="runtime-stat-value">${summary.working}</span><span class="runtime-stat-label">有工作证据</span></div>
+      <div class="runtime-stat-card attention"><span class="runtime-stat-value">${summary.attention}</span><span class="runtime-stat-label">需关注项</span></div>
     `;
   },
 
@@ -298,7 +339,7 @@ const RuntimeCenter = {
     container.innerHTML = items.slice(0, 24).map(item => `
       <div class="attention-item ${item.risk.cls}">
         <span class="attention-type">${esc(item.type)}</span>
-        <span class="attention-agent">${esc(item.agent.name || '-')}</span>
+        <span class="attention-agent">${esc(item.agent?.name || '全局')}</span>
         <span class="attention-detail">${esc(item.risk.detail || item.risk.label)}</span>
       </div>
     `).join('');
@@ -326,6 +367,196 @@ const RuntimeCenter = {
 
   _attention(agent, type, risk) {
     return { agent, type, risk };
+  },
+
+  _fleetMonitoring(agents, meta = {}) {
+    if (meta.monitoring && typeof meta.monitoring === 'object') return meta.monitoring;
+    const total = agents.length;
+    const fresh = agents.filter(agent => agent.monitoring?.freshness === 'fresh').length;
+    const stale = agents.filter(agent => agent.monitoring?.freshness === 'stale').length;
+    const missing = agents.filter(agent => (
+      !agent.monitoring || agent.monitoring.freshness === 'missing'
+    )).length;
+    const observed = fresh + stale;
+    const individualAttention = agents.filter(agent => {
+      const severity = agent.monitoring?.anomaly?.severity;
+      return severity && severity !== 'ok';
+    }).length;
+    const ingestChainSuspected = total > 0 && stale + missing === total;
+    const independentAttention = agents.filter(agent => {
+      const codes = agent.monitoring?.anomaly?.reason_codes;
+      return Array.isArray(codes)
+        && codes.some(code => !['report_stale', 'report_missing'].includes(code));
+    }).length;
+    const needsAttention = ingestChainSuspected
+      ? 1 + independentAttention
+      : individualAttention;
+    return {
+      total,
+      observed,
+      fresh,
+      stale,
+      missing,
+      needs_attention: needsAttention,
+      anomaly: {
+        severity: agents.some(agent => agent.monitoring?.anomaly?.severity === 'critical')
+          ? 'critical'
+          : needsAttention ? 'warning' : 'ok',
+        reason_codes: ingestChainSuspected ? ['ingest_chain_suspected'] : []
+      }
+    };
+  },
+
+  _severityRank(severity) {
+    return { critical: 3, warning: 2, stale: 1, muted: 0, ok: 0 }[String(severity || '').toLowerCase()] || 0;
+  },
+
+  _collectionRank(status) {
+    return { critical: 5, stale: 4, warning: 3, unknown: 2, ok: 1 }[String(status || '').toLowerCase()] || 2;
+  },
+
+  _collectionState(monitoring = {}) {
+    const status = String(monitoring.collection?.status || '').toLowerCase();
+    const states = {
+      ok: { key: 'ok', cls: 'ok', label: '采集正常' },
+      warning: { key: 'warning', cls: 'warning', label: '采集告警' },
+      critical: { key: 'critical', cls: 'critical', label: '采集异常' },
+      stale: { key: 'stale', cls: 'warning', label: '采集迟滞' },
+      unknown: { key: 'unknown', cls: 'muted', label: '未采集' }
+    };
+    return states[status] || states.unknown;
+  },
+
+  _workState(agent) {
+    const state = String(agent.work_state || agent.work_status || '').toLowerCase();
+    const states = {
+      working: { key: 'working', cls: 'ok', label: '工作中' },
+      active: { key: 'working', cls: 'ok', label: '工作中' },
+      busy: { key: 'working', cls: 'ok', label: '工作中' },
+      standby: { key: 'standby', cls: 'muted', label: '待命' },
+      offline: { key: 'unknown', cls: 'muted', label: '无近期工作证据' },
+      unknown: { key: 'unknown', cls: 'muted', label: '工作 未采集' }
+    };
+    return states[state] || states.unknown;
+  },
+
+  _anomalyFacts(agent) {
+    const codes = Array.isArray(agent.monitoring?.anomaly?.reason_codes)
+      ? agent.monitoring.anomaly.reason_codes
+      : [];
+    return codes.flatMap(code => {
+      const definition = this._anomalyDefinition(code);
+      if (!definition) return [];
+      return [this._attention(agent, definition.type, {
+        key: code,
+        cls: definition.severity,
+        label: definition.label,
+        detail: this._anomalyDetail(agent, code, definition.label)
+      })];
+    });
+  },
+
+  _anomalyDefinition(code) {
+    const definitions = {
+      report_missing: { type: '采集状态', label: '未收到健康上报', severity: 'warning' },
+      report_stale: { type: '采集状态', label: '健康上报已迟滞', severity: 'warning' },
+      disk_warning: { type: '系统资源', label: '磁盘使用偏高', severity: 'warning' },
+      disk_critical: { type: '系统资源', label: '磁盘使用严重', severity: 'critical' },
+      memory_warning: { type: '系统资源', label: '内存使用偏高', severity: 'warning' },
+      memory_critical: { type: '系统资源', label: '内存使用严重', severity: 'critical' },
+      cpu_warning: { type: '系统资源', label: 'CPU 使用偏高', severity: 'warning' },
+      cpu_critical: { type: '系统资源', label: 'CPU 使用严重', severity: 'critical' },
+      pm2_partial: { type: 'Runtime', label: '部分 PM2 服务未在线', severity: 'warning' },
+      pm2_offline: { type: 'Runtime', label: '已上报 PM2 服务均未在线', severity: 'critical' },
+      context_high: { type: '上下文', label: 'Context 占用偏高', severity: 'warning' },
+      context_critical: { type: '上下文', label: 'Context 接近耗尽', severity: 'critical' },
+      quota_5h_high: { type: '5h 额度', label: '5 小时额度偏高', severity: 'warning' },
+      quota_5h_critical: { type: '5h 额度', label: '5 小时额度接近耗尽', severity: 'critical' },
+      quota_7d_high: { type: '7d 额度', label: '7 天额度偏高', severity: 'warning' },
+      quota_7d_critical: { type: '7d 额度', label: '7 天额度接近耗尽', severity: 'critical' },
+      backup_warning: { type: '备份', label: '备份状态需确认', severity: 'warning' },
+      backup_critical: { type: '备份', label: '最近备份失败', severity: 'critical' },
+      backup_stale: { type: '备份', label: '最近成功备份过旧', severity: 'warning' }
+    };
+    return definitions[code] || null;
+  },
+
+  _anomalyDetail(agent, code, fallback) {
+    const monitoring = agent.monitoring || {};
+    const system = monitoring.system || {};
+    const capacity = monitoring.capacity || {};
+    const details = {
+      report_missing: '未收到该员工的健康采集事实',
+      report_stale: `最近采集 ${this._timeAgoText(monitoring.observed_at)}`,
+      disk_warning: `磁盘 ${this._factPercent(system.disk_pct)}`,
+      disk_critical: `磁盘 ${this._factPercent(system.disk_pct)}`,
+      memory_warning: `内存 ${this._factPercent(system.memory_pct)}`,
+      memory_critical: `内存 ${this._factPercent(system.memory_pct)}`,
+      cpu_warning: `CPU ${this._factPercent(system.cpu_pct)}`,
+      cpu_critical: `CPU ${this._factPercent(system.cpu_pct)}`,
+      pm2_partial: `PM2 ${this._factNumber(system.pm2_online)}/${this._factNumber(system.pm2_total)} 在线`,
+      pm2_offline: `PM2 ${this._factNumber(system.pm2_online)}/${this._factNumber(system.pm2_total)} 在线`,
+      context_high: `Context ${this._factPercent(capacity.context_pct)}`,
+      context_critical: `Context ${this._factPercent(capacity.context_pct)}`,
+      quota_5h_high: `5h ${this._factPercent(capacity.five_hour_pct)}`,
+      quota_5h_critical: `5h ${this._factPercent(capacity.five_hour_pct)}`,
+      quota_7d_high: `7d ${this._factPercent(capacity.seven_day_pct)}`,
+      quota_7d_critical: `7d ${this._factPercent(capacity.seven_day_pct)}`,
+      backup_warning: '以最近成功备份事实为准',
+      backup_critical: '以最近成功备份和退出结果为准',
+      backup_stale: `最近成功 ${this._timeAgoText(monitoring.backup?.last_success_at)}`
+    };
+    return details[code] || fallback;
+  },
+
+  _monitoringFact(label, value, note = '') {
+    return `<span class="monitoring-fact">
+      <span class="monitoring-fact-label">${esc(label)}</span>
+      <span class="monitoring-fact-value">${esc(value)}</span>
+      ${note ? `<span class="monitoring-fact-note">${esc(note)}</span>` : ''}
+    </span>`;
+  },
+
+  _factNumber(value) {
+    const number = Number(value);
+    return value != null && Number.isFinite(number)
+      ? String(Math.round(number * 10) / 10)
+      : '未采集';
+  },
+
+  _factPercent(value) {
+    const number = Number(value);
+    return value != null && Number.isFinite(number)
+      ? `${Math.round(number * 10) / 10}%`
+      : '未采集';
+  },
+
+  _factTokens(value) {
+    const number = Number(value);
+    return value != null && Number.isFinite(number)
+      ? this._formatTokenCount(number)
+      : '未采集';
+  },
+
+  _resetLabel(value) {
+    if (!value) return '';
+    const timestamp = typeof value === 'number' ? value : new Date(value).getTime();
+    if (!Number.isFinite(timestamp)) return '';
+    return `重置 ${new Intl.DateTimeFormat('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(timestamp))}`;
+  },
+
+  _versionsLabel(agent) {
+    const versions = Array.isArray(agent.monitoring?.versions) ? agent.monitoring.versions : [];
+    if (!versions.length) return '未采集';
+    return versions.map(item => {
+      const label = item?.label || item?.component || '组件';
+      return `${label} ${item?.version || '未采集'}`;
+    }).join(' · ');
   },
 
   _heartbeatStale(agent) {
@@ -362,15 +593,20 @@ const RuntimeCenter = {
   },
 
   _quotaRisk(agent) {
+    const capacity = agent.monitoring?.capacity || {};
+    const monitored = [capacity.five_hour_pct, capacity.seven_day_pct]
+      .filter(value => value != null && Number.isFinite(Number(value)))
+      .map(Number);
     const quota = agent.quota || {};
-    const pct = Math.max(
-      Number(quota.primary?.used_percent ?? 0),
-      Number(quota.secondary?.used_percent ?? 0)
-    );
-    if (!quota.supported) return { key: 'ok', cls: 'muted', label: quota.reason === 'unsupported_for_now' ? '限额不支持' : '限额待观测' };
+    const legacy = [quota.primary?.used_percent, quota.secondary?.used_percent]
+      .filter(value => value != null && Number.isFinite(Number(value)))
+      .map(Number);
+    const values = monitored.length ? monitored : legacy;
+    const pct = values.length ? Math.max(...values) : null;
+    if (pct == null) return { key: 'ok', cls: 'muted', label: '限额未采集' };
     if (pct >= 95) return { key: 'critical', cls: 'critical', label: `限额 ${pct}%`, detail: '即将耗尽' };
     if (pct >= this.attentionThresholds.quota) return { key: 'warning', cls: 'warning', label: `限额 ${pct}%`, detail: '高水位' };
-    return { key: 'ok', cls: 'ok', label: pct ? `限额 ${pct}%` : '限额正常' };
+    return { key: 'ok', cls: 'ok', label: `限额 ${pct}%` };
   },
 
   _inactiveRisk(agent) {
@@ -389,6 +625,17 @@ const RuntimeCenter = {
     const status = this._backupStatus(backup);
     if (status.key !== 'ok') return status;
     return status;
+  },
+
+  _monitoringBackupState(agent) {
+    const monitoringBackup = agent.monitoring?.backup;
+    if (!monitoringBackup || (
+      monitoringBackup.last_success_at == null
+      && ['unsupported', 'unknown', ''].includes(String(monitoringBackup.status || '').toLowerCase())
+    )) {
+      return { key: 'unknown', cls: 'muted', label: '备份未采集' };
+    }
+    return this._backupRisk(agent);
   },
 
   _backupStatus(backup) {
@@ -416,6 +663,14 @@ const RuntimeCenter = {
         cls: isMissingReport ? 'muted' : 'warning',
         label: isMissingReport ? '备份待接入' : '备份不可用',
         detail: isMissingReport ? '等待上报程序上报' : (reasonText || '备份状态不可用')
+      };
+    }
+    if (raw === 'unknown') {
+      return {
+        key: 'waiting',
+        cls: 'muted',
+        label: '备份待确认',
+        detail: reasonText || '无法确认仓库是否已推送'
       };
     }
     if (raw === 'ok') return { key: 'ok', cls: 'ok', label: this._backupOkLabel(summary) };
@@ -550,6 +805,8 @@ const RuntimeCenter = {
       no_github_remote: '未配置 GitHub 远端',
       no_github_backup_repo: '未发现 GitHub 仓库',
       github_repo_mismatch: 'GitHub 仓库不匹配',
+      no_upstream: '未配置上游分支，无法确认已推送',
+      upstream_comparison_failed: '无法比较上游分支状态',
       ahead_of_upstream: '有未推送提交',
       dirty_worktree: '有未提交修改',
       untracked_files: '有未跟踪文件',
@@ -794,16 +1051,36 @@ const App = {
     // Primary nav items
     document.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', (e) => {
+        if (
+          e.defaultPrevented
+          || e.button !== 0
+          || e.metaKey
+          || e.ctrlKey
+          || e.shiftKey
+          || e.altKey
+          || item.target === '_blank'
+        ) return;
         e.preventDefault();
         const group = item.dataset.page;
         const cfg = NAV_GROUPS[group];
         this.navigateTo(cfg ? cfg.default : group);
+        const more = document.getElementById('nav-more');
+        if (more) more.open = false;
       });
     });
 
     // Sub-tab items
     document.querySelectorAll('.sub-tab').forEach(item => {
       item.addEventListener('click', (e) => {
+        if (
+          e.defaultPrevented
+          || e.button !== 0
+          || e.metaKey
+          || e.ctrlKey
+          || e.shiftKey
+          || e.altKey
+          || item.target === '_blank'
+        ) return;
         e.preventDefault();
         this.navigateTo(item.dataset.subpage);
       });
@@ -833,6 +1110,8 @@ const App = {
       'analysis/estimates': 'estimates',
       tasks: 'tasks',
       'team/live': 'live',
+      'system/report': 'report',
+      'system/timeline': 'timeline',
       myview: 'myview',
       'myview/about': 'about'
     };
@@ -862,8 +1141,15 @@ const App = {
 
     // Update primary nav
     document.querySelectorAll('.nav-item').forEach(n => {
-      n.classList.toggle('active', n.dataset.page === group);
+      const isActive = n.dataset.page === group;
+      n.classList.toggle('active', isActive);
+      if (isActive) n.setAttribute('aria-current', 'page');
+      else n.removeAttribute('aria-current');
     });
+    document.getElementById('nav-more')?.classList.toggle(
+      'active',
+      group !== 'overview' && group !== 'backups'
+    );
 
     // Update sub-tabs visibility
     document.querySelectorAll('.sub-tabs').forEach(st => {
@@ -873,14 +1159,22 @@ const App = {
 
     // Update sub-tab active state
     document.querySelectorAll('.sub-tab').forEach(st => {
-      st.classList.toggle('active', st.dataset.subpage === page);
+      const isActive = st.dataset.subpage === page;
+      st.classList.toggle('active', isActive);
+      if (isActive) st.setAttribute('aria-current', 'page');
+      else st.removeAttribute('aria-current');
     });
 
     // Update pages
     document.querySelectorAll('.page').forEach(p => {
-      p.classList.toggle('active', p.id === `page-${page}`);
+      const isActive = p.id === `page-${page}`;
+      p.classList.toggle('active', isActive);
+      p.setAttribute('aria-hidden', isActive ? 'false' : 'true');
     });
 
+    if (this.currentPage !== page && typeof DetailDrawer !== 'undefined') {
+      DetailDrawer.close({ restoreFocus: false });
+    }
     this.currentPage = page;
     if (pushState) {
       // Build hash: group/subpage or just group if it's the default
@@ -931,7 +1225,8 @@ const App = {
           ...teamMeta,
           total_members: teamData.total_members ?? teamMeta.total_members,
           total: teamData.total ?? teamMeta.total,
-          member_count: teamData.member_count ?? teamMeta.member_count
+          member_count: teamData.member_count ?? teamMeta.member_count,
+          monitoring: teamData.monitoring || teamMeta.monitoring || null
         };
         AgentFilter.setAgents(ScopeManager.filter(this.data.team));
       }
@@ -1011,7 +1306,13 @@ const App = {
     const sortedForOverview = this._applySortOrder(agents, document.getElementById('overview-sort')?.value || 'default');
     const scopedTimeline = ScopeManager.filter(this.data.timeline);
     const events = AgentFilter.filterItems('overview', scopedTimeline, 'agent');
-    RuntimeCenter.renderOverview(sortedForOverview, this.data.teamMeta, events || []);
+    const fullRosterVisible = agents.length === this.data.team.length
+      && agents.every(agent => this.data.team.some(row => row.name === agent.name));
+    RuntimeCenter.renderOverview(
+      sortedForOverview,
+      fullRosterVisible ? this.data.teamMeta : {},
+      events || []
+    );
   },
 
   renderTeam() {
@@ -1226,6 +1527,7 @@ const App = {
           const agents = Array.isArray(msg.data.team) ? msg.data.team : [];
           this.data.team = agents;
           this.data.teamMeta = msg.data.teamMeta || msg.data.team_meta || msg.data.stats || this.data.teamMeta;
+          this.data.teamMeta.monitoring = msg.data.monitoring || RuntimeCenter._fleetMonitoring(agents);
           AgentFilter.setAgents(ScopeManager.filter(agents));
         }
         if (msg.data.board) this.data.board = msg.data.board;
@@ -1251,6 +1553,7 @@ const App = {
       case 'team:update':
         if (Array.isArray(msg.data)) {
           this.data.team = msg.data;
+          this.data.teamMeta.monitoring = RuntimeCenter._fleetMonitoring(msg.data);
           AgentFilter.setAgents(ScopeManager.filter(msg.data));
           this.renderOverview();
           this.renderTeam();
@@ -1385,7 +1688,13 @@ const App = {
 
     // Close nav when a nav item is tapped on mobile
     document.getElementById('main-nav')?.addEventListener('click', (e) => {
-      if (e.target.classList.contains('nav-item')) close();
+      if (
+        e.target.classList.contains('nav-item')
+        && !e.metaKey
+        && !e.ctrlKey
+        && !e.shiftKey
+        && !e.altKey
+      ) close();
     });
   },
 
@@ -1437,6 +1746,7 @@ const App = {
 
     const card = cards[this._kbdIndex];
     card.classList.add('kbd-focused');
+    if (typeof card.focus === 'function') card.focus({ preventScroll: true });
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   },
 

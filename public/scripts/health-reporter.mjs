@@ -516,11 +516,11 @@ function collectLatestRateLimitSnapshot(rootDir) {
 
 function timestampToMs(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return value > 0 && value < 1e12 ? value * 1000 : value;
+    return value >= 1e9 && value < 1e12 ? value * 1000 : value;
   }
   if (typeof value === 'string' && value.trim()) {
     const numeric = Number(value);
-    if (Number.isFinite(numeric)) return numeric > 0 && numeric < 1e12 ? numeric * 1000 : numeric;
+    if (Number.isFinite(numeric)) return numeric >= 1e9 && numeric < 1e12 ? numeric * 1000 : numeric;
     const parsed = Date.parse(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -626,7 +626,11 @@ function probeRuntimeDetails(runtimeProbe) {
     return {
       type,
       version,
+      installed: Boolean(version),
       status,
+      status_source: runtimeStatusOverride !== 'unknown'
+        ? 'override'
+        : running ? 'runtime_health' : version ? 'installed_binary' : 'runtime_health',
       source: 'openclaw status',
       detection_source: detectionSource,
       checked_at: new Date().toISOString(),
@@ -638,12 +642,16 @@ function probeRuntimeDetails(runtimeProbe) {
     const version = runtimeVersionOverride || parseVersionText(versionProbe.stdout);
     const status = runtimeStatusOverride !== 'unknown'
       ? runtimeStatusOverride
-      : (version ? 'running' : (strongDetection ? 'degraded' : 'offline'));
+      : (detectionSource === 'process' ? 'running' : (version || strongDetection) ? 'degraded' : 'unknown');
 
     return {
       type,
       version,
+      installed: Boolean(version),
       status,
+      status_source: runtimeStatusOverride !== 'unknown'
+        ? 'override'
+        : detectionSource === 'process' ? 'process' : version ? 'installed_binary' : 'detection',
       source: 'claude version',
       detection_source: detectionSource,
       checked_at: new Date().toISOString(),
@@ -655,12 +663,16 @@ function probeRuntimeDetails(runtimeProbe) {
     const version = runtimeVersionOverride || parseVersionText(versionProbe.stdout);
     const status = runtimeStatusOverride !== 'unknown'
       ? runtimeStatusOverride
-      : (version ? 'running' : (strongDetection ? 'degraded' : 'offline'));
+      : (detectionSource === 'process' ? 'running' : (version || strongDetection) ? 'degraded' : 'unknown');
 
     return {
       type,
       version,
+      installed: Boolean(version),
       status,
+      status_source: runtimeStatusOverride !== 'unknown'
+        ? 'override'
+        : detectionSource === 'process' ? 'process' : version ? 'installed_binary' : 'detection',
       source: 'codex version',
       detection_source: detectionSource,
       checked_at: new Date().toISOString(),
@@ -670,7 +682,9 @@ function probeRuntimeDetails(runtimeProbe) {
   return {
     type: type || 'unknown',
     version: runtimeVersionOverride || null,
+    installed: Boolean(runtimeVersionOverride),
     status: runtimeStatusOverride !== 'unknown' ? runtimeStatusOverride : 'unknown',
+    status_source: runtimeStatusOverride !== 'unknown' ? 'override' : 'unknown',
     source: 'unknown',
     detection_source: detectionSource,
     checked_at: new Date().toISOString(),
@@ -1347,6 +1361,7 @@ function sanitizeRemoteUrl(remoteUrl) {
       parsed.username = '';
       parsed.password = '';
     }
+    parsed.search = '';
     return parsed.toString().replace(/\/$/, '');
   } catch {}
 
@@ -1405,14 +1420,21 @@ function collectGitRepoBackup(repoPath) {
   const lastCommitProbe = gitCommand(repoPath, ['log', '-1', '--format=%cI']);
   const statusProbe = gitCommand(repoPath, ['status', '--porcelain=v1', '--untracked-files=normal']);
 
-  let ahead = 0;
-  let behind = 0;
-  if (upstreamProbe.ok && upstreamProbe.stdout) {
+  const upstream = upstreamProbe.ok && upstreamProbe.stdout ? upstreamProbe.stdout : null;
+  let ahead = null;
+  let behind = null;
+  let countsKnown = false;
+  if (upstream) {
     const countsProbe = gitCommand(repoPath, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']);
     if (countsProbe.ok) {
       const [aheadText, behindText] = countsProbe.stdout.split(/\s+/);
-      ahead = Math.max(0, Number.parseInt(aheadText, 10) || 0);
-      behind = Math.max(0, Number.parseInt(behindText, 10) || 0);
+      const parsedAhead = Number.parseInt(aheadText, 10);
+      const parsedBehind = Number.parseInt(behindText, 10);
+      if (Number.isFinite(parsedAhead) && Number.isFinite(parsedBehind)) {
+        ahead = Math.max(0, parsedAhead);
+        behind = Math.max(0, parsedBehind);
+        countsKnown = true;
+      }
     }
   }
 
@@ -1422,21 +1444,25 @@ function collectGitRepoBackup(repoPath) {
   const hasGithubRemote = Boolean(githubRemote);
   const status = !hasGithubRemote
     ? 'critical'
-    : (ahead > 0 || behind > 0 || dirty > 0 || untracked > 0) ? 'warning' : 'ok';
+    : (!upstream || !countsKnown)
+      ? 'unknown'
+      : (ahead > 0 || behind > 0 || dirty > 0 || untracked > 0) ? 'warning' : 'ok';
   const reason = !hasGithubRemote
     ? 'no_github_remote'
-    : ahead > 0 ? 'ahead_of_upstream'
-      : dirty > 0 ? 'dirty_worktree'
-        : untracked > 0 ? 'untracked_files'
-          : behind > 0 ? 'behind_upstream'
-            : null;
+    : !upstream ? 'no_upstream'
+      : !countsKnown ? 'upstream_comparison_failed'
+        : ahead > 0 ? 'ahead_of_upstream'
+          : dirty > 0 ? 'dirty_worktree'
+            : untracked > 0 ? 'untracked_files'
+              : behind > 0 ? 'behind_upstream'
+                : null;
 
   return {
     path: repoPath,
     remote: sanitizeRemoteUrl(githubRemote || remoteUrls[0] || null),
     branch: branchProbe.stdout || null,
     head: headProbe.stdout || null,
-    upstream: upstreamProbe.ok ? upstreamProbe.stdout || null : null,
+    upstream,
     ahead,
     behind,
     dirty,
@@ -1453,6 +1479,7 @@ function summarizeBackupRepos(repos) {
     ok: 0,
     warning: 0,
     critical: 0,
+    unknown: 0,
     unsupported: 0,
     ahead: 0,
     behind: 0,
@@ -1464,6 +1491,7 @@ function summarizeBackupRepos(repos) {
   for (const repo of repos) {
     if (repo.status === 'ok') summary.ok += 1;
     else if (repo.status === 'warning') summary.warning += 1;
+    else if (repo.status === 'unknown') summary.unknown += 1;
     else if (repo.status === 'unsupported') summary.unsupported += 1;
     else summary.critical += 1;
     summary.ahead += repo.ahead || 0;
@@ -1540,7 +1568,7 @@ export function classifyBackupLogLines(lines, mtimeMs = Date.now(), nowMs = Date
     status = latestFailure ? 'critical' : 'warning';
     reason = latestFailure ? 'last_backup_failed' : 'no_success_marker';
   } else if (isFailureAfterSuccess(latestFailure, latestSuccess)) {
-    status = 'warning';
+    status = 'critical';
     reason = 'failure_after_last_success';
   } else {
     const ageHours = (nowMs - lastSuccessAt) / 3600000;
@@ -1636,6 +1664,7 @@ function combineBackupStatuses(statuses) {
   const real = statuses.filter(status => status && status !== 'unsupported');
   if (real.includes('critical')) return 'critical';
   if (real.includes('warning')) return 'warning';
+  if (real.includes('unknown')) return 'unknown';
   if (real.includes('ok')) return 'ok';
   return 'critical';
 }
@@ -1662,12 +1691,15 @@ function collectBackupStatus(botName) {
   const summary = summarizeBackupRepos(repos);
   const repoStatus = summary.critical > 0 ? 'critical'
     : summary.warning > 0 ? 'warning'
-      : repos.length > 0 ? 'ok' : 'critical';
+      : summary.unknown > 0 ? 'unknown'
+        : repos.length > 0 ? 'ok' : 'critical';
   const cronStatus = cron.supported ? cron.status : 'unsupported';
   const status = combineBackupStatuses([repoStatus, cronStatus]);
   const reason = repos.length === 0
     ? 'no_github_backup_repo'
-    : (cron.supported && cron.status !== 'ok' ? cron.reason : null);
+    : repoStatus === 'unknown'
+      ? repos.find(repo => repo.status === 'unknown')?.reason || 'upstream_comparison_failed'
+      : (cron.supported && cron.status !== 'ok' ? cron.reason : null);
 
   return {
     supported: gitProbe.ok || cron.supported || repos.length > 0,
@@ -1686,14 +1718,15 @@ function getDiskInfo() {
     const lines = out.trim().split('\n');
     if (lines.length >= 2) {
       const parts = lines[1].split(/\s+/);
+      const pct = Number.parseInt(parts[4], 10);
       return {
         total: parts[1] || null,
         used: parts[2] || null,
-        pct: parseInt(parts[4], 10) || 0,
+        pct: Number.isFinite(pct) ? pct : null,
       };
     }
   } catch {}
-  return { total: null, used: null, pct: 0 };
+  return { total: null, used: null, pct: null };
 }
 
 function getMemoryInfo() {
@@ -1771,13 +1804,14 @@ function postHealth(name, payload) {
   });
 }
 
-function collectRoster() {
-  const statuslinePath = path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json');
-  if (!fs.existsSync(statuslinePath)) return null;
-  let sl;
-  try { sl = JSON.parse(fs.readFileSync(statuslinePath, 'utf8')); } catch { return null; }
+function buildRosterSnapshot(sl, sourceMtimeMs = null) {
+  if (!sl || typeof sl !== 'object' || Array.isArray(sl)) return null;
+  const sampledAt = normalizeSampledAt(
+    sl.timestamp ?? sl.updated_at ?? sl.sampled_at,
+    sourceMtimeMs
+  );
+
   return {
-    session_id: sl.session_id || null,
     model: sl.model?.id || sl.model?.display_name || null,
     model_display: sl.model?.display_name || null,
     version: sl.version || null,
@@ -1789,17 +1823,25 @@ function collectRoster() {
     context_total_tokens: (sl.context_window?.total_input_tokens || 0) + (sl.context_window?.total_output_tokens || 0) || null,
     rate_limits: {
       five_hour: sl.rate_limits?.five_hour ? {
-        used_pct: sl.rate_limits.five_hour.used_percentage ?? null,
+        used_pct: sl.rate_limits.five_hour.used_percentage ?? sl.rate_limits.five_hour.used_percent ?? null,
         resets_at: sl.rate_limits.five_hour.resets_at ?? null,
       } : null,
       seven_day: sl.rate_limits?.seven_day ? {
-        used_pct: sl.rate_limits.seven_day.used_percentage ?? null,
+        used_pct: sl.rate_limits.seven_day.used_percentage ?? sl.rate_limits.seven_day.used_percent ?? null,
         resets_at: sl.rate_limits.seven_day.resets_at ?? null,
       } : null,
     },
     plan_type: sl.plan_type || null,
-    sampled_at: Date.now(),
+    sampled_at: sampledAt,
   };
+}
+
+function collectRoster() {
+  const statuslinePath = path.join(ZYLOS_DIR, 'activity-monitor', 'statusline.json');
+  if (!fs.existsSync(statuslinePath)) return null;
+  let sl;
+  try { sl = JSON.parse(fs.readFileSync(statuslinePath, 'utf8')); } catch { return null; }
+  return buildRosterSnapshot(sl, fileMtimeMs(statuslinePath));
 }
 
 // Pin the runtime to a canonical runtime.json when detection is strong and no file exists yet,
@@ -1929,4 +1971,7 @@ export {
   isGenericRuntimeAgentName,
   normalizeAgentName,
   normalizeRuntimeType,
+  buildRosterSnapshot,
+  collectGitRepoBackup,
+  getDiskInfo,
 };

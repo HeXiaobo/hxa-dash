@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
 const teamRoute = require('../src/routes/team');
-const { runtimeEvidenceLevel, buildRuntimeSummary, selectQuotaForRuntime } = teamRoute.__private;
+const {
+  runtimeEvidenceLevel,
+  buildRuntimeSummary,
+  selectQuotaForRuntime,
+  selectUsageForRuntime,
+} = teamRoute.__private;
 
 describe('team runtime evidence', () => {
   it('treats process/config/env detections as strong evidence', () => {
@@ -50,7 +55,7 @@ describe('team runtime evidence', () => {
     expect(summary.status).toBe('offline');
   });
 
-  it('keeps unconfirmed strong offline evidence degraded for fresh heartbeats', () => {
+  it('keeps an explicitly observed offline runtime offline', () => {
     const now = Date.now();
     const health = {
       reported_at: now,
@@ -65,10 +70,10 @@ describe('team runtime evidence', () => {
     };
 
     const summary = buildRuntimeSummary({ online: true }, health, now);
-    expect(summary.status).toBe('degraded');
+    expect(summary.status).toBe('offline');
   });
 
-  it('treats confirmed runtime evidence as running even when an older status was degraded', () => {
+  it('does not promote an installed runtime or quota sample to running', () => {
     const now = Date.now();
     const health = {
       reported_at: now,
@@ -87,7 +92,8 @@ describe('team runtime evidence', () => {
     };
 
     const summary = buildRuntimeSummary({ online: true }, health, now);
-    expect(summary.status).toBe('running');
+    expect(summary.status).toBe('degraded');
+    expect(summary.installed).toBe(true);
   });
 
   it('does not expose quota as supported without used quota windows', () => {
@@ -106,5 +112,48 @@ describe('team runtime evidence', () => {
     const quota = selectQuotaForRuntime(health, 'codex');
     expect(quota.supported).toBe(false);
     expect(quota.reason).toBe('no_used_quota_window');
+  });
+
+  it('uses inclusive 80/90 thresholds for runtime system health', () => {
+    const now = Date.now();
+    const warning = buildRuntimeSummary({}, {
+      reported_at: now,
+      disk: { pct: 80, status: 'ok' },
+      memory: { pct: 20, status: 'ok' },
+      runtime: { type: 'codex', status: 'unknown' },
+    }, now);
+    const critical = buildRuntimeSummary({}, {
+      reported_at: now,
+      disk: { pct: 20, status: 'ok' },
+      memory: { pct: 90, status: 'ok' },
+      runtime: { type: 'codex', status: 'unknown' },
+    }, now);
+
+    expect(warning.system_health).toBe('warning');
+    expect(critical.system_health).toBe('critical');
+  });
+
+  it('only converts plausible epoch-second usage timestamps to milliseconds', () => {
+    const usageAtSmallClock = selectUsageForRuntime({
+      usage: {
+        codex: {
+          supported: true,
+          sampled_at: 2000,
+          session_tokens: { total: 1 },
+        },
+      },
+    }, 'codex');
+    const usageAtEpochSeconds = selectUsageForRuntime({
+      usage: {
+        codex: {
+          supported: true,
+          sampled_at: 1_785_003_600,
+          session_tokens: { total: 1 },
+        },
+      },
+    }, 'codex');
+
+    expect(usageAtSmallClock.sampled_at).toBe(2000);
+    expect(usageAtEpochSeconds.sampled_at).toBe(1_785_003_600_000);
   });
 });

@@ -1,5 +1,13 @@
+import { execFileSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
-import { classifyBackupLogLines, isBackupSuccessLine } from '../scripts/health-reporter.mjs';
+import {
+  classifyBackupLogLines,
+  collectGitRepoBackup,
+  isBackupSuccessLine,
+} from '../scripts/health-reporter.mjs';
 
 describe('health reporter backup log parser', () => {
   it('treats git ref update output as a successful backup signal', () => {
@@ -22,7 +30,30 @@ describe('health reporter backup log parser', () => {
       'fatal: unable to access github',
     ], mtime, mtime);
 
-    expect(result.status).toBe('warning');
+    expect(result.status).toBe('critical');
     expect(result.reason).toBe('failure_after_last_success');
+  });
+
+  it('keeps repository sync unknown when a real branch has no upstream', () => {
+    const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'hxa-backup-no-upstream-'));
+    try {
+      execFileSync('git', ['init', '-b', 'main', repoPath]);
+      execFileSync('git', ['-C', repoPath, 'config', 'user.name', 'HXA Test']);
+      execFileSync('git', ['-C', repoPath, 'config', 'user.email', 'hxa-test@example.invalid']);
+      fs.writeFileSync(path.join(repoPath, 'README.md'), '# backup test\n');
+      execFileSync('git', ['-C', repoPath, 'add', 'README.md']);
+      execFileSync('git', ['-C', repoPath, 'commit', '-m', 'test backup']);
+      execFileSync('git', ['-C', repoPath, 'remote', 'add', 'origin', 'https://github.com/example/backup.git']);
+
+      expect(collectGitRepoBackup(repoPath)).toMatchObject({
+        upstream: null,
+        ahead: null,
+        behind: null,
+        status: 'unknown',
+        reason: 'no_upstream',
+      });
+    } finally {
+      fs.rmSync(repoPath, { recursive: true, force: true });
+    }
   });
 });

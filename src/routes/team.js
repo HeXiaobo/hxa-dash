@@ -7,7 +7,7 @@ const router = Router();
 
 // Default max concurrent tasks per agent (can be overridden per-agent in entities.json later)
 const DEFAULT_MAX_CAPACITY = 5;
-const HEALTH_STALE_MS = 10 * 60 * 1000;
+const HEALTH_STALE_MS = 15 * 60 * 1000;
 const WORK_SIGNAL_WINDOW_MS = 60 * 60 * 1000;
 const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MESSAGE_ACTIONS = new Set(['sent_message', 'received_message', 'hxa_message']);
@@ -19,8 +19,14 @@ function isWorkSignal(action) {
 }
 
 function normalizeTimestamp(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value >= 1e9 && value < 1e12 ? value * 1000 : value;
+  }
   if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && value.trim()) {
+      return numeric >= 1e9 && numeric < 1e12 ? numeric * 1000 : numeric;
+    }
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -184,9 +190,17 @@ function selectUsageForRuntime(health, runtimeType) {
 
 function computeOverallSystemHealth(health) {
   if (!health) return 'unknown';
-  const statuses = [health.disk?.status, health.memory?.status];
+  const resourceStatus = resource => {
+    if (typeof resource?.pct === 'number' && Number.isFinite(resource.pct)) {
+      if (resource.pct >= 90) return 'critical';
+      if (resource.pct >= 80) return 'warning';
+      return 'ok';
+    }
+    return resource?.status || null;
+  };
+  const statuses = [resourceStatus(health.disk), resourceStatus(health.memory)].filter(Boolean);
   if (health.cpu?.pct != null) {
-    statuses.push(health.cpu.pct > 90 ? 'critical' : health.cpu.pct > 80 ? 'warning' : 'ok');
+    statuses.push(health.cpu.pct >= 90 ? 'critical' : health.cpu.pct >= 80 ? 'warning' : 'ok');
   }
   if (health.pm2) {
     if (health.pm2.total > 0 && health.pm2.online === health.pm2.total) statuses.push('ok');
@@ -195,7 +209,7 @@ function computeOverallSystemHealth(health) {
   }
   if (statuses.includes('critical')) return 'critical';
   if (statuses.includes('warning')) return 'warning';
-  return 'ok';
+  return statuses.includes('ok') ? 'ok' : 'unknown';
 }
 
 function runtimeEvidenceLevel(health, runtimeType) {
@@ -222,19 +236,6 @@ function runtimeEvidenceLevel(health, runtimeType) {
   return 'none';
 }
 
-function hasRuntimeConfirmation(health) {
-  if (!health || typeof health !== 'object') return false;
-  if (health?.runtime?.version) return true;
-  const supportedQuota = health?.quota && typeof health.quota === 'object'
-    ? Object.values(health.quota).some(item => item && typeof item === 'object' && item.supported === true)
-    : false;
-  if (supportedQuota) return true;
-  const supportedUsage = health?.usage && typeof health.usage === 'object'
-    ? Object.values(health.usage).some(item => item && typeof item === 'object' && item.supported === true)
-    : false;
-  return supportedUsage;
-}
-
 function buildRuntimeSummary(agent, health, now) {
   const reportedAt = normalizeTimestamp(health?.reported_at);
   const stale = !reportedAt || (now - reportedAt) > HEALTH_STALE_MS;
@@ -242,36 +243,32 @@ function buildRuntimeSummary(agent, health, now) {
   const rawStatus = normalizeRuntimeStatus(health?.runtime?.status);
   const systemHealth = computeOverallSystemHealth(health);
   const evidence = runtimeEvidenceLevel(health, type);
-  const hasStrongEvidence = evidence === 'strong';
-  const hasAnyEvidence = evidence !== 'none';
-  const confirmedRuntime = hasRuntimeConfirmation(health);
+  const statusSource = String(health?.runtime?.status_source || '').toLowerCase();
+  const detectionSource = String(health?.runtime?.detection_source || '').toLowerCase();
+  const runtimeSource = String(health?.runtime?.source || '').toLowerCase();
+  const runningIsObserved = ['override', 'process', 'runtime_health'].includes(statusSource)
+    || detectionSource === 'process'
+    || (type === 'openclaw' && /(health|status)/.test(runtimeSource));
 
-  let status = 'offline';
-  if (stale) {
-    status = 'offline';
-  } else if (rawStatus === 'offline') {
-    status = confirmedRuntime && systemHealth !== 'critical'
-      ? 'running'
-      : hasStrongEvidence ? 'degraded' : 'offline';
-  } else if (rawStatus === 'degraded') {
-    status = confirmedRuntime && systemHealth !== 'critical' ? 'running' : 'degraded';
-  } else if (rawStatus) {
+  // Fresh/stale collection, installed runtime, runtime process state, and work
+  // evidence are separate. In particular, an installed binary/version cannot
+  // promote an agent to "running".
+  let status = 'unknown';
+  if (!stale && rawStatus === 'running') {
+    status = runningIsObserved ? 'running' : 'degraded';
+  } else if (!stale && rawStatus) {
     status = rawStatus;
-  } else if (systemHealth === 'critical') {
-    status = hasStrongEvidence ? 'degraded' : 'offline';
-  } else if (hasStrongEvidence) {
-    status = 'running';
-  } else if (hasAnyEvidence) {
-    status = 'degraded';
-  } else {
-    status = 'offline';
   }
 
   return {
     type,
     label: runtimeLabel(type),
     version: health?.runtime?.version || null,
+    installed: typeof health?.runtime?.installed === 'boolean'
+      ? health.runtime.installed
+      : !!health?.runtime?.version,
     status,
+    status_source: health?.runtime?.status_source || null,
     source: health?.runtime?.source || 'agent_health',
     detection_source: health?.runtime?.detection_source || null,
     checked_at: normalizeTimestamp(health?.runtime?.checked_at) || reportedAt,
@@ -279,6 +276,236 @@ function buildRuntimeSummary(agent, health, now) {
     hostname: health?.hostname || null,
     stale,
     system_health: systemHealth,
+    evidence,
+  };
+}
+
+function deriveWorkState(lastWorkSignalAt, now = Date.now()) {
+  const observedAt = normalizeTimestamp(lastWorkSignalAt);
+  if (observedAt && observedAt > (now - WORK_SIGNAL_WINDOW_MS)) return 'working';
+  if (observedAt && observedAt > (now - ACTIVE_WINDOW_MS)) return 'standby';
+  return 'unknown';
+}
+
+function firstNumber(...values) {
+  return values.find(value => typeof value === 'number' && Number.isFinite(value)) ?? null;
+}
+
+function firstTimestamp(...values) {
+  for (const value of values) {
+    const normalized = normalizeTimestamp(value);
+    if (normalized != null) return normalized;
+  }
+  return null;
+}
+
+function severityMax(current, next) {
+  const rank = { ok: 0, warning: 1, critical: 2 };
+  return (rank[next] || 0) > (rank[current] || 0) ? next : current;
+}
+
+function isFreshSample(sampledAt, now) {
+  const normalized = normalizeTimestamp(sampledAt);
+  if (normalized == null || normalized > now) return false;
+  return (now - normalized) <= HEALTH_STALE_MS;
+}
+
+function buildMonitoringSummary(health, runtime, quota, usage, backup, now = Date.now()) {
+  const observedAt = normalizeTimestamp(health?.reported_at);
+  const ageMs = observedAt == null ? null : Math.max(0, now - observedAt);
+  const freshness = observedAt == null
+    ? 'missing'
+    : ageMs > HEALTH_STALE_MS ? 'stale' : 'fresh';
+  const roster = health?.roster && typeof health.roster === 'object' ? health.roster : null;
+  const fiveHourRoster = roster?.rate_limits?.five_hour || null;
+  const sevenDayRoster = roster?.rate_limits?.seven_day || null;
+
+  const contextPct = firstNumber(roster?.context_used_pct);
+  const contextTokens = firstNumber(roster?.context_total_tokens);
+  const quotaHasFiveHour = typeof quota?.primary?.used_percent === 'number'
+    && Number.isFinite(quota.primary.used_percent);
+  const quotaHasSevenDay = typeof quota?.secondary?.used_percent === 'number'
+    && Number.isFinite(quota.secondary.used_percent);
+  const fiveHourPct = firstNumber(quota?.primary?.used_percent, fiveHourRoster?.used_pct);
+  const sevenDayPct = firstNumber(quota?.secondary?.used_percent, sevenDayRoster?.used_pct);
+  const fiveHourResetsAt = firstTimestamp(quota?.primary?.resets_at, fiveHourRoster?.resets_at);
+  const sevenDayResetsAt = firstTimestamp(quota?.secondary?.resets_at, sevenDayRoster?.resets_at);
+  const contextSampledAt = firstTimestamp(roster?.sampled_at);
+  const fiveHourSampledAt = quotaHasFiveHour
+    ? firstTimestamp(quota?.sampled_at)
+    : firstTimestamp(roster?.sampled_at);
+  const sevenDaySampledAt = quotaHasSevenDay
+    ? firstTimestamp(quota?.sampled_at)
+    : firstTimestamp(roster?.sampled_at);
+  const sessionTotal = firstNumber(usage?.session_tokens?.total, contextTokens);
+  const lastTurnTotal = firstNumber(usage?.last_turn_tokens?.total);
+  const costUsd = firstNumber(usage?.session_cost_usd, roster?.cost_usd);
+
+  const reasonCodes = [];
+  const collectionReasonCodes = [];
+  let severity = 'ok';
+  const addReason = (code, level = 'warning', { collection = false } = {}) => {
+    if (!reasonCodes.includes(code)) reasonCodes.push(code);
+    if (collection && !collectionReasonCodes.includes(code)) collectionReasonCodes.push(code);
+    severity = severityMax(severity, level);
+  };
+
+  if (freshness === 'missing') addReason('report_missing', 'warning', { collection: true });
+  if (freshness === 'stale') addReason('report_stale', 'warning', { collection: true });
+
+  const diskPct = firstNumber(health?.disk?.pct);
+  const memoryPct = firstNumber(health?.memory?.pct);
+  const cpuPct = firstNumber(health?.cpu?.pct);
+  const pm2Online = firstNumber(health?.pm2?.online);
+  const pm2Total = firstNumber(health?.pm2?.total);
+
+  if (freshness === 'fresh') {
+    if (diskPct >= 90 || health?.disk?.status === 'critical') {
+      addReason('disk_critical', 'critical', { collection: true });
+    } else if (diskPct >= 80 || health?.disk?.status === 'warning') {
+      addReason('disk_warning', 'warning', { collection: true });
+    }
+    if (memoryPct >= 90 || health?.memory?.status === 'critical') {
+      addReason('memory_critical', 'critical', { collection: true });
+    } else if (memoryPct >= 80 || health?.memory?.status === 'warning') {
+      addReason('memory_warning', 'warning', { collection: true });
+    }
+    if (cpuPct >= 90 || health?.cpu?.status === 'critical') {
+      addReason('cpu_critical', 'critical', { collection: true });
+    } else if (cpuPct >= 80 || health?.cpu?.status === 'warning') {
+      addReason('cpu_warning', 'warning', { collection: true });
+    }
+    if (pm2Total > 0 && pm2Online === 0) {
+      addReason('pm2_offline', 'critical', { collection: true });
+    } else if (pm2Total > 0 && pm2Online < pm2Total) {
+      addReason('pm2_partial', 'warning', { collection: true });
+    }
+  }
+
+  if (isFreshSample(contextSampledAt, now)) {
+    if (contextPct >= 95) addReason('context_critical', 'critical');
+    else if (contextPct >= 80) addReason('context_high', 'warning');
+  }
+  if (isFreshSample(fiveHourSampledAt, now)) {
+    if (fiveHourPct >= 95) addReason('quota_5h_critical', 'critical');
+    else if (fiveHourPct >= 80) addReason('quota_5h_high', 'warning');
+  }
+  if (isFreshSample(sevenDaySampledAt, now)) {
+    if (sevenDayPct >= 95) addReason('quota_7d_critical', 'critical');
+    else if (sevenDayPct >= 80) addReason('quota_7d_high', 'warning');
+  }
+
+  if (backup?.status === 'critical') addReason('backup_critical', 'critical');
+  else if (backup?.status === 'warning') addReason('backup_warning', 'warning');
+  if (['backup_success_stale', 'backup_success_too_old'].includes(backup?.reason)) {
+    addReason('backup_stale', backup.status === 'critical' ? 'critical' : 'warning');
+  }
+
+  let collectionStatus = 'unknown';
+  if (freshness === 'stale') collectionStatus = 'stale';
+  else if (freshness === 'fresh') {
+    const collectionSeverity = collectionReasonCodes.some(code => code.endsWith('_critical') || code === 'pm2_offline')
+      ? 'critical'
+      : collectionReasonCodes.length > 0 ? 'warning' : 'ok';
+    collectionStatus = diskPct == null || memoryPct == null ? 'unknown' : collectionSeverity;
+  }
+
+  const versions = [];
+  if (runtime?.type !== 'unknown' || runtime?.version) {
+    versions.push({
+      component: 'runtime',
+      label: runtime?.label || runtimeLabel(runtime?.type),
+      version: runtime?.version || null,
+    });
+  }
+  if (roster?.version) {
+    versions.push({
+      component: 'statusline',
+      label: 'Statusline',
+      version: roster.version,
+    });
+  }
+
+  return {
+    observed_at: observedAt,
+    freshness,
+    age_ms: ageMs,
+    collection: {
+      status: collectionStatus,
+      reason_codes: collectionReasonCodes,
+      reported_at: observedAt,
+      sampled_at: firstTimestamp(roster?.sampled_at),
+    },
+    system: {
+      cpu_pct: cpuPct,
+      memory_pct: memoryPct,
+      disk_pct: diskPct,
+      pm2_online: pm2Online,
+      pm2_total: pm2Total,
+    },
+    capacity: {
+      context_pct: contextPct,
+      context_tokens: contextTokens,
+      context_sampled_at: contextSampledAt,
+      five_hour_pct: fiveHourPct,
+      five_hour_resets_at: fiveHourResetsAt,
+      five_hour_sampled_at: fiveHourSampledAt,
+      seven_day_pct: sevenDayPct,
+      seven_day_resets_at: sevenDayResetsAt,
+      seven_day_sampled_at: sevenDaySampledAt,
+      sampled_at: firstTimestamp(quota?.sampled_at, roster?.sampled_at),
+    },
+    tokens: {
+      session_total: sessionTotal,
+      last_turn_total: lastTurnTotal,
+      cost_usd: costUsd,
+      sampled_at: firstTimestamp(usage?.sampled_at, roster?.sampled_at),
+    },
+    versions,
+    backup: {
+      status: backup?.status || 'unsupported',
+      last_success_at: firstTimestamp(backup?.last_success_at),
+    },
+    anomaly: {
+      severity,
+      reason_codes: reasonCodes,
+    },
+  };
+}
+
+function buildFleetMonitoringSummary(agents) {
+  const rows = Array.isArray(agents) ? agents : [];
+  const total = rows.length;
+  const fresh = rows.filter(agent => agent.monitoring?.freshness === 'fresh').length;
+  const stale = rows.filter(agent => agent.monitoring?.freshness === 'stale').length;
+  const missing = rows.filter(agent => agent.monitoring?.freshness === 'missing').length;
+  const observed = fresh + stale;
+  const agentAttention = rows.filter(agent => agent.monitoring?.anomaly?.severity !== 'ok').length;
+  const ingestChainSuspected = total > 0 && (stale + missing) === total;
+  const independentAttention = rows.filter(agent => {
+    const codes = agent.monitoring?.anomaly?.reason_codes;
+    return Array.isArray(codes)
+      && codes.some(code => !['report_stale', 'report_missing'].includes(code));
+  }).length;
+  const hasCritical = rows.some(agent => agent.monitoring?.anomaly?.severity === 'critical');
+  const needsAttention = ingestChainSuspected
+    ? 1 + independentAttention
+    : agentAttention;
+  const severity = hasCritical
+    ? 'critical'
+    : needsAttention > 0 ? 'warning' : 'ok';
+
+  return {
+    total,
+    observed,
+    fresh,
+    stale,
+    missing,
+    needs_attention: needsAttention,
+    anomaly: {
+      severity,
+      reason_codes: ingestChainSuspected ? ['ingest_chain_suspected'] : [],
+    },
   };
 }
 
@@ -303,14 +530,9 @@ function buildAgents() {
     const backup = buildBackupSummary(health?.backup || null, a.name);
     const recentWorkEvents = allRecentEvents.filter(e => e.timestamp && e.timestamp > (now - WORK_SIGNAL_WINDOW_MS) && isWorkSignal(e.action));
     const lastWorkSignal = recentWorkEvents[0] || allRecentEvents.find(e => isWorkSignal(e.action)) || null;
-    const latestEventTs = (lastWorkSignal && lastWorkSignal.timestamp) || (latestEvent && latestEvent.timestamp) || 0;
-    const hasRecentActivity = latestEventTs > (now - WORK_SIGNAL_WINDOW_MS);
-    const hasAnyDayActivity = latestEventTs > (now - ACTIVE_WINDOW_MS);
-
-    let workState = 'offline';
-    if (runtime.status !== 'offline') {
-      workState = (hasRecentActivity || openTasks.length > 0 || a.current_task) ? 'working' : 'standby';
-    }
+    const latestEventTs = (lastWorkSignal && lastWorkSignal.timestamp) || 0;
+    const workState = deriveWorkState(latestEventTs, now);
+    const monitoring = buildMonitoringSummary(health, runtime, quota, usage, backup, now);
 
     const sevenDays = now - 7 * 24 * 60 * 60 * 1000;
     const thirtyDays = now - 30 * 24 * 60 * 60 * 1000;
@@ -363,6 +585,7 @@ function buildAgents() {
       quota,
       usage,
       backup,
+      monitoring,
       last_heartbeat_at: runtime.last_heartbeat_at,
       active_projects: activeProjects,
       top_collaborator: topCollaborator,
@@ -419,6 +642,7 @@ router.get('/', (req, res) => {
   const online = agents.filter(a => a.online).length;
   res.json({
     agents,
+    monitoring: buildFleetMonitoringSummary(agents),
     stats: {
       total: agents.length,
       online,
@@ -427,11 +651,13 @@ router.get('/', (req, res) => {
         working: agents.filter(a => a.work_state === 'working').length,
         standby: agents.filter(a => a.work_state === 'standby').length,
         offline: agents.filter(a => a.work_state === 'offline').length,
+        unknown: agents.filter(a => a.work_state === 'unknown').length,
       },
       runtime: {
         running: agents.filter(a => a.runtime_status === 'running').length,
         degraded: agents.filter(a => a.runtime_status === 'degraded').length,
         offline: agents.filter(a => a.runtime_status === 'offline').length,
+        unknown: agents.filter(a => a.runtime_status === 'unknown').length,
       },
     }
   });
@@ -480,7 +706,7 @@ router.get('/:name', (req, res) => {
 function buildHardwareSummary(health, runtime) {
   if (!health) return null;
 
-  const stale = (Date.now() - health.reported_at) > 10 * 60 * 1000;
+  const stale = (Date.now() - health.reported_at) > HEALTH_STALE_MS;
   return {
     disk_pct: health.disk ? health.disk.pct : null,
     disk_status: health.disk ? health.disk.status : null,
@@ -492,7 +718,7 @@ function buildHardwareSummary(health, runtime) {
     hostname: health.hostname || runtime?.hostname || null,
     runtime_type: runtime?.type || 'unknown',
     runtime_version: runtime?.version || null,
-    runtime_status: runtime?.status || 'offline',
+    runtime_status: runtime?.status || 'unknown',
     system_health: runtime?.system_health || 'unknown',
     stale,
     reported_at: health.reported_at,
@@ -542,4 +768,13 @@ function safeJSON(str) {
 
 module.exports = router;
 module.exports.buildAgents = buildAgents;
-module.exports.__private = { runtimeEvidenceLevel, buildRuntimeSummary, selectQuotaForRuntime, selectUsageForRuntime };
+module.exports.__private = {
+  HEALTH_STALE_MS,
+  runtimeEvidenceLevel,
+  buildRuntimeSummary,
+  selectQuotaForRuntime,
+  selectUsageForRuntime,
+  deriveWorkState,
+  buildMonitoringSummary,
+  buildFleetMonitoringSummary,
+};

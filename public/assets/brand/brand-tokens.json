@@ -1,0 +1,91 @@
+{
+  "_source": "with3ai/knowledge-base/brand/DESIGN.md",
+  "_sourceBlob": "5950bdbe591426d43ebd6262c3757582a4ca1ab6",
+  "_generatedBy": "scripts/gen-brand-tokens.mjs",
+  "colors": {
+    "primary": "#0D9488",
+    "primary-dark": "#0F766E",
+    "primary-bright": "#5EEAD4",
+    "primary-soft": "#CCFBF1",
+    "ink": "#0F172A",
+    "muted": "#475569",
+    "muted-light": "#94A3B8",
+    "line": "#E2E8F0",
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "surface-dark": "#0B2B28",
+    "surface-dark-2": "#0F3D38",
+    "surface-dark-3": "#124A43",
+    "on-dark-strong": "#B8DED8",
+    "on-dark": "#93A5A2",
+    "on-dark-muted": "#8AA09C",
+    "on-dark-weak": "#5C7370",
+    "success": "#0F766E",
+    "warning": "#B45309",
+    "danger": "#B42318"
+  },
+  "rounded": {
+    "xs": "4px",
+    "sm": "7px",
+    "md": "8px",
+    "lg": "14px",
+    "pill": "999px"
+  },
+  "spacing": {
+    "xs": "6px",
+    "sm": "8px",
+    "md": "16px",
+    "lg": "24px",
+    "xl": "32px",
+    "section": "88px"
+  },
+  "typography": {
+    "h1": {
+      "fontFamily": "Inter, PingFang SC, Microsoft YaHei, sans-serif",
+      "fontSize": "4.65rem",
+      "fontWeight": "900",
+      "lineHeight": "0.98",
+      "letterSpacing": "0px"
+    },
+    "page-title": {
+      "fontFamily": "Inter, PingFang SC, Microsoft YaHei, sans-serif",
+      "fontSize": "4.2rem",
+      "fontWeight": "900",
+      "lineHeight": "1.02",
+      "letterSpacing": "0px"
+    },
+    "section-title": {
+      "fontFamily": "Inter, PingFang SC, Microsoft YaHei, sans-serif",
+      "fontSize": "3.25rem",
+      "fontWeight": "900",
+      "lineHeight": "1.04",
+      "letterSpacing": "0px"
+    },
+    "panel-title": {
+      "fontFamily": "Inter, PingFang SC, Microsoft YaHei, sans-serif",
+      "fontSize": "1.28rem",
+      "fontWeight": "850",
+      "lineHeight": "1.24",
+      "letterSpacing": "0px"
+    },
+    "body": {
+      "fontFamily": "Inter, PingFang SC, Microsoft YaHei, sans-serif",
+      "fontSize": "1rem",
+      "fontWeight": "400",
+      "lineHeight": "1.68",
+      "letterSpacing": "0px"
+    },
+    "label": {
+      "fontFamily": "Inter, PingFang SC, Microsoft YaHei, sans-serif",
+      "fontSize": "0.82rem",
+      "fontWeight": "850",
+      "lineHeight": "1",
+      "letterSpacing": "0px"
+    }
+  },
+  "shadow": {
+    "standard": "0 22px 55px rgb(15 23 42 / 0.08)",
+    "brand": "0 14px 34px rgb(15 23 42 / 0.05)"
+  },
+  "contentWidth": "min(1180px, calc(100% - 32px))"
+}
