@@ -25,16 +25,27 @@ const SECRET_SHAPE_PATTERNS = [
   { name: 'slack-token', re: /xox[abposr]-[A-Za-z0-9-]{10,}/ },
   { name: 'jwt', re: /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/ },
   { name: 'pem-block', re: /-----BEGIN [A-Z0-9 ]*-----/ },
-  // Generic long base64-ish blob. Deliberately guarded to avoid false
-  // positives: requires >=40 chars AND mixed case AND a digit, so a 40-char
-  // lowercase hex sha / a long snake_case identifier does NOT match.
-  // Rationale: every field routed through the sanitizers is a short descriptive
-  // value (model / version / plan_type / hostname), so a blob like this is not
-  // a legitimate value there. A false block here is worse than a miss, because
-  // the specific rules above already cover the known credential formats.
+  // Generic long base64-ish blob. Guarded three ways: >=40 chars AND mixed case
+  // AND a digit, so a 40-char lowercase hex sha / a long snake_case identifier
+  // does NOT match.
+  //
+  // 🔴 WHOLE-VALUE ANCHORED (`^...$`), unlike the six specific rules above.
+  // WHY: the base64 alphabet contains `/`, so an unanchored version matched any
+  // sufficiently long PATH or URL that happened to carry an uppercase letter and
+  // a digit. Mylos scanned the production DB and found **315 such false
+  // positives** — e.g. a backup cron line containing `/tmp/...${KIMI_API_KEY:-}`
+  // — after 61a763f/db33482 shipped. Fix verified by him against real values:
+  // that 91-char line now passes, while a whole-value base64 blob still matches.
+  //
+  // The trade-off is deliberate and bounded: the generic rule no longer catches a
+  // base64 blob EMBEDDED in a longer string. The six specific provider rules stay
+  // unanchored and keep catching embedded credentials (`sk-`, `ghp_`, JWT, …),
+  // which is where real leaked keys are identifiable. A false block here is worse
+  // than a generic miss: legitimate telemetry silently turning into `[redacted]`
+  // is itself a data defect, and it fires on ordinary paths, i.e. constantly.
   {
     name: 'long-base64-blob',
-    re: /(?=[A-Za-z0-9+/]{40,}={0,2})(?=[^\s]*[a-z])(?=[^\s]*[A-Z])(?=[^\s]*[0-9])[A-Za-z0-9+/]{40,}={0,2}/,
+    re: /^(?=[^\s]*[a-z])(?=[^\s]*[A-Z])(?=[^\s]*[0-9])[A-Za-z0-9+/]{40,}={0,2}$/,
   },
 ];
 

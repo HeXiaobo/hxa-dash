@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-const { matchSecretShape, redactSecretShaped, REDACTED } = require('../src/secret-shapes');
+const { matchSecretShape, redactSecretShaped, redactSecretShapedDeep, REDACTED } = require('../src/secret-shapes');
 const agentHealthRoute = require('../src/routes/agent-health');
 
 const { sanitizeRoster, sanitizeRuntime } = agentHealthRoute.__private;
@@ -79,6 +79,65 @@ describe('secret value-shape detection', () => {
     });
     expect(runtime.version).toBe(REDACTED);
     expect(JSON.stringify(runtime)).not.toContain('AIza');
+  });
+
+  // 🔴 REGRESSION FENCE for a false-positive bug that 61a763f/db33482 shipped.
+  // The generic long-base64 rule was NOT whole-value anchored, and the base64
+  // alphabet contains `/` — so any sufficiently long path or URL carrying an
+  // uppercase letter and a digit matched. Mylos scanned the production DB and
+  // found 315 such hits (e.g. a backup cron line with `${KIMI_API_KEY:-}` in it).
+  // Every value below is legitimate operational text and MUST pass through.
+  // ⚠️ FIXTURE REQUIREMENT, learned the hard way: every value here must contain a
+  // run of >=40 consecutive base64-alphabet chars (so NO dots, dashes or
+  // underscores inside the path segment) with mixed case and a digit. A first
+  // draft of this block used realistic paths like `/tmp/zylos-Backup-2026/...`,
+  // whose `-` and `.` break the run — those passed under the OLD regex too, so
+  // the block was fake-green: it asserted nothing. Verified by mutation: with the
+  // anchors removed, all three values below match and this test fails.
+  it('does NOT redact long paths, URLs or command lines (the 315-hit false positive)', () => {
+    const legitOperational = [
+      // Shape of the real kimi backup cron line Mylos verified against: long
+      // dotless path + an unexpanded env-var reference. (Shape reconstruction —
+      // the exact production string lives in his scan output, not in this repo.)
+      '0 3 * * * /usr/local/bin/backup.sh --out /tmp/zylosBackup2026/Snapshots/AgentHealth7/latestLine "${KIMI_API_KEY:-}"',
+      'wrote /tmp/zylosBackup2026/Snapshots/AgentHealth7/latestLine.txt',
+      'https://storage.example.com/zylosBackup2026/Snapshots/AgentHealth7/latestLine?v=1',
+    ];
+    for (const value of legitOperational) {
+      expect(matchSecretShape(value), value).toBeNull();
+      expect(redactSecretShaped(value)).toBe(value);
+    }
+  });
+
+  // Mylos's terminal-signature requirement: the anchoring changed "whole value
+  // only", which changes redactSecretShapedDeep's behaviour on NESTED values as
+  // well as top-level strings — and the two were never verified together.
+  it('applies the anchored rule consistently inside nested structures (both directions)', () => {
+    const preserved = redactSecretShapedDeep({
+      meta: { nested: { path: 'wrote /tmp/zylosBackup2026/Snapshots/AgentHealth7/latestLine.txt' } },
+    });
+    expect(preserved.meta.nested.path)
+      .toBe('wrote /tmp/zylosBackup2026/Snapshots/AgentHealth7/latestLine.txt');
+
+    const redacted = redactSecretShapedDeep({
+      meta: { nested: { key: 'QWxhZGRpbjpvcGVuU2VzYW1lMTIzNDU2Nzg5MEFCQ0RFRkdI=' } },
+    });
+    expect(redacted.meta.nested.key).toBe(REDACTED);
+  });
+
+  it('still catches a whole-value base64 blob after the anchoring fix', () => {
+    // The anchoring must not turn the generic rule into a no-op.
+    expect(matchSecretShape('QWxhZGRpbjpvcGVuU2VzYW1lMTIzNDU2Nzg5MEFCQ0RFRkdI='))
+      .toBe('long-base64-blob');
+  });
+
+  it('still catches the specific provider formats EMBEDDED in a longer string', () => {
+    // Only the generic rule is anchored; the six specific rules stay unanchored,
+    // which is where identifiable leaked credentials actually get caught.
+    expect(matchSecretShape('current model is sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA today'))
+      .toBe('openai/anthropic-style');
+    expect(matchSecretShape('cloned with ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ok'))
+      .toBe('github-token');
   });
 
   it('replaces the whole value, never a partial remainder', () => {
