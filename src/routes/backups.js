@@ -8,9 +8,9 @@ const router = Router();
 const STATUS_RANK = {
   critical: 0,
   warning: 1,
-  unsupported: 2,
-  ok: 3,
-  unknown: 4,
+  unknown: 2,
+  unsupported: 3,
+  ok: 4,
 };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -117,7 +117,17 @@ function statusFromRepo(repo, expected = null, anyExpectedMatch = null) {
   if (repo.status === 'critical' || repo.reason === 'collection_failed') return 'critical';
   if (!hasGithubRemote(repo)) return 'critical';
   if (expected?.required && expected.url && anyExpectedMatch === false && !repoMatchesExpected(repo, expected)) return 'critical';
-  if ((repo.ahead || 0) > 0 || (repo.behind || 0) > 0) return 'warning';
+  const hasUpstreamField = Object.prototype.hasOwnProperty.call(repo, 'upstream');
+  const hasCountFields = Object.prototype.hasOwnProperty.call(repo, 'ahead')
+    && Object.prototype.hasOwnProperty.call(repo, 'behind');
+  const countsUnknown = hasCountFields && (repo.ahead == null || repo.behind == null);
+  if (
+    repo.status === 'unknown'
+    || ['no_upstream', 'upstream_comparison_failed'].includes(repo.reason)
+    || (hasUpstreamField && !repo.upstream)
+    || countsUnknown
+  ) return 'unknown';
+  if (repo.ahead > 0 || repo.behind > 0) return 'warning';
   return 'ok';
 }
 
@@ -126,8 +136,13 @@ function reasonFromRepo(repo, status, expected = null, anyExpectedMatch = null) 
   if (status === 'critical' && !hasGithubRemote(repo)) return 'no_github_remote';
   if (status === 'critical' && expected?.required && expected.url && anyExpectedMatch === false) return 'github_repo_mismatch';
   if (status === 'warning') {
-    if ((repo.ahead || 0) > 0) return 'ahead_of_upstream';
-    if ((repo.behind || 0) > 0) return 'behind_upstream';
+    if (repo.ahead > 0) return 'ahead_of_upstream';
+    if (repo.behind > 0) return 'behind_upstream';
+  }
+  if (status === 'unknown') {
+    if (repo?.reason) return repo.reason;
+    if (Object.prototype.hasOwnProperty.call(repo || {}, 'upstream') && !repo?.upstream) return 'no_upstream';
+    return 'upstream_comparison_failed';
   }
   if (status === 'unsupported') return repo?.reason || null;
   return null;
@@ -167,6 +182,7 @@ function combineStatuses(statuses) {
   const real = statuses.filter(status => status && status !== 'unsupported');
   if (real.includes('critical')) return 'critical';
   if (real.includes('warning')) return 'warning';
+  if (real.includes('unknown')) return 'unknown';
   if (real.includes('ok')) return 'ok';
   return 'unsupported';
 }
@@ -207,6 +223,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
       ok: 0,
       warning: 0,
       critical: 0,
+      unknown: 0,
       unsupported: 0,
       ahead: 0,
       behind: 0,
@@ -231,6 +248,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
       ok: 0,
       warning: 0,
       critical: 0,
+      unknown: 0,
       unsupported: 0,
       ahead: 0,
       behind: 0,
@@ -258,6 +276,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
       ok: 0,
       warning: 0,
       critical: 0,
+      unknown: 0,
       unsupported: 1,
       ahead: 0,
       behind: 0,
@@ -282,6 +301,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
     ok: 0,
     warning: 0,
     critical: 0,
+    unknown: 0,
     unsupported: 0,
     ahead: 0,
     behind: 0,
@@ -316,7 +336,8 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
 
   const repoStatus = summary.critical > 0 ? 'critical'
     : summary.warning > 0 ? 'warning'
-      : summary.unsupported > 0 ? 'unsupported' : 'ok';
+      : summary.unknown > 0 ? 'unknown'
+        : summary.unsupported > 0 ? 'unsupported' : 'ok';
   summary.status = combineStatuses([repoStatus, cron?.status]);
   const repoReason = repos.map(repo => {
     const status = statusFromRepo(repo, expected, anyExpectedMatch);
@@ -328,6 +349,7 @@ function buildBackupSummary(backup, agentName = null, registry = loadExpectedBac
   else if (cron?.status === 'critical') summary.reason = cronReason || rawReason || repoReason;
   else if (repoStatus === 'warning') summary.reason = repoReason || cronReason || rawReason;
   else if (cron?.status === 'warning') summary.reason = cronReason || rawReason || repoReason;
+  else if (repoStatus === 'unknown') summary.reason = repoReason || rawReason || cronReason;
   else summary.reason = rawReason || repoReason || cronReason;
   return summary;
 }
@@ -372,6 +394,7 @@ function buildBackupsPayload(agents, allHealth, nowMs = Date.now()) {
     ok: items.filter(item => item.summary.status === 'ok').length,
     warning: items.filter(item => item.summary.status === 'warning').length,
     critical: items.filter(item => item.summary.status === 'critical').length,
+    unknown: items.filter(item => item.summary.status === 'unknown').length,
     unsupported: items.filter(item => item.summary.status === 'unsupported').length,
     repos: items.reduce((sum, item) => sum + item.summary.total, 0),
     ahead: items.reduce((sum, item) => sum + item.summary.ahead, 0),

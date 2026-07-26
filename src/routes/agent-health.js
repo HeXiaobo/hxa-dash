@@ -101,11 +101,7 @@ function sanitizeRemoteUrl(val) {
     const parsed = new URL(raw);
     parsed.username = '';
     parsed.password = '';
-    for (const key of [...parsed.searchParams.keys()]) {
-      if (['token', 'access_token'].includes(key.toLowerCase())) {
-        parsed.searchParams.delete(key);
-      }
-    }
+    parsed.search = '';
     return parsed.toString().replace(/\/$/, '').slice(0, 256);
   } catch {}
   return raw
@@ -262,12 +258,12 @@ function sanitizeBackupRepo(repo) {
     branch: sanitizeStr(repo.branch, 128),
     head: sanitizeStr(repo.head, 64),
     upstream: sanitizeStr(repo.upstream, 128),
-    ahead: clampInt(repo.ahead, 0, 1000000) || 0,
-    behind: clampInt(repo.behind, 0, 1000000) || 0,
+    ahead: clampInt(repo.ahead, 0, 1000000),
+    behind: clampInt(repo.behind, 0, 1000000),
     dirty: clampInt(repo.dirty, 0, 1000000) || 0,
     untracked: clampInt(repo.untracked, 0, 1000000) || 0,
     last_commit_at: normalizeTimestamp(repo.last_commit_at) || null,
-    status: sanitizeEnum(repo.status, ['ok', 'warning', 'critical', 'unsupported'], 'critical'),
+    status: sanitizeEnum(repo.status, ['ok', 'warning', 'critical', 'unknown', 'unsupported'], 'critical'),
     reason: sanitizeStr(repo.reason, 128),
   };
 }
@@ -279,6 +275,7 @@ function sanitizeBackupSummary(summary, repos) {
     ok: clampInt(summary?.ok, 0, 1000000) ?? repoList.filter(repo => repo.status === 'ok').length,
     warning: clampInt(summary?.warning, 0, 1000000) ?? repoList.filter(repo => repo.status === 'warning').length,
     critical: clampInt(summary?.critical, 0, 1000000) ?? repoList.filter(repo => repo.status === 'critical').length,
+    unknown: clampInt(summary?.unknown, 0, 1000000) ?? repoList.filter(repo => repo.status === 'unknown').length,
     unsupported: clampInt(summary?.unsupported, 0, 1000000) ?? repoList.filter(repo => repo.status === 'unsupported').length,
     ahead: clampInt(summary?.ahead, 0, 1000000) ?? repoList.reduce((sum, repo) => sum + (repo.ahead || 0), 0),
     behind: clampInt(summary?.behind, 0, 1000000) ?? repoList.reduce((sum, repo) => sum + (repo.behind || 0), 0),
@@ -309,7 +306,7 @@ function sanitizeBackup(backup) {
   const cron = sanitizeBackupCron(backup.cron);
   return {
     supported: typeof backup.supported === 'boolean' ? backup.supported : repos.length > 0 || !!cron?.supported,
-    status: sanitizeEnum(backup.status, ['ok', 'warning', 'critical', 'unsupported'], backup.supported === false ? 'unsupported' : 'critical'),
+    status: sanitizeEnum(backup.status, ['ok', 'warning', 'critical', 'unknown', 'unsupported'], backup.supported === false ? 'unsupported' : 'critical'),
     reason: sanitizeStr(backup.reason, 128),
     sampled_at: normalizeTimestamp(backup.sampled_at),
     cron,

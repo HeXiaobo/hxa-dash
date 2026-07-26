@@ -6,23 +6,25 @@ boundary without interrupting hxa-dash ingest.
 ## Safety rules
 
 - Codex owns coding, PRs, and pre-production verification.
-- For issue #25, Mylos owns the production release and PM2 operations on the
-  private GCP VM under the user's explicit authorization; Codex has no SSH/IAP
-  path to that host.
+- For issue #25, Mylos owns release decisions. Codex executes production work
+  only through a host-local Codex task or an explicitly approved, restricted
+  access path to `cocoai-3ai-1b`.
 - Do not deploy from an uncommitted production working tree.
 - Post the pinned deploy commit and rollback commit on #4 before changing PM2.
-- Keep `HXA_AUTH_ENABLED=false` until all machine reporters and webhooks are
-  confirmed to send their required server-to-server secret.
-- Mylos owns reporter distribution and the auth flip for issue #25 and returns
-  read-only evidence to the issue/PR. Secrets stay on the production host.
+- The public Cloudflare route must never serve hxa-dash with
+  `HXA_AUTH_ENABLED=false`. If auth cannot be verified, keep the release on
+  hold or stop `cloudflared-hxa`; do not expose an auth-disabled candidate.
+- `HEALTH_API_KEY` must be configured and verified before the production
+  reload. Secrets stay on the production host and evidence reports only
+  boolean configuration state.
 
 ## Required production configuration
 
-Set these on the PM2 service host before enabling auth:
+Set these on the PM2 service host before any public production reload:
 
 | Variable or config | Required value |
 |---|---|
-| `HXA_AUTH_ENABLED` | Start with `false`; flip to `true` only after reporter rollout. |
+| `HXA_AUTH_ENABLED` | `true`. Never expose the Cloudflare route while this is `false`. |
 | `HXA_AUTH_SECRET` | Strong random HMAC secret, persisted in PM2 ecosystem/env. Rotating it logs everyone out. |
 | `FEISHU_APP_ID` | Feishu app id used for dashboard login. |
 | `FEISHU_APP_SECRET` | Feishu app secret. |
@@ -49,8 +51,9 @@ The app also needs the OIDC/authen scopes required by the Feishu login API.
 ## Reporter and webhook key rollout
 
 When `HXA_AUTH_ENABLED=true`, browser traffic uses the Feishu cookie and machine
-ingest uses server-to-server secrets. These endpoints must be ready before the
-auth flip:
+ingest uses server-to-server secrets. The health reporter key is a release gate;
+other reporter distribution may fast-follow only when Mylos records that it
+does not block this release:
 
 | Endpoint | Producer | Required production action |
 |---|---|---|
@@ -65,7 +68,7 @@ The server accepts both `HXA_INGEST_API_KEY` and `HEALTH_API_KEY` for ingest
 compatibility. Setting `HXA_INGEST_API_KEY` to the existing `HEALTH_API_KEY`
 value lets the fleet migrate one producer at a time.
 
-Use the checked-in distribution helper before flipping auth:
+Use the checked-in distribution helper when rolling out activity reporter keys:
 
 ```bash
 bash scripts/deploy-activity-reporter.sh --dry-run
@@ -79,13 +82,17 @@ replace those files in place. This matters because fleet hosts may run reporters
 from `~/hxa-dash/scripts/`, `~/zylos/workspace/hxa-dash/scripts/`, or the
 main fleet path `~/zylos/workspace/hxa-dash-reporter/`. For C5 interval tasks,
 confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
-`--api-key` from the secure local key source before the auth flip.
+`--api-key` from the secure local key source.
+
+Do not run `scripts/deploy-health-reporter.sh` for issue #25. The reviewed health
+reporter is distributed separately after release without weakening public auth.
 
 ## Pre-deploy checklist
 
 1. Confirm PR #8 is reviewed and merged.
 2. Confirm production WIP is preserved by the existing WIP branches listed on #4.
-3. Confirm `HXA_AUTH_ENABLED=false` is present in persistent PM2 env.
+3. Confirm the release `.env` resolves `HXA_AUTH_ENABLED=true` and a non-empty
+   `HEALTH_API_KEY` without printing the key.
 4. Confirm all required Feishu, cookie, base URL, and ingest env vars are present.
 5. Confirm Feishu redirect URI is registered.
 6. Confirm GitLab webhook secret is configured on both sides.
@@ -109,17 +116,21 @@ confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
    npm ci --omit=dev
    ```
 
-3. Reload PM2 with auth still disabled:
+3. Verify auth and the health ingest key without printing secrets, then reload
+   PM2 with auth enabled:
 
    ```bash
-   HXA_AUTH_ENABLED=false pm2 reload hxa-dash --update-env
+   node -e "require('dotenv').config({ override: true }); const ok = process.env.HXA_AUTH_ENABLED === 'true' && !!process.env.HEALTH_API_KEY; console.log(JSON.stringify({ auth_enabled: process.env.HXA_AUTH_ENABLED === 'true', health_api_key_configured: !!process.env.HEALTH_API_KEY })); process.exit(ok ? 0 : 1)"
+   HXA_AUTH_ENABLED=true pm2 reload hxa-dash --update-env
    ```
 
-4. Smoke test the no-auth flip-safe state:
+4. Smoke test the public health endpoints and confirm a protected API remains
+   closed without a login cookie:
 
    ```bash
    curl -fsS https://hxa.zhiw.ai/api/health
    curl -fsS https://hxa.zhiw.ai/api/about
+   test "$(curl -sS -o /dev/null -w '%{http_code}' https://hxa.zhiw.ai/api/team)" = "401"
    ```
 
 5. Verify both activity ingest and the monitoring-health write/read path with
@@ -136,16 +147,11 @@ confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
        '.agents[] | select(.name == $name) | .last_seen_at > 0'
 
    HEALTH_CANARY_KEY="${HEALTH_API_KEY:-$HXA_INGEST_API_KEY}"
-   HEALTH_LIST="$(curl -fsS https://hxa.zhiw.ai/api/agent-health)"
-   HEALTH_SMOKE_AGENT="$(printf '%s\n' "$HEALTH_LIST" \
-     | jq -er 'first(.agents[] | select(.health.disk and .health.memory) | .name)')"
-   HEALTH_SMOKE_PATH="$(jq -nr --arg name "$HEALTH_SMOKE_AGENT" '$name | @uri')"
-   HEALTH_BEFORE="$(curl -fsS \
-     "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}")"
-   HEALTH_BEFORE_AT="$(printf '%s\n' "$HEALTH_BEFORE" \
+   HEALTH_SMOKE_PATH="$(jq -nr --arg name "$SMOKE_NAME" '$name | @uri')"
+   HEALTH_BEFORE_AT="$(curl -fsS \
+     "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
      | jq -r '.health.reported_at // 0')"
-   HEALTH_PAYLOAD="$(printf '%s\n' "$HEALTH_BEFORE" \
-     | jq -c '.health | del(.reported_at)')"
+   HEALTH_PAYLOAD='{"hostname":"deploy-smoke","disk":{"pct":null},"memory":{"pct":null}}'
 
    curl -fsS -X POST \
      "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
@@ -156,7 +162,7 @@ confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
      | jq -e --argjson before "$HEALTH_BEFORE_AT" \
        '(.health.reported_at // 0) > $before'
    curl -fsS https://hxa.zhiw.ai/api/team \
-     | jq -e --arg name "$HEALTH_SMOKE_AGENT" \
+     | jq -e --arg name "$SMOKE_NAME" \
        --argjson before "$HEALTH_BEFORE_AT" \
        '.agents[] | select(.name == $name)
         | (.monitoring.observed_at // 0) > $before'
@@ -166,13 +172,7 @@ confirm the command inherits `HEALTH_API_KEY` / `HXA_INGEST_API_KEY` or includes
    `/api/health`, or even a 200 from either POST without a later persisted
    timestamp, does not prove that ingest works.
 
-6. Flip auth:
-
-   ```bash
-   HXA_AUTH_ENABLED=true pm2 reload hxa-dash --update-env
-   ```
-
-7. Smoke test the auth boundary:
+6. Smoke test the auth boundary:
 
    ```bash
    curl -fsS https://hxa.zhiw.ai/api/health
@@ -195,8 +195,10 @@ Expected results:
 - `/api/report` with the ingest key returns 200.
 - The smoke employee appears in `/api/team` with a new non-zero
   `last_seen_at`, proving the write was persisted and read back.
-- The chosen existing employee has a later `health.reported_at`, and
-  `/api/team` exposes the same later value as `monitoring.observed_at`.
+- The synthetic health canary updates only the `deploy-smoke-<timestamp>` row.
+- Without posting or replaying any real employee payload, wait for one real
+  reporter to advance `health.reported_at` naturally and verify `/api/team`
+  exposes the same later value as `monitoring.observed_at`.
 - Browser visit to `https://hxa.zhiw.ai/#limits` redirects through Feishu login and returns to the dashboard.
 - `/ws` only connects after the browser has a valid `hxa_token` cookie.
 - Any smoke agent rows are named with `deploy-smoke-<timestamp>` and should be
@@ -204,10 +206,11 @@ Expected results:
 
 ## Rollback
 
-If auth config is wrong but the code is otherwise healthy:
+If auth config is wrong, stop the public tunnel before diagnosis. Do not disable
+auth while the public route is connected:
 
 ```bash
-HXA_AUTH_ENABLED=false pm2 reload hxa-dash --update-env
+pm2 stop cloudflared-hxa
 ```
 
 If the deployed code is unhealthy:
@@ -215,10 +218,11 @@ If the deployed code is unhealthy:
 ```bash
 git fetch origin
 git checkout <rollback-commit>
-pm2 reload hxa-dash --update-env
+HXA_AUTH_ENABLED=true pm2 reload hxa-dash --update-env
 ```
 
 After rollback, verify `/api/about`, `/api/health`, the dashboard page, a
 write/read reporter-ingest canary, the bare WebSocket update path, backup
-freshness, and PM2 status. Post the rollback evidence on the active release
+freshness, and PM2 status. Restart `cloudflared-hxa` only after the boolean auth
+and health-key check passes. Post the rollback evidence on the active release
 issue.

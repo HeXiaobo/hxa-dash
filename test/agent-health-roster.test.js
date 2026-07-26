@@ -61,12 +61,12 @@ describe('agent health allowlists', () => {
   it('removes credentials and token query parameters from backup remotes', () => {
     const backup = sanitizeBackup({
       repos: [{
-        remote: 'https://user:password@github.com/org/repo.git?token=secret&access_token=also-secret&ref=main',
+        remote: 'https://user:password@github.com/org/repo.git?private_token=secret&api_key=also-secret&pat=third-secret',
         status: 'ok',
       }],
     });
 
-    expect(backup.repos[0].remote).toBe('https://github.com/org/repo.git?ref=main');
+    expect(backup.repos[0].remote).toBe('https://github.com/org/repo.git');
     expect(backup.repos[0].remote).not.toContain('secret');
   });
 

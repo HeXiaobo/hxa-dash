@@ -665,6 +665,14 @@ const RuntimeCenter = {
         detail: isMissingReport ? '等待上报程序上报' : (reasonText || '备份状态不可用')
       };
     }
+    if (raw === 'unknown') {
+      return {
+        key: 'waiting',
+        cls: 'muted',
+        label: '备份待确认',
+        detail: reasonText || '无法确认仓库是否已推送'
+      };
+    }
     if (raw === 'ok') return { key: 'ok', cls: 'ok', label: this._backupOkLabel(summary) };
 
     const okRaw = ['ok', 'success', 'healthy', 'fresh', 'synced', 'completed'].includes(raw);
@@ -797,6 +805,8 @@ const RuntimeCenter = {
       no_github_remote: '未配置 GitHub 远端',
       no_github_backup_repo: '未发现 GitHub 仓库',
       github_repo_mismatch: 'GitHub 仓库不匹配',
+      no_upstream: '未配置上游分支，无法确认已推送',
+      upstream_comparison_failed: '无法比较上游分支状态',
       ahead_of_upstream: '有未推送提交',
       dirty_worktree: '有未提交修改',
       untracked_files: '有未跟踪文件',

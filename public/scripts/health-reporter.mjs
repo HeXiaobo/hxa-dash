@@ -1361,6 +1361,7 @@ function sanitizeRemoteUrl(remoteUrl) {
       parsed.username = '';
       parsed.password = '';
     }
+    parsed.search = '';
     return parsed.toString().replace(/\/$/, '');
   } catch {}
 
@@ -1419,14 +1420,21 @@ function collectGitRepoBackup(repoPath) {
   const lastCommitProbe = gitCommand(repoPath, ['log', '-1', '--format=%cI']);
   const statusProbe = gitCommand(repoPath, ['status', '--porcelain=v1', '--untracked-files=normal']);
 
-  let ahead = 0;
-  let behind = 0;
-  if (upstreamProbe.ok && upstreamProbe.stdout) {
+  const upstream = upstreamProbe.ok && upstreamProbe.stdout ? upstreamProbe.stdout : null;
+  let ahead = null;
+  let behind = null;
+  let countsKnown = false;
+  if (upstream) {
     const countsProbe = gitCommand(repoPath, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']);
     if (countsProbe.ok) {
       const [aheadText, behindText] = countsProbe.stdout.split(/\s+/);
-      ahead = Math.max(0, Number.parseInt(aheadText, 10) || 0);
-      behind = Math.max(0, Number.parseInt(behindText, 10) || 0);
+      const parsedAhead = Number.parseInt(aheadText, 10);
+      const parsedBehind = Number.parseInt(behindText, 10);
+      if (Number.isFinite(parsedAhead) && Number.isFinite(parsedBehind)) {
+        ahead = Math.max(0, parsedAhead);
+        behind = Math.max(0, parsedBehind);
+        countsKnown = true;
+      }
     }
   }
 
@@ -1436,21 +1444,25 @@ function collectGitRepoBackup(repoPath) {
   const hasGithubRemote = Boolean(githubRemote);
   const status = !hasGithubRemote
     ? 'critical'
-    : (ahead > 0 || behind > 0 || dirty > 0 || untracked > 0) ? 'warning' : 'ok';
+    : (!upstream || !countsKnown)
+      ? 'unknown'
+      : (ahead > 0 || behind > 0 || dirty > 0 || untracked > 0) ? 'warning' : 'ok';
   const reason = !hasGithubRemote
     ? 'no_github_remote'
-    : ahead > 0 ? 'ahead_of_upstream'
-      : dirty > 0 ? 'dirty_worktree'
-        : untracked > 0 ? 'untracked_files'
-          : behind > 0 ? 'behind_upstream'
-            : null;
+    : !upstream ? 'no_upstream'
+      : !countsKnown ? 'upstream_comparison_failed'
+        : ahead > 0 ? 'ahead_of_upstream'
+          : dirty > 0 ? 'dirty_worktree'
+            : untracked > 0 ? 'untracked_files'
+              : behind > 0 ? 'behind_upstream'
+                : null;
 
   return {
     path: repoPath,
     remote: sanitizeRemoteUrl(githubRemote || remoteUrls[0] || null),
     branch: branchProbe.stdout || null,
     head: headProbe.stdout || null,
-    upstream: upstreamProbe.ok ? upstreamProbe.stdout || null : null,
+    upstream,
     ahead,
     behind,
     dirty,
@@ -1467,6 +1479,7 @@ function summarizeBackupRepos(repos) {
     ok: 0,
     warning: 0,
     critical: 0,
+    unknown: 0,
     unsupported: 0,
     ahead: 0,
     behind: 0,
@@ -1478,6 +1491,7 @@ function summarizeBackupRepos(repos) {
   for (const repo of repos) {
     if (repo.status === 'ok') summary.ok += 1;
     else if (repo.status === 'warning') summary.warning += 1;
+    else if (repo.status === 'unknown') summary.unknown += 1;
     else if (repo.status === 'unsupported') summary.unsupported += 1;
     else summary.critical += 1;
     summary.ahead += repo.ahead || 0;
@@ -1650,6 +1664,7 @@ function combineBackupStatuses(statuses) {
   const real = statuses.filter(status => status && status !== 'unsupported');
   if (real.includes('critical')) return 'critical';
   if (real.includes('warning')) return 'warning';
+  if (real.includes('unknown')) return 'unknown';
   if (real.includes('ok')) return 'ok';
   return 'critical';
 }
@@ -1676,12 +1691,15 @@ function collectBackupStatus(botName) {
   const summary = summarizeBackupRepos(repos);
   const repoStatus = summary.critical > 0 ? 'critical'
     : summary.warning > 0 ? 'warning'
-      : repos.length > 0 ? 'ok' : 'critical';
+      : summary.unknown > 0 ? 'unknown'
+        : repos.length > 0 ? 'ok' : 'critical';
   const cronStatus = cron.supported ? cron.status : 'unsupported';
   const status = combineBackupStatuses([repoStatus, cronStatus]);
   const reason = repos.length === 0
     ? 'no_github_backup_repo'
-    : (cron.supported && cron.status !== 'ok' ? cron.reason : null);
+    : repoStatus === 'unknown'
+      ? repos.find(repo => repo.status === 'unknown')?.reason || 'upstream_comparison_failed'
+      : (cron.supported && cron.status !== 'ok' ? cron.reason : null);
 
   return {
     supported: gitProbe.ok || cron.supported || repos.length > 0,
@@ -1954,5 +1972,6 @@ export {
   normalizeAgentName,
   normalizeRuntimeType,
   buildRosterSnapshot,
+  collectGitRepoBackup,
   getDiskInfo,
 };
