@@ -8,6 +8,7 @@
 
 const { Router } = require('express');
 const db = require('../db');
+const { redactSecretShaped, redactSecretShapedDeep } = require('../secret-shapes');
 const collab = require('../analyzers/collab');
 const { buildAgents } = require('./team');
 const { computeMetrics } = require('./metrics');
@@ -29,6 +30,44 @@ function init(wsModule, cfg) {
 const router = Router();
 const requireConnectWebhookAuth = requireIngestAuthUnlessEnvFlag('HXA_CONNECT_WEBHOOK_PUBLIC');
 
+// ---------------------------------------------------------------------------
+// Credential-shape guard for every write this router performs (issue #25 P1).
+//
+// Canonical `wiki/procedures/hxa-dash-anomaly-criteria-v1.md` requires
+// 「secret 值形态检测（sk-/ghp_/AIza/JWT/BEGIN）+ 日志与错误路径同样过净化」.
+// P1 (61a763f) wired the two agent-* ingest points; Veda's re-verification found
+// report.js — /api/report, /api/report/activity, /api/webhook/connect — was not
+// wired at all, so a credential in any of those bodies was stored verbatim and
+// rendered on the homepage. Deploying without this would be a fake "fixed".
+//
+// WHY at the db-write boundary rather than a per-field call list: unlike
+// agent-health/agent-state, this router has NO field allowlist — the bodies are
+// free-form (`metadata` arbitrary object, `tags` array, per-event objects). A
+// list of field names can neither reach inside `metadata` nor survive a field
+// being added later. Routing every db.* call in this file through these three
+// wrappers is greppable ("no bare db.upsert/db.insert in report.js") and cannot
+// be forgotten for a new field.
+//
+// EXCEPTION — identity keys are redacted at the entry point instead: `name` /
+// `bot.name` / `agent` are also used for lookups, dedup keys, external_id
+// composition and log lines, so redacting them only at the write boundary would
+// leave the plaintext in those derived paths.
+function safeUpsertAgent(agent) {
+  db.upsertAgent(redactSecretShapedDeep(agent));
+}
+
+function safeInsertEvent(event) {
+  db.insertEvent(redactSecretShapedDeep(event));
+}
+
+function safeUpsertTask(task) {
+  db.upsertTask(redactSecretShapedDeep(task));
+}
+
+function safeUpsertEdge(edge) {
+  db.upsertEdge(redactSecretShapedDeep(edge));
+}
+
 function verifyGitlabWebhook(req) {
   const secret = config?.webhooks?.gitlab_secret;
   if (secret) return req.headers['x-gitlab-token'] === secret;
@@ -41,7 +80,11 @@ function verifyGitlabWebhook(req) {
 // Body: { name, status?, current_task?, metadata? }
 // ---------------------------------------------------------------------------
 router.post('/report', requireIngestAuth, (req, res) => {
-  const { name, status, current_task, metadata } = req.body || {};
+  const { status, current_task, metadata } = req.body || {};
+  // Identity key: redact before it is used as a lookup/dedup key (see the
+  // wrapper block above). A credential-shaped name collapses into the marker
+  // rather than creating an agent row named after a secret.
+  const name = redactSecretShaped((req.body || {}).name);
   if (!name) return res.status(400).json({ error: 'name required' });
 
   const now = Date.now();
@@ -57,13 +100,17 @@ router.post('/report', requireIngestAuth, (req, res) => {
     updated_at: now,
     ...(status && { status }),
     ...(current_task && { current_task }),
-    ...(metadata && { metadata: JSON.stringify(metadata) })
+    // Redact INSIDE the object, before serialization: the boundary wrapper would
+    // see one big JSON string and replace the whole blob, losing every legitimate
+    // field alongside the offending one. Recursing first redacts only the field
+    // that actually looks like a credential.
+    ...(metadata && { metadata: JSON.stringify(redactSecretShapedDeep(metadata)) })
   };
 
-  db.upsertAgent(updated);
+  safeUpsertAgent(updated);
 
   // Insert heartbeat event into timeline
-  db.insertEvent({
+  safeInsertEvent({
     agent: name,
     action: current_task ? 'working_on' : 'heartbeat',
     target_title: current_task || 'status update',
@@ -90,24 +137,29 @@ router.post('/webhook/connect', requireConnectWebhookAuth, (req, res) => {
   if (!event || !bot?.name) return res.status(400).json({ error: 'event and bot.name required' });
 
   const now = Date.now();
-  const existing = db.getAgent(bot.name);
+  // Identity key redacted at entry — it is the agent key, the dedup key and it
+  // is echoed into the log line below.
+  const botName = redactSecretShaped(bot.name);
+  const existing = db.getAgent(botName);
   const isOnline = event === 'bot.online';
 
   const agent = {
-    name: bot.name,
+    name: botName,
     role: bot.role || existing?.role || '',
     bio: bot.bio || existing?.bio || '',
-    tags: JSON.stringify(bot.tags || []),
+    // Same reason as `metadata` on /api/report: recurse into the array before
+    // serializing, so one credential-shaped tag does not void the whole list.
+    tags: JSON.stringify(redactSecretShapedDeep(bot.tags || [])),
     online: isOnline ? 1 : 0,
     last_seen_at: now,
     updated_at: now
   };
 
-  db.upsertAgent(agent);
+  safeUpsertAgent(agent);
 
   // Insert online/offline event
-  db.insertEvent({
-    agent: bot.name,
+  safeInsertEvent({
+    agent: botName,
     action: isOnline ? 'came_online' : 'went_offline',
     target_title: isOnline ? 'came online' : 'went offline',
     target_url: null,
@@ -122,7 +174,8 @@ router.post('/webhook/connect', requireConnectWebhookAuth, (req, res) => {
     ws.broadcast('timeline:new', db.getTimeline(20));
   }
 
-  console.log(`[Webhook/Connect] ${bot.name} ${event}`);
+  // canonical: 「日志与错误路径同样过净化」 — hence botName, not bot.name.
+  console.log(`[Webhook/Connect] ${botName} ${event}`);
   res.json({ ok: true });
 });
 
@@ -151,8 +204,11 @@ router.post('/webhook/gitlab', (req, res) => {
     }
     res.json({ ok: true, handled });
   } catch (err) {
-    console.error('[Webhook/GitLab] Error:', err.message);
-    res.status(500).json({ error: err.message });
+    // canonical explicitly names the error path: a thrown message can quote the
+    // offending payload value back out, into both the log and the HTTP response.
+    const safeMessage = redactSecretShaped(err.message);
+    console.error('[Webhook/GitLab] Error:', safeMessage);
+    res.status(500).json({ error: safeMessage });
   }
 });
 
@@ -184,12 +240,21 @@ function handleGitLabEvent(eventHeader, payload) {
   }
 }
 
+// Resolved agent names are written to the DB *and* echoed into the console.log
+// lines below, so the credential guard is applied here at the single place every
+// gitlab handler derives a name — canonical: 「日志与错误路径同样过净化」.
 function resolveAgent(username, usernameMap) {
   // Use entity layer first (canonical ID resolution), fallback to legacy usernameMap
   const entity = require('../entity');
   const resolved = entity.resolve('gitlab', username);
-  if (resolved !== username) return resolved;
-  return usernameMap[username] || username || null;
+  if (resolved !== username) return redactSecretShaped(resolved);
+  return redactSecretShaped(usernameMap[username] || username || null);
+}
+
+// Project names / actions / noteable types come straight from the payload and are
+// interpolated into log lines, so they get the same treatment at derivation.
+function safeLabel(value, fallback) {
+  return redactSecretShaped(value) || fallback;
 }
 
 function handlePush(payload, usernameMap, now) {
@@ -197,11 +262,11 @@ function handlePush(payload, usernameMap, now) {
   if (!agent) return false;
 
   const commits = payload.commits || [];
-  const project = payload.project?.name || payload.repository?.name || 'unknown';
+  const project = safeLabel(payload.project?.name || payload.repository?.name, 'unknown');
   const branch = (payload.ref || '').replace('refs/heads/', '');
 
   for (const commit of commits.slice(0, 5)) {
-    db.insertEvent({
+    safeInsertEvent({
       agent,
       action: 'pushed',
       target_title: commit.message?.split('\n')[0]?.slice(0, 100) || 'commit',
@@ -214,7 +279,7 @@ function handlePush(payload, usernameMap, now) {
   }
 
   if (commits.length === 0) {
-    db.insertEvent({
+    safeInsertEvent({
       agent,
       action: 'pushed',
       target_title: `to ${branch}`,
@@ -229,15 +294,15 @@ function handlePush(payload, usernameMap, now) {
 }
 
 function handleMR(payload, usernameMap, now) {
-  const action = payload.object_attributes?.action;
+  const action = redactSecretShaped(payload.object_attributes?.action);
   const mr = payload.object_attributes;
   if (!mr) return false;
 
   const agent = resolveAgent(payload.user?.username, usernameMap);
-  const project = payload.project?.name || 'unknown';
+  const project = safeLabel(payload.project?.name, 'unknown');
 
   // Upsert task
-  db.upsertTask({
+  safeUpsertTask({
     id: `mr-${mr.project_id || payload.project?.id}-${mr.iid}`,
     type: 'mr',
     title: mr.title || '',
@@ -250,7 +315,7 @@ function handleMR(payload, usernameMap, now) {
   });
 
   if (agent) {
-    db.insertEvent({
+    safeInsertEvent({
       agent,
       action: `mr_${action || 'updated'}`,
       target_title: mr.title || 'MR',
@@ -267,7 +332,7 @@ function handleMR(payload, usernameMap, now) {
   for (const reviewer of reviewers) {
     const reviewerAgent = resolveAgent(reviewer.username, usernameMap);
     if (agent && reviewerAgent && agent !== reviewerAgent) {
-      db.upsertEdge({
+      safeUpsertEdge({
         source: agent,
         target: reviewerAgent,
         type: 'review',
@@ -282,15 +347,15 @@ function handleMR(payload, usernameMap, now) {
 }
 
 function handleIssue(payload, usernameMap, now) {
-  const action = payload.object_attributes?.action;
+  const action = redactSecretShaped(payload.object_attributes?.action);
   const issue = payload.object_attributes;
   if (!issue) return false;
 
   const agent = resolveAgent(payload.user?.username, usernameMap);
-  const project = payload.project?.name || 'unknown';
+  const project = safeLabel(payload.project?.name, 'unknown');
   const assignees = (issue.assignees || []).map(a => resolveAgent(a.username, usernameMap)).filter(Boolean);
 
-  db.upsertTask({
+  safeUpsertTask({
     id: `issue-${issue.project_id || payload.project?.id}-${issue.iid}`,
     type: 'issue',
     title: issue.title || '',
@@ -303,7 +368,7 @@ function handleIssue(payload, usernameMap, now) {
   });
 
   if (agent) {
-    db.insertEvent({
+    safeInsertEvent({
       agent,
       action: `issue_${action || 'updated'}`,
       target_title: issue.title || 'issue',
@@ -326,15 +391,15 @@ function handleNote(payload, usernameMap, now) {
   const agent = resolveAgent(payload.user?.username, usernameMap);
   if (!agent) return false;
 
-  const project = payload.project?.name || 'unknown';
-  const targetType = note.noteable_type || 'unknown';
+  const project = safeLabel(payload.project?.name, 'unknown');
+  const targetType = safeLabel(note.noteable_type, 'unknown');
   const targetTitle =
     payload.merge_request?.title ||
     payload.issue?.title ||
     payload.commit?.message?.split('\n')[0] ||
     'comment';
 
-  db.insertEvent({
+  safeInsertEvent({
     agent,
     action: 'commented',
     target_title: targetTitle.slice(0, 100),
@@ -352,7 +417,7 @@ function handleNote(payload, usernameMap, now) {
     usernameMap
   );
   if (targetAuthor && targetAuthor !== agent) {
-    db.upsertEdge({
+    safeUpsertEdge({
       source: agent,
       target: targetAuthor,
       type: 'comment',
@@ -437,7 +502,11 @@ router.get('/report/summary', (req, res) => {
 // Body: { agent, events: [{ action, target_type?, target_title, timestamp?, external_id? }] }
 // ---------------------------------------------------------------------------
 router.post('/report/activity', requireIngestAuth, (req, res) => {
-  const { agent, events: activityEvents } = req.body || {};
+  const { events: activityEvents } = req.body || {};
+  // Identity key redacted at entry: it feeds entity resolution AND is
+  // interpolated into the fallback external_id below, which the write-boundary
+  // wrapper could then only void wholesale.
+  const agent = redactSecretShaped((req.body || {}).agent);
   if (!agent) return res.status(400).json({ error: 'agent required' });
   if (!Array.isArray(activityEvents) || activityEvents.length === 0) {
     return res.status(400).json({ error: 'events array required' });
@@ -450,16 +519,19 @@ router.post('/report/activity', requireIngestAuth, (req, res) => {
 
   for (const evt of activityEvents.slice(0, 50)) {
     if (!evt.action) continue;
-    db.insertEvent({
+    // `action` is redacted here as well as at the boundary, because it is
+    // interpolated into the composed external_id.
+    const action = redactSecretShaped(evt.action);
+    safeInsertEvent({
       timestamp: evt.timestamp || now,
       agent: canonicalAgent,
-      action: evt.action,
+      action,
       target_type: evt.target_type || 'external',
-      target_title: evt.target_title || evt.action,
+      target_title: evt.target_title || action,
       project: evt.project || null,
       url: evt.url || null,
       is_collab: evt.is_collab || 0,
-      external_id: evt.external_id || `ext:${agent}:${evt.action}:${now}`
+      external_id: evt.external_id || `ext:${agent}:${action}:${now}`
     });
     inserted++;
   }
