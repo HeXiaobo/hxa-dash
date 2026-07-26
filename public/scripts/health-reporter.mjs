@@ -1700,10 +1700,11 @@ function getDiskInfo() {
     const lines = out.trim().split('\n');
     if (lines.length >= 2) {
       const parts = lines[1].split(/\s+/);
+      const pct = Number.parseInt(parts[4], 10);
       return {
         total: parts[1] || null,
         used: parts[2] || null,
-        pct: parseInt(parts[4], 10) || null,
+        pct: Number.isFinite(pct) ? pct : null,
       };
     }
   } catch {}

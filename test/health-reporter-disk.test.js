@@ -39,4 +39,18 @@ describe('health reporter disk collector', () => {
       pct: 57,
     });
   });
+
+  it('preserves a collected zero disk percentage', () => {
+    vi.mocked(execSync).mockReturnValue(
+      'Filesystem Size Used Avail Capacity Mounted on\n/dev/disk3s1 100G 0G 100G 0% /\n'
+    );
+
+    const disk = getDiskInfo();
+
+    expect(disk).toEqual({
+      total: '100G',
+      used: '0G',
+      pct: 0,
+    });
+  });
 });
