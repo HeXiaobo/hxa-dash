@@ -205,12 +205,53 @@ describe('backup health helpers', () => {
     });
   });
 
+  it('omits backup-exempt agents from the backup list and summary', () => {
+    const payload = buildBackupsPayload(
+      [
+        { name: 'chengzi', online: false },
+        { name: 'mylos-tech', online: true },
+        { name: 'active-agent', online: true },
+      ],
+      {
+        'active-agent': {
+          backup: {
+            supported: true,
+            repos: [{
+              path: '/home/cocoai/zylos/workspace/active-agent-workspace',
+              remote: 'https://github.com/zhi-wai/active-agent-workspace.git',
+              ahead: 0,
+              behind: 0,
+            }],
+          },
+        },
+      }
+    );
+
+    expect(payload.agents.map(agent => agent.name)).toEqual(['active-agent']);
+    expect(payload.summary).toMatchObject({
+      total_agents: 1,
+      repos: 1,
+      ok: 1,
+      warning: 0,
+      critical: 0,
+      unsupported: 0,
+    });
+  });
+
   it('shows the configured exemption reason instead of a generic employee label', () => {
     const appSource = fs.readFileSync(path.join(process.cwd(), 'public/js/app.js'), 'utf8');
 
     expect(appSource).toContain("summary.expected_reason || this._backupReasonText('backup_not_required')");
     expect(appSource).toContain("record.summary.expected_reason || '无需独立 GitHub 备份'");
     expect(appSource).not.toContain('非 AI 员工，无需 GitHub 仓库');
+  });
+
+  it('filters backup-exempt rows defensively in the browser', () => {
+    const appSource = fs.readFileSync(path.join(process.cwd(), 'public/js/app.js'), 'utf8');
+
+    expect(appSource).toContain('record?.summary?.backup_required !== false');
+    expect(appSource).toContain('const totalAgents = records.length');
+    expect(appSource).toContain('const repoCount = this._backupRepoCount(records)');
   });
 
   it('requires wenwen backup reporting through the default expected repo', () => {

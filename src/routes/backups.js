@@ -386,6 +386,7 @@ function buildBackupAgent(agent, health, registry = loadExpectedBackupRepos(), n
 function buildBackupsPayload(agents, allHealth, nowMs = Date.now()) {
   const registry = loadExpectedBackupRepos();
   const items = agents
+    .filter(agent => expectedBackupRepo(agent.name, registry).required !== false)
     .map(agent => buildBackupAgent(agent, allHealth[agent.name], registry, nowMs))
     .sort((a, b) => (STATUS_RANK[a.summary.status] ?? 9) - (STATUS_RANK[b.summary.status] ?? 9) || a.name.localeCompare(b.name));
 

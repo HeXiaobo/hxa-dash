@@ -1,5 +1,5 @@
 {
-  "_comment": "Expected GitHub backup repositories for assistants. Agents not listed use https://github.com/{default_owner}/{agent}-workspace. Set an agent under exempt when it does not require a GitHub backup repository.",
+  "_comment": "Expected GitHub backup repositories for assistants. Agents not listed use https://github.com/{default_owner}/{agent}-workspace. Agents under exempt do not require a repository and are omitted from the backup list and its summary.",
   "default_owner": "zhi-wai",
   "default_repo_template": "{agent}-workspace",
   "aliases": {
