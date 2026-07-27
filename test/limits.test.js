@@ -3,7 +3,7 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const limitsRoute = require('../src/routes/limits.js');
-const { QUOTA_STALE_MS, enrichQuota } = limitsRoute.__private;
+const { QUOTA_STALE_MS, buildLimitsPayload, enrichQuota, limitsStatusText } = limitsRoute.__private;
 
 describe('limits quota freshness', () => {
   const nowMs = 1_781_142_900_000;
@@ -65,5 +65,57 @@ describe('limits quota freshness', () => {
     expect(quota.sampled_at).toBe(sampledAt);
     expect(quota.freshness.status).toBe('stale');
     expect(quota.freshness.age_ms).toBe(QUOTA_STALE_MS + 1);
+  });
+});
+
+describe('limits roster and status presentation', () => {
+  const nowMs = 1_785_171_600_000;
+
+  it('omits retired and shared-host agents from the limits roster', () => {
+    const agents = [
+      'anita',
+      'chengzi',
+      'hongshu',
+      'mylos-finance',
+      'mylos-infra',
+      'mylos-org',
+      'mylos-tech',
+      'ss-client',
+      'ss-content',
+      'active-agent',
+    ].map(name => ({
+      name,
+      work_state: 'unknown',
+      runtime: { type: 'unknown' },
+      quota: { supported: false, reason: 'unsupported_for_now' },
+    }));
+
+    const payload = buildLimitsPayload(agents, nowMs);
+
+    expect(payload.agents.map(agent => agent.name)).toEqual(['active-agent']);
+    expect(payload.team.total).toBe(1);
+  });
+
+  it('uses fresh telemetry to distinguish idle agents from offline agents', () => {
+    expect(limitsStatusText({
+      work_state: 'unknown',
+      runtime: { type: 'claude_code' },
+      quota: { supported: true, freshness: { status: 'fresh' } },
+      last_heartbeat_at: nowMs - 60_000,
+    }, nowMs)).toBe('待命');
+
+    expect(limitsStatusText({
+      work_state: 'unknown',
+      runtime: { type: 'claude_code' },
+      quota: { supported: true, freshness: { status: 'stale' } },
+      last_heartbeat_at: nowMs - QUOTA_STALE_MS - 1,
+    }, nowMs)).toBe('采集过期');
+
+    expect(limitsStatusText({
+      work_state: 'unknown',
+      runtime: { type: 'unknown' },
+      quota: { supported: false, reason: 'unsupported_for_now' },
+      last_heartbeat_at: null,
+    }, nowMs)).toBe('待接入');
   });
 });

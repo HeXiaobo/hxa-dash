@@ -100,7 +100,8 @@ const LimitsDashboard = {
       const primary = quota.primary || {};
       const secondary = quota.secondary || {};
       const runtimeText = `${runtime.label || runtime.type || 'Unknown'}${runtime.version ? ` ${runtime.version}` : ''}`;
-      const workText = agent.work_state === 'working' ? '工作中' : agent.work_state === 'standby' ? '待命' : '离线';
+      const workText = agent.status_text
+        || (agent.work_state === 'working' ? '工作中' : agent.work_state === 'standby' ? '待命' : '待接入');
       const quotaText = this._formatQuotaText(quota);
       const freshness = this._freshnessMeta(quota);
       const tokenText = usage.supported
