@@ -137,9 +137,9 @@ reporter is distributed separately after release without weakening public auth.
    machine keys:
 
    ```bash
-   SMOKE_NAME="deploy-smoke-$(date +%Y%m%d%H%M%S)"
+   SMOKE_NAME="__verify__deploy-smoke-$(date +%Y%m%d%H%M%S)"
    HXA_SMOKE_TOKEN="$(
-     node -e "require('dotenv').config({ override: true }); const { signToken } = require('./src/auth/token'); const tenantKey = process.env.FEISHU_TENANT_KEY; if (!tenantKey) process.exit(1); process.stdout.write(signToken({ openId: 'deploy-smoke', unionId: '', name: 'Deploy Smoke', avatarUrl: '', tenantKey }));"
+     node -e "require('dotenv').config({ override: true }); const { signToken } = require('./src/auth/token'); const tenantKey = process.env.FEISHU_TENANT_KEY; if (!tenantKey) process.exit(1); process.stdout.write(signToken({ openId: '__verify__deploy-smoke', unionId: '', name: 'Deploy Smoke', avatarUrl: '', tenantKey }));"
    )"
    HXA_SMOKE_COOKIE="hxa_token=${HXA_SMOKE_TOKEN}"
 
@@ -158,7 +158,7 @@ reporter is distributed separately after release without weakening public auth.
      "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
      -H "Cookie: $HXA_SMOKE_COOKIE" \
      | jq -r '.health.reported_at // 0')"
-   HEALTH_PAYLOAD='{"hostname":"deploy-smoke","disk":{"pct":null},"memory":{"pct":null}}'
+   HEALTH_PAYLOAD='{"hostname":"__verify__deploy-smoke","disk":{"pct":null},"memory":{"pct":null}}'
 
    curl -fsS -X POST \
      "https://hxa.zhiw.ai/api/agent-health/${HEALTH_SMOKE_PATH}" \
@@ -190,7 +190,7 @@ reporter is distributed separately after release without weakening public auth.
    ```bash
    curl -fsS https://hxa.zhiw.ai/api/health
    curl -i https://hxa.zhiw.ai/api/team
-   SMOKE_NAME="deploy-smoke-$(date +%Y%m%d%H%M%S)"
+   SMOKE_NAME="__verify__deploy-smoke-$(date +%Y%m%d%H%M%S)"
    curl -i -X POST https://hxa.zhiw.ai/api/report \
      -H "Content-Type: application/json" \
      -d "{\"name\":\"${SMOKE_NAME}\"}"
@@ -208,14 +208,25 @@ Expected results:
 - `/api/report` with the ingest key returns 200.
 - The smoke employee appears in `/api/team` with a new non-zero
   `last_seen_at`, proving the write was persisted and read back.
-- The synthetic health canary updates only the `deploy-smoke-<timestamp>` row.
+- The synthetic health canary updates only the `__verify__deploy-smoke-<timestamp>` row.
 - Without posting or replaying any real employee payload, wait for one real
   reporter to advance `health.reported_at` naturally and verify `/api/team`
   exposes the same later value as `monitoring.observed_at`.
 - Browser visit to `https://hxa.zhiw.ai/#limits` redirects through Feishu login and returns to the dashboard.
 - `/ws` only connects after the browser has a valid `hxa_token` cookie.
-- Any smoke agent rows are named with `deploy-smoke-<timestamp>` and should be
-  cleaned from SQLite after the deploy if they interfere with dashboards.
+- Any smoke agent rows are named with `__verify__deploy-smoke-<timestamp>`
+  (kept under the canonical `__verify__` prefix so criteria's liveness
+  aggregation — auto-assign reassignment pools, health-watchdog alerts,
+  idle-agent stats — skips them; see `src/db.js` `isCanaryName()`). They are
+  therefore no longer required to be cleaned up to avoid polluting dashboards;
+  cleanup is optional housekeeping only.
+- The permanent verification canary (`src/db.js` `CANARY_AGENT_NAME`,
+  `__verify__canary`) is pre-registered automatically on every server start
+  (`db.ensureCanaryAgent()`, idempotent) — it should never be created-then-
+  deleted for a smoke test. Confirm it is retained but excluded: it should
+  never appear in `GET /api/health-watchdog/alerts` output, and
+  `src/db.js`'s `getIdleAgents()` must never include it, regardless of how
+  long it stays offline.
 
 ## Rollback
 

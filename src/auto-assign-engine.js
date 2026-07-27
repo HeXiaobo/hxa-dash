@@ -126,26 +126,43 @@ function checkUnassigned() {
   }
 }
 
-// (#61) Offline agent reassignment
-async function runOfflineReassign() {
-  const now = Date.now();
-  const allAgents = db.getAllAgents();
-
-  const offlineAgents = allAgents.filter(a => {
+// issue #25 P2 §2 judgment-layer exclusion, sites 1/3 and 2/3: a canary
+// (name starting with db.CANARY_PREFIX) must never be treated as "offline"
+// (that would inflate offline counts/alerts with a record nothing real
+// produced) nor as "idle" (that would let it be picked below as a
+// reassignment target — real work silently routed to a non-existent worker).
+// Exported so the exclusion itself is unit-testable without a live HTTP
+// server (runOfflineReassign() below calls out to /api/auto-assign/execute).
+function computeOfflineAgents(allAgents, now) {
+  return allAgents.filter(a => {
+    if (db.isCanaryName(a.name)) return false;
     if (!a.online) return true;
     if (a.last_seen_at && (now - a.last_seen_at) > OFFLINE_THRESHOLD_MS) return true;
     return false;
   });
+}
 
-  if (offlineAgents.length === 0) return;
-
-  const idleAgents = allAgents.filter(a => {
+function computeIdleAgents(allAgents, now) {
+  return allAgents.filter(a => {
+    if (db.isCanaryName(a.name)) return false;
     if (!a.online) return false;
     if (a.last_seen_at && (now - a.last_seen_at) > OFFLINE_THRESHOLD_MS) return false;
     const assignedTasks = db.getTasksForAgent(a.name, { assigneeOnly: true });
     const openCount = assignedTasks.filter(t => t.state === 'opened').length;
     return openCount === 0;
   });
+}
+
+// (#61) Offline agent reassignment
+async function runOfflineReassign() {
+  const now = Date.now();
+  const allAgents = db.getAllAgents();
+
+  const offlineAgents = computeOfflineAgents(allAgents, now);
+
+  if (offlineAgents.length === 0) return;
+
+  const idleAgents = computeIdleAgents(allAgents, now);
 
   if (idleAgents.length === 0) return;
 
@@ -231,3 +248,4 @@ function start() {
 }
 
 module.exports = { init, start, runOnce };
+module.exports.__private = { computeOfflineAgents, computeIdleAgents };

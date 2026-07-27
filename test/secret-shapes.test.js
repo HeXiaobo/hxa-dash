@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 const { matchSecretShape, redactSecretShaped, redactSecretShapedDeep, REDACTED } = require('../src/secret-shapes');
 const agentHealthRoute = require('../src/routes/agent-health');
 
-const { sanitizeRoster, sanitizeRuntime } = agentHealthRoute.__private;
+const { sanitizeRoster, sanitizeRuntime, sanitizeBackupRepo, sanitizeBackupCron } = agentHealthRoute.__private;
 
 // ⚠️ ALL credential-shaped strings below are SYNTHETIC FIXTURES, never real keys:
 // repeated A/B filler + the public jwt.io sample token. A secret-detection test
@@ -145,5 +145,61 @@ describe('secret value-shape detection', () => {
     const mixed = 'prefix sk-ant-api03-CCCCCCCCCCCCCCCCCCCCCCCC suffix';
     expect(redactSecretShaped(mixed)).toBe(REDACTED);
     expect(redactSecretShaped(mixed)).not.toContain('CCCC');
+  });
+
+  // ---------------------------------------------------------------------
+  // KNOWN RESIDUAL — issue #25 P2 item 6 (Veda's precise four-condition
+  // restatement, 2026-07-26): the generic long-base64 rule still
+  // false-positives when a value satisfies ALL FOUR simultaneously:
+  //   ① length >= 40  ② charset is only [A-Za-z0-9/] (any . - _ breaks it)
+  //   ③ contains lowercase  ④ contains uppercase AND a digit.
+  // A separator-free path like the one below satisfies all four.
+  // ---------------------------------------------------------------------
+  it('KNOWN RESIDUAL still reproduces without the field-aware fix: a dot-less path matches the generic rule', () => {
+    const dotlessPath = '/home/User1/Workspace/AgentHealth/Snapshots/Backup7/LatestLine';
+    expect(dotlessPath.length).toBeGreaterThanOrEqual(40);
+    // Proves the four conditions are what triggers it, not "no dot" folklore:
+    // a value with a `.` anywhere does NOT match, confirming condition ②.
+    expect(matchSecretShape(dotlessPath + '.')).toBeNull();
+    // The bare (unqualified) matcher still matches on the residual shape —
+    // this is the gap the field-aware `skipGeneric` option exists to close.
+    expect(matchSecretShape(dotlessPath)).toBe('long-base64-blob');
+  });
+
+  it('field-aware fix: `skipGeneric` passes the same dot-less path through untouched', () => {
+    const dotlessPath = '/home/User1/Workspace/AgentHealth/Snapshots/Backup7/LatestLine';
+    expect(matchSecretShape(dotlessPath, { skipGeneric: true })).toBeNull();
+    expect(redactSecretShaped(dotlessPath, { skipGeneric: true })).toBe(dotlessPath);
+  });
+
+  it('field-aware fix does NOT weaken the vendor-specific rules: a real key shape embedded in a path field is still caught', () => {
+    const pathWithEmbeddedKey = '/home/user/.config/backup-ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.bak';
+    expect(matchSecretShape(pathWithEmbeddedKey, { skipGeneric: true })).toBe('github-token');
+    expect(redactSecretShaped(pathWithEmbeddedKey, { skipGeneric: true })).toBe(REDACTED);
+  });
+
+  it('agent-health.js wires skipGeneric into the two known path fields (repo.path, cron.log_path)', () => {
+    const repo = sanitizeBackupRepo({
+      path: '/home/User1/Workspace/AgentHealth/Snapshots/Backup7/LatestLine',
+      branch: 'main',
+      status: 'ok',
+    });
+    expect(repo.path).toBe('/home/User1/Workspace/AgentHealth/Snapshots/Backup7/LatestLine');
+
+    const cron = sanitizeBackupCron({
+      supported: true,
+      status: 'ok',
+      log_path: '/home/User1/Workspace/AgentHealth/Snapshots/Backup7/LatestLine',
+    });
+    expect(cron.log_path).toBe('/home/User1/Workspace/AgentHealth/Snapshots/Backup7/LatestLine');
+
+    // Negative control on the SAME two fields: a real vendor-shaped secret must
+    // still be caught there — skipGeneric only exempts the generic rule.
+    const repoLeaked = sanitizeBackupRepo({
+      path: 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      branch: 'main',
+      status: 'ok',
+    });
+    expect(repoLeaked.path).toBe(REDACTED);
   });
 });

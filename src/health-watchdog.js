@@ -67,6 +67,12 @@ function runOnce() {
     const alerts = [];
 
     for (const agent of agents) {
+      // issue #25 P2 §2 judgment-layer exclusion: a canary (name prefixed with
+      // db.CANARY_PREFIX) must never generate an alert or feed the alert count
+      // below — must run before every check in this loop (health staleness,
+      // output stall, offline-with-tasks, system-critical), not only where an
+      // alert might later be rendered on the dashboard.
+      if (db.isCanaryName(agent.name)) continue;
       // Only monitor core team agents for alerts
       if (!CORE_TEAM.has(agent.name)) continue;
 
@@ -92,9 +98,20 @@ function runOnce() {
       if (agent.online) {
         const events = db.getEventsForAgent(agent.name, 5);
         const lastEvent = events[0] || null;
-        const lastActive = lastEvent?.timestamp || agent.last_seen_at || null;
+        // Bug (issue #25 P2 item 5): `lastEvent?.timestamp || agent.last_seen_at`
+        // treats a falsy-but-present timestamp (e.g. `0`) the same as "no event
+        // at all" and silently substitutes last_seen_at instead — a heartbeat
+        // update, not git activity, which is what this check exists to measure.
+        // Fixed to an explicit presence check; the no-event fallback to
+        // last_seen_at is intentionally KEPT (a brand-new agent with zero git
+        // history yet should not be immediately flagged as stalled) — only the
+        // falsy-value footgun is closed, per "别顺手改坏存活判据".
+        const lastActive = (lastEvent && lastEvent.timestamp != null) ? lastEvent.timestamp : (agent.last_seen_at ?? null);
 
-        if (lastActive && (now - lastActive) > OUTPUT_STALL_MS) {
+        // `!= null` (not truthy `&&`), for the same reason as the derivation
+        // above: a genuinely-0 lastActive must still be evaluated, not
+        // short-circuited away by falsy coercion.
+        if (lastActive != null && (now - lastActive) > OUTPUT_STALL_MS) {
           const stallMin = Math.round((now - lastActive) / 60000);
           if (shouldAlert(agent.name, 'output-stall')) {
             alerts.push(`🔇 **${agent.name}**: No git activity for ${stallMin}min (last: ${lastEvent?.action || 'unknown'} on ${lastEvent?.target_title?.slice(0, 40) || 'N/A'})`);
@@ -159,12 +176,18 @@ function getAlerts() {
   const alerts = [];
 
   for (const agent of agents) {
+    // issue #25 P2 §2 judgment-layer exclusion: same reasoning as runOnce()
+    // above — this is the API-facing aggregate (GET /api/health-watchdog/alerts),
+    // so skipping it here (not only in a UI layer) is what keeps the canary out
+    // of the actual alert count, not just off the screen.
+    if (db.isCanaryName(agent.name)) continue;
     const tasks = db.getTasksForAgent(agent.name, { assigneeOnly: true });
     const openTasks = tasks.filter(t => t.state === 'opened');
     const health = allHealth[agent.name];
     const events = db.getEventsForAgent(agent.name, 5);
     const lastEvent = events[0] || null;
-    const lastActive = lastEvent?.timestamp || agent.last_seen_at || null;
+    // Same derivation-bug fix as runOnce() above (issue #25 P2 item 5).
+    const lastActive = (lastEvent && lastEvent.timestamp != null) ? lastEvent.timestamp : (agent.last_seen_at ?? null);
 
     const agentAlert = {
       name: agent.name,
@@ -172,7 +195,9 @@ function getAlerts() {
       open_tasks: openTasks.length,
       last_active: lastActive,
       health_stale: health ? (now - health.reported_at > HEALTH_STALE_MS) : true,
-      output_stall: agent.online && lastActive ? (now - lastActive > OUTPUT_STALL_MS) : false,
+      // `lastActive != null` (not truthy `&&`) — same falsy-0 fix as the
+      // derivation above; a downstream truthy check would silently undo it.
+      output_stall: agent.online && lastActive != null ? (now - lastActive > OUTPUT_STALL_MS) : false,
       system_critical: false,
       issues: [],
     };

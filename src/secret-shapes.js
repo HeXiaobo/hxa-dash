@@ -49,10 +49,33 @@ const SECRET_SHAPE_PATTERNS = [
   },
 ];
 
-// Returns the matching pattern name, or null.
-function matchSecretShape(value) {
+// KNOWN RESIDUAL (issue #25 P2 item 6 — Veda's precise re-statement, 2026-07-26):
+// the `long-base64-blob` rule still false-positives on a value that satisfies
+// ALL FOUR of these conditions SIMULTANEOUSLY:
+//   ① length >= 40
+//   ② the ENTIRE value's charset is only [A-Za-z0-9/] (a single `.` `-` or `_`
+//      anywhere in the value already breaks this — that is a different,
+//      already-fixed case; "dot-less path" is an imprecise restatement of
+//      condition ②, not the condition itself)
+//   ③ contains a lowercase letter
+//   ④ contains an uppercase letter AND a digit
+// A path with no separators at all (e.g. a Windows-style or slash-joined
+// identifier such as `/home/User1/Workspace/AgentHealth/Snapshots/Backup7/…`)
+// can satisfy all four and is not a secret.
+//
+// Mylos's ruling: do NOT special-case values starting with `/` at the
+// value-shape layer — a legitimate base64 blob (e.g. a JPEG data URI body)
+// can start with `/9j/…`, so a `/`-prefix guard would trade a rare false
+// positive for a real false negative. The correct fix is FIELD-AWARE: known
+// path-carrying fields (agent-health.js `repo.path`, `cron.log_path`) opt out
+// of the generic rule specifically, via the `skipGeneric` option below, while
+// the six vendor-specific unanchored rules (sk-/ghp_/AIza/JWT/BEGIN/slack)
+// keep running on every field — a real leaked key embedded in a path-shaped
+// field must still be caught.
+function matchSecretShape(value, opts = {}) {
   if (typeof value !== 'string' || !value) return null;
   for (const { name, re } of SECRET_SHAPE_PATTERNS) {
+    if (opts.skipGeneric && name === 'long-base64-blob') continue;
     if (re.test(value)) return name;
   }
   return null;
@@ -61,8 +84,10 @@ function matchSecretShape(value) {
 // Replace the whole value when it looks like a credential.
 // Whole-value (not substring) replacement is intentional: a partially redacted
 // string can still leak the sensitive remainder.
-function redactSecretShaped(value) {
-  return matchSecretShape(value) ? REDACTED : value;
+// `opts.skipGeneric` — see matchSecretShape() above for why this exists and
+// which fields pass it.
+function redactSecretShaped(value, opts = {}) {
+  return matchSecretShape(value, opts) ? REDACTED : value;
 }
 
 // Depth cap for the recursive walker. A hostile or accidentally self-referential

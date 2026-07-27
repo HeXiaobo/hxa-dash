@@ -316,6 +316,12 @@ async function startPolling() {
   };
   ws.sendSnapshot(snapshot);
 
+  // Permanent, pre-registered verification canary (issue #25 P2 item 4).
+  // Idempotent — safe to call on every startup, never deleted. Must run
+  // before the engines below start filtering/aggregating, though the
+  // exclusion itself (db.isCanaryName) does not depend on ordering.
+  db.ensureCanaryAgent();
+
   // Start auto-assign engine (#61 + #74: pass ws for unassigned broadcasts)
   autoAssignEngine.init(config, ws);
   autoAssignEngine.start();

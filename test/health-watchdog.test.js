@@ -107,3 +107,53 @@ describe('Health Watchdog — getAlerts (#129)', () => {
     expect(botAlerts[0].issues).toContain('no_health_report');
   });
 });
+
+describe('Health Watchdog — lastActive derivation bug fix (issue #25 P2 item 5)', () => {
+  // Bug: `lastEvent?.timestamp || agent.last_seen_at` treats a falsy-but-
+  // present timestamp (e.g. `0`, epoch) the same as "no event at all" and
+  // silently substitutes last_seen_at — a heartbeat, not git activity, which
+  // is what the output-stall check exists to measure. A real stall (event
+  // recorded at time 0) would be masked by a recent heartbeat.
+  it('an event with timestamp 0 is NOT treated as "no event" — it still drives the stall check', () => {
+    const now = Date.now();
+    db.upsertAgent({ name: 'zero-ts-bot', online: true, last_seen_at: now }); // recent heartbeat
+    db.insertEvent({
+      timestamp: 0, // falsy but a real, very old timestamp
+      agent: 'zero-ts-bot',
+      action: 'pushed to',
+      target_title: 'ancient-branch',
+      target_type: 'push',
+    });
+    db.upsertAgentHealth('zero-ts-bot', {
+      disk: { pct: 50, status: 'ok' },
+      memory: { pct: 40, status: 'ok' },
+    });
+
+    const result = watchdog.getAlerts();
+    const alert = result.alerts.find(a => a.name === 'zero-ts-bot');
+    // Old (buggy) behaviour would fall back to last_seen_at (= now), so
+    // last_active would read ~now and output_stall would be false — masking
+    // a genuinely 0-timestamp last event. Fixed behaviour uses the event's
+    // own timestamp (0) since it IS present, so the stall fires.
+    expect(alert, 'expected an alert — the fallback bug would otherwise mask this').toBeDefined();
+    expect(alert.last_active).toBe(0);
+    expect(alert.output_stall).toBe(true);
+  });
+
+  it('an agent with NO event at all still falls back to last_seen_at (unchanged, intentionally preserved fallback)', () => {
+    const now = Date.now();
+    // Online recently, zero events ever recorded — should NOT be flagged as
+    // stalled purely from having no git history yet (grace period).
+    db.upsertAgent({ name: 'no-events-bot', online: true, last_seen_at: now });
+    db.upsertAgentHealth('no-events-bot', {
+      disk: { pct: 50, status: 'ok' },
+      memory: { pct: 40, status: 'ok' },
+    });
+
+    const result = watchdog.getAlerts();
+    const alert = result.alerts.find(a => a.name === 'no-events-bot');
+    // No alert-worthy issue at all in this case (recent last_seen_at, no
+    // stale health since it was just reported, no open tasks).
+    expect(alert).toBeUndefined();
+  });
+});

@@ -91,6 +91,57 @@ const getAgent = (name) => store.agents.get(name) || null;
 
 const removeAgent = (name) => store.agents.delete(name);
 
+// ---------------------------------------------------------------------------
+// Verification-canary exclusion (issue #25 P2, §2/§4).
+//
+// WHY: canonical `hxa-dash-anomaly-criteria-v1.md` requires any record whose
+// key/name carries the `__verify__` prefix to be skipped by liveness
+// aggregation — offline/idle reassignment (auto-assign-engine.js), alerting
+// (health-watchdog.js) and idle-agent stats (getIdleAgents below). This must
+// be enforced in the JUDGMENT layer, not only rendering: a canary counted as
+// "idle" can be handed real reassigned work; a canary counted as "offline"
+// inflates alert/aggregate numbers with a record nothing real produced
+// (BLOCKER 6 in the #25 review — an exclusion that only hides a row on
+// screen while the aggregate underneath still counts it is not an exclusion).
+//
+// Prefix match (not exact-string), because more than one canary id can exist
+// (the permanent CANARY_AGENT_NAME below, plus per-deploy smoke markers named
+// `__verify__deploy-smoke-<timestamp>` in docs/auth-production-runbook.md) —
+// an exact-match implementation would let any id other than the one literal
+// string leak back into aggregation (the #25 round-3 finding: "__verify__@host-a"
+// would not have been caught by an exact match on "__verify__").
+const CANARY_PREFIX = '__verify__';
+
+const isCanaryName = (name) => typeof name === 'string' && name.startsWith(CANARY_PREFIX);
+
+// Permanent, pre-registered canary agent id (issue #25 P2 item 4).
+//
+// WHY a fixed, always-present id rather than "create a smoke agent, verify,
+// delete it": agent-health.js's POST /:name 404s for names it has never seen
+// (fail-closed by design — see the route's `if (!agent) return 404`), so
+// anything that health-checks the canary directly (not via the /api/report
+// flow, which upserts first) needs the id to already exist. A create-then-
+// delete cycle also risks the delete step being skipped under pressure —
+// exactly the "canary that never gets cleaned up" failure mode. Canonical
+// decision: register once, keep forever, rely on isCanaryName() above (not
+// deletion) to keep it out of every aggregate.
+const CANARY_AGENT_NAME = '__verify__canary';
+
+// Idempotent: does nothing if already registered, so calling this on every
+// server start (see src/server.js) never resets the canary's fields and never
+// needs a companion delete step ("不做建后删" — canonical requirement).
+const ensureCanaryAgent = () => {
+  if (!getAgent(CANARY_AGENT_NAME)) {
+    upsertAgent({
+      name: CANARY_AGENT_NAME,
+      online: false,
+      last_seen_at: null,
+      registered_at: Date.now(),
+    });
+  }
+  return getAgent(CANARY_AGENT_NAME);
+};
+
 // Task operations
 const upsertTask = (task) => {
   store.tasks.set(task.id, { ...task });
@@ -407,9 +458,13 @@ const getStaleMRs = (now, thresholdMs) => {
 };
 
 // Idle agents: offline agents not seen for more than thresholdMs
+// issue #25 P2 §2 judgment-layer exclusion, site 3/3: a canary excluded only
+// from the dashboard's rendering but still counted here would still inflate
+// this aggregate (BLOCKER 6) — so the prefix check is filtered here, before
+// the aggregate is built, not only where it might later be displayed.
 const getIdleAgents = (now, thresholdMs) => {
   return [...store.agents.values()]
-    .filter(a => !a.online && a.last_seen_at && (now - a.last_seen_at) > thresholdMs)
+    .filter(a => !isCanaryName(a.name) && !a.online && a.last_seen_at && (now - a.last_seen_at) > thresholdMs)
     .map(a => ({
       name: a.name,
       last_seen_hours: Math.floor((now - a.last_seen_at) / 3600000),
@@ -892,4 +947,5 @@ module.exports = {
   getHealthHistory, getHealthHistoryByName, getHealthHistoryBetween, iterHealthHistoryBetween, pruneHealthHistory, getLatestHealthPerAgent,
   getAgentDailyOutput, getAgentSparkline7d,
   ESTIMATE_SESSIONS, ESTIMATE_MINUTES,
+  CANARY_PREFIX, isCanaryName, CANARY_AGENT_NAME, ensureCanaryAgent,
 };

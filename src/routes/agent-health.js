@@ -33,9 +33,16 @@ function requireHealthAuth(req, res, next) {
 // its prefix, and the field-level allowlists cannot help here because the secret
 // arrives inside an *allowed* field (e.g. `model: "sk-ant-..."`).
 // Canonical requirement: anomaly-criteria-v1 「secret 值形态检测」. See src/secret-shapes.js.
-function sanitizeStr(val, maxLen = 64) {
+// `opts.skipGeneric` — issue #25 P2 item 6 (KNOWN RESIDUAL field-aware fix):
+// pass this for fields known to carry filesystem paths (`repo.path`,
+// `cron.log_path`), which can legitimately be long, mixed-case,
+// digit-containing, separator-free strings that the generic long-base64 rule
+// would otherwise false-positive on. The six vendor-specific rules (sk-/ghp_/
+// AIza/JWT/BEGIN/slack) are never skipped — a real key embedded in a path
+// field must still be caught. See src/secret-shapes.js for the full writeup.
+function sanitizeStr(val, maxLen = 64, opts = {}) {
   if (typeof val !== 'string') return null;
-  const guarded = redactSecretShaped(val);
+  const guarded = redactSecretShaped(val, opts);
   if (guarded !== val) return guarded;
   return val.replace(/<[^>]*>/g, '').slice(0, maxLen);
 }
@@ -260,7 +267,7 @@ function withSanitizedRoster(health) {
 function sanitizeBackupRepo(repo) {
   if (!repo || typeof repo !== 'object') return null;
   return {
-    path: sanitizeStr(repo.path, 512),
+    path: sanitizeStr(repo.path, 512, { skipGeneric: true }),
     remote: sanitizeRemoteUrl(repo.remote),
     branch: sanitizeStr(repo.branch, 128),
     head: sanitizeStr(repo.head, 64),
@@ -298,7 +305,7 @@ function sanitizeBackupCron(cron) {
     supported: typeof cron.supported === 'boolean' ? cron.supported : false,
     status: sanitizeEnum(cron.status, ['ok', 'warning', 'critical', 'unsupported'], cron.supported === false ? 'unsupported' : 'warning'),
     reason: sanitizeStr(cron.reason, 128),
-    log_path: sanitizeStr(cron.log_path, 512),
+    log_path: sanitizeStr(cron.log_path, 512, { skipGeneric: true }),
     last_success_at: normalizeTimestamp(cron.last_success_at) || null,
     last_run_at: normalizeTimestamp(cron.last_run_at) || null,
     latest_line: sanitizeStr(cron.latest_line, 240),
@@ -461,8 +468,11 @@ module.exports = router;
 module.exports.__private = {
   STALE_THRESHOLD_MS,
   sanitizeBackup,
+  sanitizeBackupRepo,
+  sanitizeBackupCron,
   sanitizeRoster,
   sanitizeRuntime,
+  sanitizeStr,
   resourceStatus,
   overallHealthStatus,
 };

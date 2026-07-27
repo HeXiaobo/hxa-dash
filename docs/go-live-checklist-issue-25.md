@@ -47,8 +47,22 @@ script assumes an interactive `main` checkout.
 - [ ] the browser's bare WebSocket connection is live and a pushed update
       changes the same employee row
 - [ ] send one authenticated canary health report only to a
-      `deploy-smoke-<timestamp>` row and verify its stored `reported_at`
+      `__verify__deploy-smoke-<timestamp>` row and verify its stored `reported_at`
       advances; never replay a real employee payload
+- [ ] (a) confirm the permanent verification canary (`__verify__canary`) is
+      pre-registered — it is created idempotently on every server start via
+      `db.ensureCanaryAgent()`, so this is a presence check, not a manual
+      create step: `GET /api/team` (or equivalent) shows the id exists.
+      **Do not create it via a smoke report and then delete it** — the
+      canonical decision is permanent + excluded, not create-then-delete.
+- [ ] (b) confirm the canary is retained but excluded by criteria: with the
+      canary present and (optionally) marked offline/stale, `GET
+      /api/health-watchdog/alerts` must contain zero entries for it, and it
+      must not appear in any `db.getIdleAgents()`-derived aggregate or in an
+      `auto-assign` reassignment target list — verification method: run
+      `npx vitest run test/verify-canary-exclusion.test.js` (added in issue #25
+      P2) and confirm all cases pass; this is the automated form of the same
+      check.
 - [ ] verify a real reporter timestamp advances within its reporting cadence
 - [ ] verify stale data renders as collection delay, never employee offline
 - [ ] verify backup status is anchored to the latest successful backup
