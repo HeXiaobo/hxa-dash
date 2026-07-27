@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { buildAgents } = require('./team');
+const monitoringScope = require('../../config/expected-backup-repos.json');
 
 const router = Router();
 const QUOTA_STALE_MS = 10 * 60 * 1000;
@@ -52,11 +53,33 @@ function nextResetAt(agents) {
   return Math.min(...timestamps);
 }
 
-router.get('/', (req, res) => {
-  const now = Date.now();
-  const agents = buildAgents().map(agent => {
+function isLimitsAgent(agent) {
+  const name = String(agent?.name || '').trim().toLowerCase();
+  return Boolean(name) && !Object.prototype.hasOwnProperty.call(monitoringScope.exempt || {}, name);
+}
+
+function limitsStatusText(agent, now = Date.now()) {
+  if (agent?.work_state === 'working') return '工作中';
+  if (agent?.work_state === 'standby') return '待命';
+
+  const quotaFreshnessStatus = agent?.quota?.freshness?.status;
+  if (quotaFreshnessStatus === 'fresh') return '待命';
+  if (quotaFreshnessStatus === 'stale') return '采集过期';
+
+  const heartbeatAt = normalizeTimestamp(agent?.last_heartbeat_at);
+  if (heartbeatAt && Math.max(0, now - heartbeatAt) <= QUOTA_STALE_MS) return '待命';
+  if (heartbeatAt) return '采集过期';
+
+  const runtimeType = String(agent?.runtime?.type || '').toLowerCase();
+  if (!runtimeType || runtimeType === 'unknown') return '待接入';
+  if (agent?.runtime_status === 'offline') return '运行时离线';
+  return '待接入';
+}
+
+function buildLimitsPayload(sourceAgents, now = Date.now()) {
+  const agents = sourceAgents.filter(isLimitsAgent).map(agent => {
     const quota = enrichQuota(agent.quota, agent.last_heartbeat_at, now);
-    return {
+    const item = {
       name: agent.name,
       role: agent.role || '',
       work_state: agent.work_state,
@@ -67,6 +90,7 @@ router.get('/', (req, res) => {
       last_active_at: agent.last_active_at,
       last_heartbeat_at: agent.last_heartbeat_at,
     };
+    return { ...item, status_text: limitsStatusText(item, now) };
   });
 
   const supported = agents.filter(agent => agent.quota?.supported);
@@ -79,7 +103,7 @@ router.get('/', (req, res) => {
     return primary >= 80 || secondary >= 80;
   }).length;
 
-  res.json({
+  return {
     timestamp: now,
     team: {
       total: agents.length,
@@ -96,8 +120,19 @@ router.get('/', (req, res) => {
       }, {}),
     },
     agents,
-  });
+  };
+}
+
+router.get('/', (req, res) => {
+  res.json(buildLimitsPayload(buildAgents()));
 });
 
 module.exports = router;
-module.exports.__private = { QUOTA_STALE_MS, enrichQuota, quotaFreshness };
+module.exports.__private = {
+  QUOTA_STALE_MS,
+  buildLimitsPayload,
+  enrichQuota,
+  isLimitsAgent,
+  limitsStatusText,
+  quotaFreshness,
+};

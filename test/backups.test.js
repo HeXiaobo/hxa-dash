@@ -188,6 +188,11 @@ describe('backup health helpers', () => {
   });
 
   it('marks retired and shared-host agents as exempt with an explicit reason', () => {
+    expect(expectedBackupRepo('anita')).toEqual({
+      required: false,
+      url: null,
+      reason: '自管理且未授权健康/备份接入，不纳入集中监控',
+    });
     expect(expectedBackupRepo('chengzi')).toEqual({
       required: false,
       url: null,
@@ -208,6 +213,7 @@ describe('backup health helpers', () => {
   it('omits backup-exempt agents from the backup list and summary', () => {
     const payload = buildBackupsPayload(
       [
+        { name: 'anita', online: false },
         { name: 'chengzi', online: false },
         { name: 'mylos-tech', online: true },
         { name: 'active-agent', online: true },

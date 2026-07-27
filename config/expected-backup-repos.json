@@ -1,5 +1,5 @@
 {
-  "_comment": "Expected GitHub backup repositories for assistants. Agents not listed use https://github.com/{default_owner}/{agent}-workspace. Agents under exempt do not require a repository and are omitted from the backup list and its summary.",
+  "_comment": "Expected GitHub backup repositories for assistants. Agents not listed use https://github.com/{default_owner}/{agent}-workspace. Agents under exempt do not require a repository and are omitted from centralized backup and quota monitoring.",
   "default_owner": "zhi-wai",
   "default_repo_template": "{agent}-workspace",
   "aliases": {
@@ -9,6 +9,7 @@
     "wanyanshu": "https://github.com/zhi-wai/maxiaozhuo-workspace"
   },
   "exempt": {
+    "anita": "自管理且未授权健康/备份接入，不纳入集中监控",
     "chengzi": "已退役，无需独立 GitHub 备份",
     "hongshu": "已退役，无需独立 GitHub 备份",
     "mylos-finance": "随宿主 mylos 共用备份",
