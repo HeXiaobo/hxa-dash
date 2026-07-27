@@ -3,7 +3,9 @@ const { buildAgents } = require('./team');
 const monitoringScope = require('../../config/expected-backup-repos.json');
 
 const router = Router();
-const QUOTA_STALE_MS = 10 * 60 * 1000;
+// Reporters run every 10 minutes. Allow three missed/jittered collection
+// windows before presenting quota data as stale.
+const QUOTA_STALE_MS = 30 * 60 * 1000;
 
 function normalizeTimestamp(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {

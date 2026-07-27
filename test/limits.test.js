@@ -8,6 +8,10 @@ const { QUOTA_STALE_MS, buildLimitsPayload, enrichQuota, limitsStatusText } = li
 describe('limits quota freshness', () => {
   const nowMs = 1_781_142_900_000;
 
+  it('allows three 10-minute reporter windows before quota becomes stale', () => {
+    expect(QUOTA_STALE_MS).toBe(30 * 60 * 1000);
+  });
+
   it('marks supported quota with recent sampled_at as fresh', () => {
     const now = nowMs;
     const quota = enrichQuota({
