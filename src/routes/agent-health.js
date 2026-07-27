@@ -344,9 +344,9 @@ router.get('/roster', (req, res) => {
 
 // POST /api/agent-health/:name — agent reports its system health (auth required)
 router.post('/:name', requireHealthAuth, (req, res) => {
-  const { name } = req.params;
-  const agent = db.getAgent(name);
+  const agent = db.getAgent(req.params.name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  const name = agent.name;
 
   const { disk, memory, cpu, pm2, hostname, runtime, quota, usage, backup, roster } = req.body;
 
@@ -444,7 +444,7 @@ router.get('/:name', (req, res) => {
   const agent = db.getAgent(req.params.name);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const health = withSanitizedRoster(db.getAgentHealth(req.params.name));
+  const health = withSanitizedRoster(db.getAgentHealth(agent.name));
   const now = Date.now();
   const stale = health ? (now - health.reported_at > STALE_THRESHOLD_MS) : true;
 

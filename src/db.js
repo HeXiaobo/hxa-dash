@@ -87,7 +87,17 @@ const getAllAgents = () => {
   });
 };
 
-const getAgent = (name) => store.agents.get(name) || null;
+const getAgent = (name) => {
+  if (name == null) return null;
+  const exact = store.agents.get(name);
+  if (exact) return exact;
+
+  const normalized = String(name).toLowerCase();
+  for (const [registeredName, agent] of store.agents) {
+    if (String(registeredName).toLowerCase() === normalized) return agent;
+  }
+  return null;
+};
 
 const removeAgent = (name) => store.agents.delete(name);
 
