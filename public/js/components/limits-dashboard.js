@@ -19,8 +19,9 @@ const LimitsDashboard = {
       quota?.secondary?.used_percent != null ? `${quota.secondary.used_percent}% / 7d` : null,
     ].filter(Boolean);
     if (parts.length) return parts.join(' · ');
-    if (quota?.reason === 'unsupported_for_now') return '暂不支持';
     if (quota?.reason === 'no_used_quota_window') return 'N/A (无窗口)';
+    if (quota?.reason === 'not_reported') return '未提供';
+    if (quota?.supported === false) return '暂不支持';
     return '未提供';
   },
 
