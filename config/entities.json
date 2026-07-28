@@ -23,6 +23,13 @@
       "identities": { "connect": "veda", "gitlab": "veda" }
     },
     {
+      "id": "xiaochen",
+      "display_name": "小陈",
+      "role": "AI 协作助理",
+      "bio": "Hermes Agent，负责飞书协作、研究与自动化",
+      "identities": { "connect": "xiaochen" }
+    },
+    {
       "id": "hongshu",
       "display_name": "Hongshu",
       "role": "内容团队AI助理",
